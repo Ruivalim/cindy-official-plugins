@@ -1,7 +1,9 @@
 // TouchGestureSource — real multi-touch (iOS WebView). Single-finger
-// touch (drag, edge gestures) streams touch1-*; a second finger abandons
-// the touch path entirely and lets Safari's native gesturestart/change/
-// end (SafariGestureEventSource) own the pinch — see the note below.
+// touch (drag, edge gestures) streams touch1-*; where the browser has
+// Safari's native gesturestart/change/end, a second finger abandons the
+// touch path entirely and lets SafariGestureEventSource own the pinch —
+// see the note below. Browsers without those events (Chromium) stream the
+// two real fingers as touch2-* from here instead.
 (function (root) {
   'use strict';
 
@@ -14,11 +16,16 @@
      * @param {PinchOverlay} [opts.overlay]
      * @param {() => string} [opts.getOrientation]
      * @param {(clientX:number, clientY:number) => object} [opts.mapClientPoint]
+     * @param {() => boolean} [opts.hasSafariGestures]  true when the
+     *   browser fires gesturestart/change/end (SafariGestureEventSource
+     *   then owns two-finger pinch).
      */
-    constructor(screen, { overlay, getOrientation, mapClientPoint } = {}) {
+    constructor(screen, { overlay, getOrientation, mapClientPoint, hasSafariGestures } = {}) {
       super(screen, { mapClientPoint });
       this.overlay = overlay || null;
       this.getOrientation = getOrientation || (() => 'portrait');
+      this._hasSafariGestures = hasSafariGestures ||
+          (() => typeof root.GestureEvent !== 'undefined' || 'ongesturestart' in root);
     }
 
     _bind() {
@@ -52,9 +59,41 @@
       // path entirely and let SafariGestureEventSource (gesturestart →
       // gesturechange → gestureend) own the pinch. Single-finger
       // touch (drag, edge gestures) stays here.
+      // The first two real touch points as wire coordinates.
+      const pairOf = (touches) => {
+        const pts = [touches[0], touches[1]].map(
+            (t) => this._screenPoint(t.clientX, t.clientY));
+        return {
+          inside: pts.every((p) => p.inside),
+          fingers: pts.map((p) => ({ x: p.x, y: p.y })),
+        };
+      };
+
       this._on(this._el, 'touchstart', (e) => {
         e.preventDefault();
         const all = relFingers(e.touches);
+        if (all.length >= 2 && !this._hasSafariGestures()) {
+          // No gesture* events in this browser (Chromium): nothing else
+          // will drive the pinch, so stream the two real fingers. Lift a
+          // streaming single touch first, same as the Safari handoff.
+          if (state && (state.mode === 'single' || state.mode === 'edge-stream')) {
+            const lift = [{ x: all[0].x, y: all[0].y }];
+            if (state.mode === 'edge-stream') this.screen.touchUp(lift, { edge: state.edge });
+            else this.screen.touchUp(lift);
+          }
+          const pair = pairOf(e.touches);
+          if (pair.inside) {
+            this.screen.touchDown(pair.fingers);
+            state = { mode: 'multi', last: pair.fingers };
+            lastMs = 0;
+          } else {
+            state = { mode: 'multi-ignored' };
+          }
+          if (this.overlay) {
+            this.overlay.setFingers(all.slice(0, 2).map((f) => ({ x: f.vx, y: f.vy })));
+          }
+          return;
+        }
         if (all.length >= 2) {
           // If we'd already shipped a touch1-down, lift it cleanly
           // before bowing out — otherwise the simulator holds a
@@ -117,6 +156,22 @@
           return;
         }
 
+        if (state.mode === 'multi-ignored' || state.mode === 'multi-ended') return;
+
+        if (state.mode === 'multi') {
+          if (all.length < 2) return;
+          const pair = pairOf(e.touches);
+          state.last = pair.fingers;  // freshest positions for the touch-up
+          if (this.overlay) {
+            this.overlay.setFingers(all.slice(0, 2).map((f) => ({ x: f.vx, y: f.vy })));
+          }
+          const t = performance.now();
+          if (t - lastMs < MOVE_FLUSH_MS) return;
+          lastMs = t;
+          this.screen.touchMove(pair.fingers);
+          return;
+        }
+
         const now = performance.now();
         if (now - lastMs < MOVE_FLUSH_MS) return;
         lastMs = now;
@@ -145,6 +200,17 @@
       const endTouch = (e) => {
         e.preventDefault();
         if (!state) return;
+        if (state.mode === 'multi' || state.mode === 'multi-ignored' || state.mode === 'multi-ended') {
+          // Pinch ends when the first finger lifts (or on cancel); the
+          // remaining finger must not start a stray single touch.
+          if (e.type === 'touchend' && e.touches.length >= 2) return;
+          if (state.mode === 'multi') {
+            this.screen.touchUp(state.last);
+            if (this.overlay) this.overlay.clear();
+          }
+          state = e.type === 'touchend' && e.touches.length > 0 ? { mode: 'multi-ended' } : null;
+          return;
+        }
         if (state.mode === 'multi-deferred') {
           // gesturestart/change/end owns this lifecycle.
           state = null;

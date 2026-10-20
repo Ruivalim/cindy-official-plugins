@@ -21,6 +21,15 @@
 // listener below reads the clipboard text off the event and sends a
 // `{type:"paste"}` envelope (server: pbcopy, then Cmd+V sim-side).
 //
+// Committed text (Chromium only — Safari has no text sink so its focus
+// behaviour is unchanged): a focused <div> is not an editable target, so a
+// host-side `insertText` / IME commit goes nowhere. A hidden single-line
+// <textarea> inside the screen element takes focus instead; its
+// `beforeinput` (insertText) and `compositionend` commits are sent through
+// the same `paste` channel, then the sink is emptied. Keys the table below
+// forwards are preventDefault-ed on keydown, so they never produce text
+// here and are not sent twice.
+//
 // Copy is the mirror carve-out: Cmd+C / Ctrl+C is NOT forwarded as a
 // raw chord either — instead it sends a `{type:"copy"}` envelope. The
 // server presses Cmd+C sim-side (so the focused field copies its
@@ -59,11 +68,24 @@
       this.transport = transport;
       this._el = null;
       this._inputQueue = [];
-      this._onBlur = () => { this._inputQueue.length = 0; };
+      // Focus moving between the screen element and its text sink is not a
+      // blur from the simulator's point of view.
+      this._onBlur = (ev) => {
+        const to = ev && ev.relatedTarget;
+        if (to && (to === this._sink || to === this._el)) return;
+        this._inputQueue.length = 0;
+      };
       this._onVisibility = () => { if (document.hidden) this._onBlur(); };
       this._onRelease = ev => { if (ev.origin === location.origin && ev.data?.type === 'cindy-release-input') this._onBlur(); };
       this._onKeyDown = (ev) => this._handle(ev);
       this._onPaste = (ev) => this._handlePaste(ev);
+      this._sink = null;
+      this._composing = false;
+      this._onElFocus = () => this._focusSink();
+      this._onBeforeInput = (ev) => this._handleBeforeInput(ev);
+      this._onInput = () => { if (!this._composing && this._sink) this._sink.value = ''; };
+      this._onCompositionStart = () => { this._composing = true; };
+      this._onCompositionEnd = (ev) => this._handleCompositionEnd(ev);
     }
 
     /** Bind keydown to the screen element. Focus-gated. */
@@ -74,6 +96,9 @@
       // routed through this element work without an explicit Tab.
       if (el.tabIndex < 0) el.tabIndex = 0;
       el.addEventListener('mousedown', () => el.focus());
+      // Safari already reports gesture* events and keeps its original
+      // focus behaviour; everywhere else the text sink receives commits.
+      if (typeof root.GestureEvent === 'undefined') this._attachSink(el);
       el.addEventListener('keydown', this._onKeyDown);
       el.addEventListener('blur', this._onBlur);
       // Document-level: Chrome/Firefox target the focused element,
@@ -87,6 +112,7 @@
 
     detach() {
       if (!this._el) return;
+      this._detachSink();
       this._el.removeEventListener('keydown', this._onKeyDown);
       this._el.removeEventListener('blur', this._onBlur);
       this._inputQueue.length = 0;
@@ -94,6 +120,66 @@
       document.removeEventListener('visibilitychange', this._onVisibility);
       window.removeEventListener('message', this._onRelease);
       this._el = null;
+    }
+
+    _attachSink(el) {
+      const sink = document.createElement('textarea');
+      sink.setAttribute('aria-hidden', 'true');
+      sink.setAttribute('autocomplete', 'off');
+      sink.setAttribute('autocapitalize', 'off');
+      sink.setAttribute('autocorrect', 'off');
+      sink.spellcheck = false;
+      sink.tabIndex = -1;
+      sink.style.cssText =
+        'position:absolute;left:0;top:0;width:1px;height:1px;padding:0;border:0;' +
+        'margin:0;opacity:0;resize:none;overflow:hidden;pointer-events:none;' +
+        'caret-color:transparent;font-size:16px;';
+      el.appendChild(sink);
+      this._sink = sink;
+      el.addEventListener('focus', this._onElFocus);
+      // keydown bubbles from the sink to the screen element's listener.
+      sink.addEventListener('blur', this._onBlur);
+      sink.addEventListener('beforeinput', this._onBeforeInput);
+      sink.addEventListener('input', this._onInput);
+      sink.addEventListener('compositionstart', this._onCompositionStart);
+      sink.addEventListener('compositionend', this._onCompositionEnd);
+    }
+
+    _detachSink() {
+      const sink = this._sink;
+      if (!sink) return;
+      this._el.removeEventListener('focus', this._onElFocus);
+      sink.remove();
+      this._sink = null;
+      this._composing = false;
+    }
+
+    /** Hand keyboard focus to the sink; the screen element itself stays
+     *  the logical owner (see `_hasFocus`). */
+    _focusSink() {
+      if (this._sink) this._sink.focus({ preventScroll: true });
+    }
+
+    _hasFocus() {
+      const active = document.activeElement;
+      return active === this._el || (this._sink !== null && active === this._sink);
+    }
+
+    _handleBeforeInput(ev) {
+      // Composition text is sent once, at compositionend; paste has its
+      // own document-level listener.
+      if (this._composing || ev.isComposing) return;
+      if (ev.inputType !== 'insertText' || typeof ev.data !== 'string' || !ev.data) return;
+      if (!this._hasFocus()) return;
+      ev.preventDefault();
+      this.paste(ev.data);
+    }
+
+    _handleCompositionEnd(ev) {
+      this._composing = false;
+      if (this._sink) this._sink.value = '';
+      if (!this._hasFocus()) return;
+      if (typeof ev.data === 'string' && ev.data) this.paste(ev.data);
     }
 
     // --- domain verbs ---
@@ -156,7 +242,10 @@
 
     _handle(ev) {
       // Focus gate — only forward when the screen owns focus.
-      if (document.activeElement !== this._el) return;
+      if (!this._hasFocus()) return;
+      // Keys that drive an active IME composition belong to the IME; its
+      // committed text arrives via compositionend.
+      if (ev.isComposing || ev.keyCode === 229) return;
       if (!FORWARDED.has(ev.code)) return;
       if (ev.repeat) { ev.preventDefault(); return; }
       // Paste carve-out: don't preventDefault the paste chord, or
@@ -182,7 +271,7 @@
     _handlePaste(ev) {
       // Same focus gate as keydown — a paste while the sidebar owns
       // focus belongs to the browser, not the sim.
-      if (document.activeElement !== this._el) return;
+      if (!this._hasFocus()) return;
       const text = ev.clipboardData && ev.clipboardData.getData('text/plain');
       if (!text) return;
       ev.preventDefault();

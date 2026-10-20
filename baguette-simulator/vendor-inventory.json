@@ -206,8 +206,8 @@
   },
   {
     "path": "vendor/baguette/Baguette_Baguette.bundle/Web/baguette/gestures/touch-gesture-source.js",
-    "bytes": 7308,
-    "sha256": "3445c717bcedd908849e10e1f6d442cf03d80a5af11aa631b212a578ee1e7337"
+    "bytes": 10322,
+    "sha256": "bf4ac805ff6e1474a85d7c38fcebc2764b6dd90f5c468328292b3bdc68607845"
   },
   {
     "path": "vendor/baguette/Baguette_Baguette.bundle/Web/baguette/gestures/wheel-gesture-source.js",
@@ -226,8 +226,8 @@
   },
   {
     "path": "vendor/baguette/Baguette_Baguette.bundle/Web/baguette/parts/keyboard.js",
-    "bytes": 8826,
-    "sha256": "19c4e763e2b00171b54170618dfb5ad92e0db71e259a5fb2c809dd7c5cd2564e"
+    "bytes": 12682,
+    "sha256": "43ae0f3a9b169148c7ab9d74ab11e51775c624c049ca47dee7c7508751548c63"
   },
   {
     "path": "vendor/baguette/Baguette_Baguette.bundle/Web/baguette/parts/screen.js",

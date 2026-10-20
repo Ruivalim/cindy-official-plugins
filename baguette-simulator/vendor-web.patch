@@ -26,6 +26,90 @@
 +          const distance = (px - a.u - t * dx) ** 2 + (py - a.v - t * dy) ** 2;
 +          if (distance < nearest) { nearest = distance; fallback = placed; }
 +        }
+--- a/baguette/gestures/touch-gesture-source.js
++++ b/baguette/gestures/touch-gesture-source.js
+@@ -2,3 +2,5 @@
+-// touch (drag, edge gestures) streams touch1-*; a second finger abandons
+-// the touch path entirely and lets Safari's native gesturestart/change/
+-// end (SafariGestureEventSource) own the pinch — see the note below.
++// touch (drag, edge gestures) streams touch1-*; where the browser has
++// Safari's native gesturestart/change/end, a second finger abandons the
++// touch path entirely and lets SafariGestureEventSource own the pinch —
++// see the note below. Browsers without those events (Chromium) stream the
++// two real fingers as touch2-* from here instead.
+@@ -16,0 +19,3 @@
++     * @param {() => boolean} [opts.hasSafariGestures]  true when the
++     *   browser fires gesturestart/change/end (SafariGestureEventSource
++     *   then owns two-finger pinch).
+@@ -18 +23 @@
+-    constructor(screen, { overlay, getOrientation, mapClientPoint } = {}) {
++    constructor(screen, { overlay, getOrientation, mapClientPoint, hasSafariGestures } = {}) {
+@@ -21,0 +27,2 @@
++      this._hasSafariGestures = hasSafariGestures ||
++          (() => typeof root.GestureEvent !== 'undefined' || 'ongesturestart' in root);
+@@ -54,0 +62,10 @@
++      // The first two real touch points as wire coordinates.
++      const pairOf = (touches) => {
++        const pts = [touches[0], touches[1]].map(
++            (t) => this._screenPoint(t.clientX, t.clientY));
++        return {
++          inside: pts.every((p) => p.inside),
++          fingers: pts.map((p) => ({ x: p.x, y: p.y })),
++        };
++      };
++
+@@ -57,0 +75,22 @@
++        if (all.length >= 2 && !this._hasSafariGestures()) {
++          // No gesture* events in this browser (Chromium): nothing else
++          // will drive the pinch, so stream the two real fingers. Lift a
++          // streaming single touch first, same as the Safari handoff.
++          if (state && (state.mode === 'single' || state.mode === 'edge-stream')) {
++            const lift = [{ x: all[0].x, y: all[0].y }];
++            if (state.mode === 'edge-stream') this.screen.touchUp(lift, { edge: state.edge });
++            else this.screen.touchUp(lift);
++          }
++          const pair = pairOf(e.touches);
++          if (pair.inside) {
++            this.screen.touchDown(pair.fingers);
++            state = { mode: 'multi', last: pair.fingers };
++            lastMs = 0;
++          } else {
++            state = { mode: 'multi-ignored' };
++          }
++          if (this.overlay) {
++            this.overlay.setFingers(all.slice(0, 2).map((f) => ({ x: f.vx, y: f.vy })));
++          }
++          return;
++        }
+@@ -119,0 +159,16 @@
++        if (state.mode === 'multi-ignored' || state.mode === 'multi-ended') return;
++
++        if (state.mode === 'multi') {
++          if (all.length < 2) return;
++          const pair = pairOf(e.touches);
++          state.last = pair.fingers;  // freshest positions for the touch-up
++          if (this.overlay) {
++            this.overlay.setFingers(all.slice(0, 2).map((f) => ({ x: f.vx, y: f.vy })));
++          }
++          const t = performance.now();
++          if (t - lastMs < MOVE_FLUSH_MS) return;
++          lastMs = t;
++          this.screen.touchMove(pair.fingers);
++          return;
++        }
++
+@@ -147,0 +203,11 @@
++        if (state.mode === 'multi' || state.mode === 'multi-ignored' || state.mode === 'multi-ended') {
++          // Pinch ends when the first finger lifts (or on cancel); the
++          // remaining finger must not start a stray single touch.
++          if (e.type === 'touchend' && e.touches.length >= 2) return;
++          if (state.mode === 'multi') {
++            this.screen.touchUp(state.last);
++            if (this.overlay) this.overlay.clear();
++          }
++          state = e.type === 'touchend' && e.touches.length > 0 ? { mode: 'multi-ended' } : null;
++          return;
++        }
 --- a/baguette/parts/bezel.js
 +++ b/baguette/parts/bezel.js
 @@ -49 +49 @@
@@ -33,38 +117,128 @@
 +        'position:absolute;overflow:hidden;cursor:default;z-index:2;';
 --- a/baguette/parts/keyboard.js
 +++ b/baguette/parts/keyboard.js
-@@ -60,0 +61,4 @@
+@@ -23,0 +24,9 @@
++// Committed text (Chromium only — Safari has no text sink so its focus
++// behaviour is unchanged): a focused <div> is not an editable target, so a
++// host-side `insertText` / IME commit goes nowhere. A hidden single-line
++// <textarea> inside the screen element takes focus instead; its
++// `beforeinput` (insertText) and `compositionend` commits are sent through
++// the same `paste` channel, then the sink is emptied. Keys the table below
++// forwards are preventDefault-ed on keydown, so they never produce text
++// here and are not sent twice.
++//
+@@ -60,0 +70,10 @@
 +      this._inputQueue = [];
-+      this._onBlur = () => { this._inputQueue.length = 0; };
++      // Focus moving between the screen element and its text sink is not a
++      // blur from the simulator's point of view.
++      this._onBlur = (ev) => {
++        const to = ev && ev.relatedTarget;
++        if (to && (to === this._sink || to === this._el)) return;
++        this._inputQueue.length = 0;
++      };
 +      this._onVisibility = () => { if (document.hidden) this._onBlur(); };
 +      this._onRelease = ev => { if (ev.origin === location.origin && ev.data?.type === 'cindy-release-input') this._onBlur(); };
-@@ -73,0 +78 @@
+@@ -62,0 +82,7 @@
++      this._sink = null;
++      this._composing = false;
++      this._onElFocus = () => this._focusSink();
++      this._onBeforeInput = (ev) => this._handleBeforeInput(ev);
++      this._onInput = () => { if (!this._composing && this._sink) this._sink.value = ''; };
++      this._onCompositionStart = () => { this._composing = true; };
++      this._onCompositionEnd = (ev) => this._handleCompositionEnd(ev);
+@@ -72,0 +99,3 @@
++      // Safari already reports gesture* events and keeps its original
++      // focus behaviour; everywhere else the text sink receives commits.
++      if (typeof root.GestureEvent === 'undefined') this._attachSink(el);
+@@ -73,0 +103 @@
 +      el.addEventListener('blur', this._onBlur);
-@@ -78,0 +84,2 @@
+@@ -78,0 +109,2 @@
 +      document.addEventListener('visibilitychange', this._onVisibility);
 +      window.addEventListener('message', this._onRelease);
-@@ -83,0 +91,2 @@
+@@ -82,0 +115 @@
++      this._detachSink();
+@@ -83,0 +117,2 @@
 +      this._el.removeEventListener('blur', this._onBlur);
 +      this._inputQueue.length = 0;
-@@ -84,0 +94,2 @@
+@@ -84,0 +120,2 @@
 +      document.removeEventListener('visibilitychange', this._onVisibility);
 +      window.removeEventListener('message', this._onRelease);
-@@ -93,3 +104 @@
+@@ -87,0 +125,60 @@
++    _attachSink(el) {
++      const sink = document.createElement('textarea');
++      sink.setAttribute('aria-hidden', 'true');
++      sink.setAttribute('autocomplete', 'off');
++      sink.setAttribute('autocapitalize', 'off');
++      sink.setAttribute('autocorrect', 'off');
++      sink.spellcheck = false;
++      sink.tabIndex = -1;
++      sink.style.cssText =
++        'position:absolute;left:0;top:0;width:1px;height:1px;padding:0;border:0;' +
++        'margin:0;opacity:0;resize:none;overflow:hidden;pointer-events:none;' +
++        'caret-color:transparent;font-size:16px;';
++      el.appendChild(sink);
++      this._sink = sink;
++      el.addEventListener('focus', this._onElFocus);
++      // keydown bubbles from the sink to the screen element's listener.
++      sink.addEventListener('blur', this._onBlur);
++      sink.addEventListener('beforeinput', this._onBeforeInput);
++      sink.addEventListener('input', this._onInput);
++      sink.addEventListener('compositionstart', this._onCompositionStart);
++      sink.addEventListener('compositionend', this._onCompositionEnd);
++    }
++
++    _detachSink() {
++      const sink = this._sink;
++      if (!sink) return;
++      this._el.removeEventListener('focus', this._onElFocus);
++      sink.remove();
++      this._sink = null;
++      this._composing = false;
++    }
++
++    /** Hand keyboard focus to the sink; the screen element itself stays
++     *  the logical owner (see `_hasFocus`). */
++    _focusSink() {
++      if (this._sink) this._sink.focus({ preventScroll: true });
++    }
++
++    _hasFocus() {
++      const active = document.activeElement;
++      return active === this._el || (this._sink !== null && active === this._sink);
++    }
++
++    _handleBeforeInput(ev) {
++      // Composition text is sent once, at compositionend; paste has its
++      // own document-level listener.
++      if (this._composing || ev.isComposing) return;
++      if (ev.inputType !== 'insertText' || typeof ev.data !== 'string' || !ev.data) return;
++      if (!this._hasFocus()) return;
++      ev.preventDefault();
++      this.paste(ev.data);
++    }
++
++    _handleCompositionEnd(ev) {
++      this._composing = false;
++      if (this._sink) this._sink.value = '';
++      if (!this._hasFocus()) return;
++      if (typeof ev.data === 'string' && ev.data) this.paste(ev.data);
++    }
++
+@@ -93,3 +190 @@
 -      const env = { type: 'key', code };
 -      if (modifiers && modifiers.length) env.modifiers = modifiers;
 -      this.transport._dispatch(env);
 +      this._clipboard('key', undefined, code, modifiers);
-@@ -100 +109 @@
+@@ -100 +195 @@
 -      this.transport._dispatch({ type: 'type', text });
 +      this.paste(text);
-@@ -106 +115 @@
+@@ -106 +201 @@
 -      this.transport._dispatch({ type: 'paste', text });
 +      this._clipboard('paste', text);
-@@ -114 +123,30 @@
+@@ -114 +209 @@
 -      this.transport._dispatch({ type: 'copy' });
 +      this._clipboard('copy');
-+    }
-+
+@@ -116,0 +212,29 @@
 +    async _clipboard(action, text, code, modifiers) {
 +      if (this._inputPending) {
 +        const request = [action,text,code,modifiers];
@@ -92,11 +266,22 @@
 +        this._inputQueue.length = 0;
 +        window.alert('Input failed: ' + error.message);
 +      } finally { this._inputPending = false; this._activeInput = null; const next = this._inputQueue.shift(); if (next) this._clipboard(...next); }
-@@ -122,0 +161 @@
++    }
++
+@@ -121 +245,4 @@
+-      if (document.activeElement !== this._el) return;
++      if (!this._hasFocus()) return;
++      // Keys that drive an active IME composition belong to the IME; its
++      // committed text arrives via compositionend.
++      if (ev.isComposing || ev.keyCode === 229) return;
+@@ -122,0 +250 @@
 +      if (ev.repeat) { ev.preventDefault(); return; }
+@@ -146 +274 @@
+-      if (document.activeElement !== this._el) return;
++      if (!this._hasFocus()) return;
 --- a/farm/farm.html
 +++ b/farm/farm.html
-@@ -7,3 +6,0 @@
+@@ -6,3 +5,0 @@
 -<link rel="preconnect" href="https://fonts.googleapis.com">
 -<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 -<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap">

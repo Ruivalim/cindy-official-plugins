@@ -4,11 +4,13 @@ Upstream: [tddworks/baguette v0.2.0](https://github.com/tddworks/baguette/releas
 
 ## Exact source modifications
 
-`vendor-web.patch` is the complete diff against `Sources/Baguette/Resources/Web` at tag v0.2.0 (official release archive Web resources). These ten Web files differ (nine carried-forward patches and the reviewed Duo edge-drag fix):
+`vendor-web.patch` is the complete diff against `Sources/Baguette/Resources/Web` at tag v0.2.0 (official release archive Web resources). These eleven Web files differ (nine carried-forward patches, the reviewed Duo edge-drag fix and the Chromium touch fix):
 
 - `stream-session.js`: bounded reconnect after unexpected socket close; cancel scheduled reconnect on deliberate stop.
 - `baguette/parts/keyboard.js`: delegate key/text/clipboard actions to the same-origin /clipboard private-device bridge (fragment port never selects a destination), suppress OS repeats and duplicate in-flight paste, serialize keys/paste/copy, report queue overflow with English fallback for added input errors, drop unsent keys on blur/hide/detach/release.
 - `baguette/parts/bezel.js`, `baguette/carplay/carplay-frame.js`, `sim-native.html`: standard arrow cursor instead of crosshair.
+- `baguette/gestures/touch-gesture-source.js`: when the browser has no Safari `gesture*` events (Chromium), a second finger streams the two real touch points as `touch2-down/move/up` (lifting any single touch first, ending on the first lift or cancel) instead of only painting the overlay; with `GestureEvent` present the original hand-off to `SafariGestureEventSource` is untouched, so no touch2 sequence is sent twice.
+- `baguette/parts/keyboard.js` (additional to the bridge changes above): without `GestureEvent`, a hidden, pointer-events-none `<textarea>` inside the screen element takes focus; `beforeinput` `insertText` and `compositionend` commits go through the existing `paste()` bridge and the sink is emptied. Key events from an active IME composition are ignored, `keydown` of the forwarded table and the document `paste` listener behave as before, and focus moving between the screen element and its sink is not treated as blur. Safari creates no sink and keeps its previous focus behaviour.
 
 - `farm/farm.html`: remove remote font/preconnect links; keep the existing system-font fallback and all Device Farm controls.
 - `sim-location.js`: map tiles/search use same-origin `/map/` routes; the Node worker validates coordinates/query length and sends HTTPS only to fixed OSM hosts, with no redirects or forwarded credentials.
@@ -69,3 +71,7 @@ The host release binary is built with Swift `-Osize`, stripped with the standard
 Live `screen_quad.litPanel` changes now notify the page input mapper, synchronizing primary/portrait and secondary/landscape-left before subsequent taps or drags. Duplicate metadata preserves manual rotation; obsolete stream callbacks are rejected. The callback survives model/retry attachment. A production-stream/page-mapper regression covers opening, closing, manual rotation, invalid panel names and stale streams.
 
 Panel-switch synchronization also updates `Sim3DPanel.interfaceOrientation` through its existing setter, so subsequent camera messages and the page rotation cycle agree. The regression exercises actual camera serialization after manual rotation and folding, including a later camera update that must not restore the old orientation.
+
+## Chromium touch and committed text (0.1.24)
+
+Scope: viewer Web only. No new network path, endpoint, credential, native code or dynamic execution: committed text uses the same-origin `/clipboard` bridge with the existing capability; touch2 frames use the existing WebSocket envelopes. `vendor-web.patch` and `vendor-inventory.json` are updated for `touch-gesture-source.js` and `keyboard.js` (inventory entries for the other 95 files are unchanged). No simulator was booted for this change. Real headless Chromium run (CDP) of the vendored modules against a mock screen/transport: one-finger then two-finger touch produced touch1-down/up then touch2-down, six touch2-move and touch2-up; `Input.insertText('中文ABC')` produced exactly one `beforeinput insertText` and one paste request, and a following real `a` keypress still produced one key request. Unit coverage is in `.tests/baguette/chromium-touch-text.test.cjs`.
