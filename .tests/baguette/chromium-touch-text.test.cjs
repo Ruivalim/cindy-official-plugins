@@ -149,3 +149,53 @@ test('Chromium: touch/pointer down hands focus to the sink (touchstart is cancel
  s.el.fire('pointerdown',{});s.el.fire('touchstart',{});assert.notEqual(s.document.activeElement,s.el);
  assert.equal(s.el.handlers.pointerdown,undefined);
 });
+
+// What the simulator receives: pastes append text, Space keys append ' '.
+const received=(calls)=>calls.map(c=>c.action==='paste'?c.text:(c.action==='key'&&c.code==='Space'?' ':`<${c.code}>`)).join('');
+async function typeChars(text,{gapFlushes=false}={}){
+ const h=keyboardHarness({safari:false});h.el.focus();
+ // the sink receives one insertText commit per character while earlier requests are still in flight
+ for(const ch of [...text])h.sink.fire('beforeinput',{inputType:'insertText',data:ch,isComposing:false});
+ await h.flush();
+ return h;
+}
+
+test('per-character commits never lose repeated letters or spaces (hello world / aa  bb / mixed)',async()=>{
+ for(const text of ['hello world','aa  bb','hi 中文 ok','l l  l','a'.repeat(5)]){
+  const h=await typeChars(text);
+  assert.equal(received(h.calls),text,text);
+  assert.ok(h.calls.length<[...text].length||[...text].length<=2,'burst is coalesced: '+text);
+ }
+});
+
+test('commits are not subject to paste duplicate suppression; a held Cmd+V paste still is',async()=>{
+ const h=keyboardHarness({safari:false});h.el.focus();
+ h.sink.fire('beforeinput',{inputType:'insertText',data:'l',isComposing:false});
+ h.sink.fire('beforeinput',{inputType:'insertText',data:'l',isComposing:false});
+ await h.flush();assert.equal(received(h.calls),'ll');
+ const d=keyboardHarness({safari:false});d.el.focus();
+ d.keyboard.paste('Google');d.keyboard.paste('Google');await d.flush();
+ assert.deepEqual(d.calls.map(c=>c.text),['Google']);
+});
+
+test('whitespace-only commits use Space keys; spaces inside a burst stay in the paste; order with keys is kept',async()=>{
+ const h=keyboardHarness({safari:false});h.el.focus();
+ h.sink.fire('beforeinput',{inputType:'insertText',data:' ',isComposing:false});
+ await h.flush();
+ assert.deepEqual(h.calls.map(c=>[c.action,c.code,c.text]),[['key','Space',undefined]]);
+ h.calls.length=0;
+ h.sink.fire('beforeinput',{inputType:'insertText',data:'a',isComposing:false});
+ h.sink.fire('beforeinput',{inputType:'insertText',data:' ',isComposing:false});
+ h.sink.fire('beforeinput',{inputType:'insertText',data:'b',isComposing:false});
+ h.keyboard.key('Enter',[]);
+ h.sink.fire('beforeinput',{inputType:'insertText',data:'c',isComposing:false});
+ await h.flush();
+ assert.equal(received(h.calls),'a b<Enter>c');
+ assert.deepEqual(h.calls.map(c=>c.action),['paste','key','paste','key','paste']); // a, Space, b, Enter, c (nothing queued to merge the space into)
+});
+
+test('IME composition end is also coalesced without loss',async()=>{
+ const h=keyboardHarness({safari:false});h.el.focus();
+ for(const w of ['你','好','你','好']){h.sink.fire('compositionstart',{});h.sink.fire('compositionend',{data:w});}
+ await h.flush();assert.equal(received(h.calls),'你好你好');
+});

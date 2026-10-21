@@ -127,7 +127,11 @@
 +// forwards are preventDefault-ed on keydown, so they never produce text
 +// here and are not sent twice.
 +//
-@@ -60,0 +70,10 @@
+@@ -52,0 +62,3 @@
++  // One coalesced commit stays well below the bridge's 8000-character cap.
++  const COMMIT_MAX = 2000;
++
+@@ -60,0 +73,10 @@
 +      this._inputQueue = [];
 +      // Focus moving between the screen element and its text sink is not a
 +      // blur from the simulator's point of view.
@@ -138,7 +142,7 @@
 +      };
 +      this._onVisibility = () => { if (document.hidden) this._onBlur(); };
 +      this._onRelease = ev => { if (ev.origin === location.origin && ev.data?.type === 'cindy-release-input') this._onBlur(); };
-@@ -62,0 +82,11 @@
+@@ -62,0 +85,11 @@
 +      this._sink = null;
 +      this._composing = false;
 +      this._onElFocus = () => this._focusSink();
@@ -150,24 +154,24 @@
 +      this._onInput = () => { if (!this._composing && this._sink) this._sink.value = ''; };
 +      this._onCompositionStart = () => { this._composing = true; };
 +      this._onCompositionEnd = (ev) => this._handleCompositionEnd(ev);
-@@ -72,0 +103,3 @@
+@@ -72,0 +106,3 @@
 +      // Safari already reports gesture* events and keeps its original
 +      // focus behaviour; everywhere else the text sink receives commits.
 +      if (typeof root.GestureEvent === 'undefined') this._attachSink(el);
-@@ -73,0 +107 @@
+@@ -73,0 +110 @@
 +      el.addEventListener('blur', this._onBlur);
-@@ -78,0 +113,2 @@
+@@ -78,0 +116,2 @@
 +      document.addEventListener('visibilitychange', this._onVisibility);
 +      window.addEventListener('message', this._onRelease);
-@@ -82,0 +119 @@
+@@ -82,0 +122 @@
 +      this._detachSink();
-@@ -83,0 +121,2 @@
+@@ -83,0 +124,2 @@
 +      this._el.removeEventListener('blur', this._onBlur);
 +      this._inputQueue.length = 0;
-@@ -84,0 +124,2 @@
+@@ -84,0 +127,2 @@
 +      document.removeEventListener('visibilitychange', this._onVisibility);
 +      window.removeEventListener('message', this._onRelease);
-@@ -87,0 +129,71 @@
+@@ -87,0 +132,71 @@
 +    _attachSink(el) {
 +      const sink = document.createElement('textarea');
 +      sink.setAttribute('aria-hidden', 'true');
@@ -229,42 +233,66 @@
 +      if (ev.inputType !== 'insertText' || typeof ev.data !== 'string' || !ev.data) return;
 +      if (!this._hasFocus()) return;
 +      ev.preventDefault();
-+      this.paste(ev.data);
++      this.commitText(ev.data);
 +    }
 +
 +    _handleCompositionEnd(ev) {
 +      this._composing = false;
 +      if (this._sink) this._sink.value = '';
 +      if (!this._hasFocus()) return;
-+      if (typeof ev.data === 'string' && ev.data) this.paste(ev.data);
++      if (typeof ev.data === 'string' && ev.data) this.commitText(ev.data);
 +    }
 +
-@@ -93,3 +205 @@
+@@ -93,3 +208 @@
 -      const env = { type: 'key', code };
 -      if (modifiers && modifiers.length) env.modifiers = modifiers;
 -      this.transport._dispatch(env);
 +      this._clipboard('key', undefined, code, modifiers);
-@@ -100 +210 @@
+@@ -100 +213 @@
 -      this.transport._dispatch({ type: 'type', text });
 +      this.paste(text);
-@@ -106 +216 @@
+@@ -106 +219 @@
 -      this.transport._dispatch({ type: 'paste', text });
 +      this._clipboard('paste', text);
-@@ -114 +224 @@
+@@ -108,0 +222,23 @@
++    /** Committed text typed on a soft keyboard / IME — every character is
++     *  meaningful, so unlike `paste` (whose adjacent-duplicate suppression
++     *  guards a held Cmd+V) nothing is dropped here. While a request is in
++     *  flight, text coalesces into the last queued commit so a burst of
++     *  per-character commits becomes a few exact pastes. A lone run of
++     *  spaces is sent as Space key presses: no pasteboard round trip for
++     *  whitespace-only text. */
++    commitText(text) {
++      if (this._inputPending && this._mergeCommit(text)) return;
++      if (/^ {1,16}$/.test(text)) {
++        for (let i = 0; i < text.length; i++) this.key('Space', []);
++        return;
++      }
++      this._clipboard('paste', text, undefined, undefined, 'commit');
++    }
++
++    _mergeCommit(text) {
++      const tail = this._inputQueue[this._inputQueue.length - 1];
++      if (!tail || tail[0] !== 'paste' || tail[4] !== 'commit' || tail[1].length + text.length > COMMIT_MAX) return false;
++      tail[1] += text;
++      return true;
++    }
++
+@@ -114 +250 @@
 -      this.transport._dispatch({ type: 'copy' });
 +      this._clipboard('copy');
-@@ -116,0 +227,29 @@
-+    async _clipboard(action, text, code, modifiers) {
+@@ -116,0 +253,29 @@
++    async _clipboard(action, text, code, modifiers, commit) {
 +      if (this._inputPending) {
-+        const request = [action,text,code,modifiers];
++        const request = [action,text,code,modifiers,commit];
 +        const last = this._inputQueue.length ? this._inputQueue[this._inputQueue.length-1] : this._activeInput;
-+        if (action === 'paste' && last?.[0] === 'paste' && last[1] === text) return;
++        if (action === 'paste' && !commit && last?.[0] === 'paste' && last[1] === text) return;
 +        if (this._inputQueue.length < 32) this._inputQueue.push(request);
 +        else window.alert('Input queue is full. Wait for pending input to finish, then retry.');
 +        return;
 +      }
 +      this._inputPending = true;
-+      this._activeInput = [action,text,code,modifiers];
++      this._activeInput = [action,text,code,modifiers,commit];
 +      const capability = new URLSearchParams(location.hash.slice(1)).get('cindyClipboard');
 +      const match = /^(\d{1,5})\.([a-f0-9]{64})$/.exec(capability || '');
 +      const udid = /^\/simulators\/([a-f0-9-]{36})\/?$/i.exec(location.pathname)?.[1];
@@ -283,15 +311,15 @@
 +      } finally { this._inputPending = false; this._activeInput = null; const next = this._inputQueue.shift(); if (next) this._clipboard(...next); }
 +    }
 +
-@@ -121 +260,4 @@
+@@ -121 +286,4 @@
 -      if (document.activeElement !== this._el) return;
 +      if (!this._hasFocus()) return;
 +      // Keys that drive an active IME composition belong to the IME; its
 +      // committed text arrives via compositionend.
 +      if (ev.isComposing || ev.keyCode === 229) return;
-@@ -122,0 +265 @@
+@@ -122,0 +291 @@
 +      if (ev.repeat) { ev.preventDefault(); return; }
-@@ -146 +289 @@
+@@ -146 +315 @@
 -      if (document.activeElement !== this._el) return;
 +      if (!this._hasFocus()) return;
 --- a/farm/farm.html

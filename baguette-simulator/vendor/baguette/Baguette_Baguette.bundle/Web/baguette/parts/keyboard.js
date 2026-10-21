@@ -59,6 +59,9 @@
     'Semicolon','Quote','Backquote','Comma','Period','Slash',
   ]);
 
+  // One coalesced commit stays well below the bridge's 8000-character cap.
+  const COMMIT_MAX = 2000;
+
   class Keyboard {
     /**
      * @param {object} _def      SimulatorDefinition.keyboard (reserved)
@@ -187,14 +190,14 @@
       if (ev.inputType !== 'insertText' || typeof ev.data !== 'string' || !ev.data) return;
       if (!this._hasFocus()) return;
       ev.preventDefault();
-      this.paste(ev.data);
+      this.commitText(ev.data);
     }
 
     _handleCompositionEnd(ev) {
       this._composing = false;
       if (this._sink) this._sink.value = '';
       if (!this._hasFocus()) return;
-      if (typeof ev.data === 'string' && ev.data) this.paste(ev.data);
+      if (typeof ev.data === 'string' && ev.data) this.commitText(ev.data);
     }
 
     // --- domain verbs ---
@@ -216,6 +219,29 @@
       this._clipboard('paste', text);
     }
 
+    /** Committed text typed on a soft keyboard / IME — every character is
+     *  meaningful, so unlike `paste` (whose adjacent-duplicate suppression
+     *  guards a held Cmd+V) nothing is dropped here. While a request is in
+     *  flight, text coalesces into the last queued commit so a burst of
+     *  per-character commits becomes a few exact pastes. A lone run of
+     *  spaces is sent as Space key presses: no pasteboard round trip for
+     *  whitespace-only text. */
+    commitText(text) {
+      if (this._inputPending && this._mergeCommit(text)) return;
+      if (/^ {1,16}$/.test(text)) {
+        for (let i = 0; i < text.length; i++) this.key('Space', []);
+        return;
+      }
+      this._clipboard('paste', text, undefined, undefined, 'commit');
+    }
+
+    _mergeCommit(text) {
+      const tail = this._inputQueue[this._inputQueue.length - 1];
+      if (!tail || tail[0] !== 'paste' || tail[4] !== 'commit' || tail[1].length + text.length > COMMIT_MAX) return false;
+      tail[1] += text;
+      return true;
+    }
+
     /** Copy the focused field's selection out of the sim onto the
      *  host Mac's clipboard (server: Cmd+C sim-side, then pbsync
      *  <udid> host — images included). Mirror of `paste`; the server
@@ -224,17 +250,17 @@
       this._clipboard('copy');
     }
 
-    async _clipboard(action, text, code, modifiers) {
+    async _clipboard(action, text, code, modifiers, commit) {
       if (this._inputPending) {
-        const request = [action,text,code,modifiers];
+        const request = [action,text,code,modifiers,commit];
         const last = this._inputQueue.length ? this._inputQueue[this._inputQueue.length-1] : this._activeInput;
-        if (action === 'paste' && last?.[0] === 'paste' && last[1] === text) return;
+        if (action === 'paste' && !commit && last?.[0] === 'paste' && last[1] === text) return;
         if (this._inputQueue.length < 32) this._inputQueue.push(request);
         else window.alert('Input queue is full. Wait for pending input to finish, then retry.');
         return;
       }
       this._inputPending = true;
-      this._activeInput = [action,text,code,modifiers];
+      this._activeInput = [action,text,code,modifiers,commit];
       const capability = new URLSearchParams(location.hash.slice(1)).get('cindyClipboard');
       const match = /^(\d{1,5})\.([a-f0-9]{64})$/.exec(capability || '');
       const udid = /^\/simulators\/([a-f0-9-]{36})\/?$/i.exec(location.pathname)?.[1];

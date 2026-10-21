@@ -4,15 +4,17 @@
   "baguette": "0.2.0",
   "status": "viewer-chromium-touch-text-verified-in-headless-chrome-without-simulator",
   "passed": [
-    "node --test of the four repository gate files plus the baguette suite passed (88 tests), including 8 new cases for Chromium two-finger touch2, Safari no-duplicate hand-off, committed text via paste, IME composition and sink focus",
+    "node --test of the four repository gate files plus the baguette suite passed (92 tests), including 12 new cases for Chromium two-finger touch2, Safari no-duplicate hand-off, committed text via paste, IME composition and sink focus",
     "Real headless Chrome (CDP, no window) running the vendored touch and keyboard modules against a mock screen and transport: single then two-finger touch produced touch1-down/up, touch2-down, six touch2-move and touch2-up; Input.insertText('中文ABC') produced exactly one beforeinput insertText and one paste request; a following real 'a' keypress produced one key request",
     "Real headless Chrome (CDP, no window) in the embedded layout (control page + same-origin iframe#screen, sink not pre-focused): before the focus hand-off a single-finger tap followed by Input.insertText produced no paste request; after it the tap focuses the sink and Input.insertText('hello 中文') produced exactly one paste request",
-    "The hidden text sink carries inputmode=\"none\" (asserted by unit test); in the embedded headless Chrome layout Input.insertText still produced exactly one paste request. Whether a real touch Chromium suppresses the soft keyboard is not device-verified"
+    "The hidden text sink carries inputmode=\"none\" (asserted by unit test); in the embedded headless Chrome layout Input.insertText still produced exactly one paste request. Whether a real touch Chromium suppresses the soft keyboard is not device-verified",
+    "Real headless Chrome (CDP, no window), per-character Input.insertText through a 400 ms-latency /clipboard: before the fix 'hello world' reached the bridge as 'helo world' and 'aa  bb' as 'a b'; after it 'hello world', 'aa  bb' and 'hi 中文 ok' arrive exactly (3, 2 and 3 requests); unit tests cover the same strings plus lone spaces, key ordering, IME commits and held-paste suppression"
   ],
   "notVerified": [
     "No simulator was booted and no plugin package was installed: real pinch zoom in a simulated app and Chinese text appearing in a simulator input field are not verified, pending the end-to-end acceptance",
     "Electron webContents.insertText and webContents.sendInputEvent were not exercised; CDP Input.insertText was used as the closest Chromium equivalent",
-    "Safari behaviour is unchanged by code inspection and unit coverage only"
+    "Safari behaviour is unchanged by code inspection and unit coverage only",
+    "The reported loss of a lone space in the simulator Safari address bar cannot be reproduced without a device; the client did send it as a paste. Lone spaces are now sent as Space key presses instead of a pasteboard write, which is expected but not device-verified"
   ],
   "previousReleaseVerification": {
     "date": "2026-10-13",
