@@ -129,6 +129,9 @@
     _attachSink(el) {
       const sink = document.createElement('textarea');
       sink.setAttribute('aria-hidden', 'true');
+      // Focusable and able to receive committed text, but no on-screen
+      // keyboard on touch Chromium when the screen is tapped.
+      sink.setAttribute('inputmode', 'none');
       sink.setAttribute('autocomplete', 'off');
       sink.setAttribute('autocapitalize', 'off');
       sink.setAttribute('autocorrect', 'off');

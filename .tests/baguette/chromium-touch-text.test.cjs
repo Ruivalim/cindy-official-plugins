@@ -88,7 +88,7 @@ function keyboardHarness({safari}){
 
 test('Chromium: committed insertText goes through paste once; keydown path is unchanged',async()=>{
  const {keyboard,el,document,calls,flush,sink}=keyboardHarness({safari:false});
- assert.ok(sink);assert.equal(sink.attrs['aria-hidden'],'true');
+ assert.ok(sink);assert.equal(sink.attrs['aria-hidden'],'true');assert.equal(sink.attrs.inputmode,'none');
  el.focus();assert.equal(document.activeElement,sink);
  const ev=sink.fire('beforeinput',{inputType:'insertText',data:'中文ABC',isComposing:false});
  assert.equal(ev.defaultPrevented,true);

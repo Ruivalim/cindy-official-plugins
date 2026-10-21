@@ -167,10 +167,13 @@
 @@ -84,0 +124,2 @@
 +      document.removeEventListener('visibilitychange', this._onVisibility);
 +      window.removeEventListener('message', this._onRelease);
-@@ -87,0 +129,68 @@
+@@ -87,0 +129,71 @@
 +    _attachSink(el) {
 +      const sink = document.createElement('textarea');
 +      sink.setAttribute('aria-hidden', 'true');
++      // Focusable and able to receive committed text, but no on-screen
++      // keyboard on touch Chromium when the screen is tapped.
++      sink.setAttribute('inputmode', 'none');
 +      sink.setAttribute('autocomplete', 'off');
 +      sink.setAttribute('autocapitalize', 'off');
 +      sink.setAttribute('autocorrect', 'off');
@@ -236,21 +239,21 @@
 +      if (typeof ev.data === 'string' && ev.data) this.paste(ev.data);
 +    }
 +
-@@ -93,3 +202 @@
+@@ -93,3 +205 @@
 -      const env = { type: 'key', code };
 -      if (modifiers && modifiers.length) env.modifiers = modifiers;
 -      this.transport._dispatch(env);
 +      this._clipboard('key', undefined, code, modifiers);
-@@ -100 +207 @@
+@@ -100 +210 @@
 -      this.transport._dispatch({ type: 'type', text });
 +      this.paste(text);
-@@ -106 +213 @@
+@@ -106 +216 @@
 -      this.transport._dispatch({ type: 'paste', text });
 +      this._clipboard('paste', text);
-@@ -114 +221 @@
+@@ -114 +224 @@
 -      this.transport._dispatch({ type: 'copy' });
 +      this._clipboard('copy');
-@@ -116,0 +224,29 @@
+@@ -116,0 +227,29 @@
 +    async _clipboard(action, text, code, modifiers) {
 +      if (this._inputPending) {
 +        const request = [action,text,code,modifiers];
@@ -280,15 +283,15 @@
 +      } finally { this._inputPending = false; this._activeInput = null; const next = this._inputQueue.shift(); if (next) this._clipboard(...next); }
 +    }
 +
-@@ -121 +257,4 @@
+@@ -121 +260,4 @@
 -      if (document.activeElement !== this._el) return;
 +      if (!this._hasFocus()) return;
 +      // Keys that drive an active IME composition belong to the IME; its
 +      // committed text arrives via compositionend.
 +      if (ev.isComposing || ev.keyCode === 229) return;
-@@ -122,0 +262 @@
+@@ -122,0 +265 @@
 +      if (ev.repeat) { ev.preventDefault(); return; }
-@@ -146 +286 @@
+@@ -146 +289 @@
 -      if (document.activeElement !== this._el) return;
 +      if (!this._hasFocus()) return;
 --- a/farm/farm.html

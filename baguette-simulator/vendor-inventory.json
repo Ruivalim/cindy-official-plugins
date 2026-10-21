@@ -226,8 +226,8 @@
   },
   {
     "path": "vendor/baguette/Baguette_Baguette.bundle/Web/baguette/parts/keyboard.js",
-    "bytes": 13596,
-    "sha256": "1cd02406de4fe9e1c6197702ae6a8c5b14aabe5f14a470d8c4d079d0d91e4466"
+    "bytes": 13777,
+    "sha256": "5150670070966a80a3620a9bf8d9287008eb798a5e9ff1845a5a0456f3ad63a0"
   },
   {
     "path": "vendor/baguette/Baguette_Baguette.bundle/Web/baguette/parts/screen.js",
