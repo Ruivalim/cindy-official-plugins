@@ -65,6 +65,11 @@ async function nativeKey(device,code,modifiers=[]) {
  const dev=(await run('/usr/bin/xcode-select',['-p'],{timeout:5000})).stdout;
  return run(path.join(__dirname,'../native/keyboard'),[DEVICE_SET,device.udid,dev,String(key),String(mask)],{mutation:true,timeout:15000});
 }
+// Several chords in one helper process: one framework load, one release, one device lookup.
+async function nativeKeys(device,chords) {
+ const dev=(await run('/usr/bin/xcode-select',['-p'],{timeout:5000})).stdout;
+ return run(path.join(__dirname,'../native/keyboard'),[DEVICE_SET,device.udid,dev,...chords.flatMap(([key,mask])=>[String(key),String(mask)])],{mutation:true,timeout:15000+chords.length*100});
+}
 async function clipboardAction(p) {
  if(keyboardBusy)throw new Failure('INPUT_BUSY','Another keyboard operation is running; retry after it finishes');
  keyboardBusy=true;
@@ -76,6 +81,14 @@ async function clipboardAction(p) {
   const device=await target(p);lap('target');
   if(p.action==='release'){await nativeKey(device,null);lap('release');timing.total=Date.now()-began;return {timing};}
   if(p.action==='key'){await nativeKey(device,p.code,p.modifiers);lap('key');timing.total=Date.now()-began;return {timing};}
+  if(p.action==='type') {
+    // Typed as HID key chords (no pasteboard): US-layout printable ASCII only.
+    const keys=require('./keys.cjs');
+    const text=string(p.text,'text',256);
+    if(!keys.typeable(text))throw new Failure('INVALID_ARGUMENT','Use printable US-keyboard ASCII for typed text; paste anything else');
+    await nativeKeys(device,keys.textChords(text));lap('type');
+    timing.total=Date.now()-began;return {timing};
+  }
   if(p.action==='paste') {
     const text=string(p.text,'text',8000);
     // First release any existing repeat before replacing its clipboard payload.

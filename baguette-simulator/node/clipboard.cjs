@@ -49,7 +49,7 @@ async function createClipboard(origin,perform,control){
     try{const result=await control[p.action](p);return reply(result?.ok===false?409:200,result);}
     catch(error){return reply(503,{errorCode:error.code||'CONTROL_FAILED',error:'Operation not confirmed. Refresh the device status in Baguette settings.',execution:error.execution||'unknown'});}
    }
-   if(!['paste','copy','key','release'].includes(p.action)||(p.action==='paste'&&(typeof p.text!=='string'||!p.text.length||p.text.length>8000||p.text.includes('\0'))))return reply(400,{error:'Invalid clipboard request',execution:'not_executed'});
+   if(!['paste','type','copy','key','release'].includes(p.action)||(['paste','type'].includes(p.action)&&(typeof p.text!=='string'||!p.text.length||p.text.length>(p.action==='type'?256:8000)||p.text.includes('\0'))))return reply(400,{error:'Invalid clipboard request',execution:'not_executed'});
    if(busy)return reply(409,{error:'Clipboard busy; try again',execution:'not_executed'});
    busy=true;
    try{let timing;const operation=async()=>{await control?.guard?.();timing=(await perform(p))?.timing;control?.touch?.();};await(control?.run?control.run(operation):operation());reply(200,{ok:true,execution:'executed',...(timing&&typeof timing==='object'?{timing}:{})});}

@@ -66,6 +66,10 @@
   // inter-word spacing.
   const WORD = /[\p{L}\p{N}]/u;
   const UNSPACED = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+  // Printable US-keyboard ASCII and newline: typed as key chords by the bridge.
+  const TYPEABLE = /^[\x20-\x7e\n]$/;
+  // One typed request stays within the bridge's 256-character limit.
+  const TYPE_MAX = 256;
   const isWord = (c) => c !== null && WORD.test(c) && !UNSPACED.test(c);
   const firstChar = (t) => String.fromCodePoint(t.codePointAt(0));
   const lastChar = (t) => { const a = Array.from(t); return a[a.length - 1] || null; };
@@ -242,18 +246,42 @@
 
     /** Split a commit into deliveries that keep the result identical to
      *  the typed text:
-     *   - leading spaces become Space key presses (a whitespace-only
-     *     pasteboard write was observed to be unreliable, and spaces keep
-     *     exact positions that way);
-     *   - multi-character text that starts with a word character right
-     *     after a word character we already delivered is sent one
-     *     character at a time, because the device inserted a separating
-     *     space in front of such a paste ("h" + "ello world" became
-     *     "h ello world");
-     *   - everything else stays one paste. */
+     *   - printable US-keyboard ASCII is typed as HID key chords (`type`:
+     *     fast, no pasteboard, so no device-side smart-paste spacing);
+     *   - everything else (CJK, emoji, accents, …) is pasted;
+     *   - a multi-character paste that starts with a word character right
+     *     after a word character we delivered is sent one character at a
+     *     time, because the device inserted a separating space in front of
+     *     such a paste ("h" + "ello world" became "h ello world").
+     *  `#cindyTextInput=paste` in the viewer URL restores paste-only text. */
     _planCommit(text) {
       const plan = [];
       let tail = this._tail;
+      const pasteOnly = new URLSearchParams(location.hash.slice(1)).get('cindyTextInput') === 'paste';
+      let run = '', typed = null;
+      const flush = () => {
+        if (!run) return;
+        if (typed) {
+          for (let i = 0; i < run.length; i += TYPE_MAX) plan.push(['type', run.slice(i, i + TYPE_MAX), undefined, undefined, undefined]);
+          tail = run[run.length - 1];
+        } else {
+          tail = this._planPaste(plan, run, tail);
+        }
+        run = '';
+      };
+      for (const c of text) {
+        const isTyped = !pasteOnly && TYPEABLE.test(c);
+        if (typed !== isTyped) flush();
+        typed = isTyped;
+        run += c;
+      }
+      flush();
+      return plan;
+    }
+
+    /** Paste deliveries for one non-typeable run (or all text when typing
+     *  is disabled); returns the tail character after them. */
+    _planPaste(plan, text, tail) {
       let rest = text;
       while (rest) {
         const c = firstChar(rest);
@@ -267,14 +295,14 @@
           rest = rest.slice(c.length);
         } else {
           plan.push(['paste', rest, undefined, undefined, 'commit']);
-          break;
+          return lastChar(rest);
         }
       }
-      return plan;
+      return tail;
     }
 
     _noteSent(action, text, code) {
-      if (action === 'paste') this._tail = lastChar(text);
+      if (action === 'paste' || action === 'type') this._tail = lastChar(text);
       else if (action === 'key') this._tail = code === 'Space' ? ' ' : code === 'Enter' ? '\n' : null;
     }
 
@@ -324,7 +352,7 @@
         if (!response.ok || !result.ok) throw Error(result.error || 'Clipboard failed');
         // Last 50 round trips (durations only, never contents) for latency diagnosis.
         const log = root.__baguetteInputTimings || (root.__baguetteInputTimings = []);
-        log.push({ action, chars: action === 'paste' ? Array.from(text).length : undefined, roundTripMs: Date.now() - startedAt, server: result.timing });
+        log.push({ action, chars: action === 'paste' || action === 'type' ? Array.from(text).length : undefined, roundTripMs: Date.now() - startedAt, server: result.timing });
         if (log.length > 50) log.shift();
       } catch (error) {
         // Visible feedback; never print potentially sensitive clipboard contents.

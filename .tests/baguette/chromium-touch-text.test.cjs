@@ -72,13 +72,13 @@ test('Safari: second finger is still left to gesture* — exactly one touch2 seq
  assert.deepEqual(calls.slice(2).map(c=>[c.name,c.n]),[['down',2],['move',2],['up',2]]);
 });
 
-function keyboardHarness({safari}){
+function keyboardHarness({safari,pasteOnly=false}){
  const calls=[],pending=[];
  const sinkEmitter=()=>Object.assign(emitter(),{attrs:{},style:{},value:'',tabIndex:0,removed:false,focused:0,setAttribute(k,v){this.attrs[k]=v;},focus(){this.focused++;context.document.activeElement=this;},remove(){this.removed=true;}});
  const window=Object.assign(emitter(),{alert(m){throw Error('Unexpected alert: '+m);}});
  if(safari)window.GestureEvent=function(){};
  const document=Object.assign(emitter(),{activeElement:null,createElement:()=>sinkEmitter()});
- const context={window,document,URLSearchParams,AbortSignal,location:{pathname:'/simulators/00000000-0000-4000-8000-000000000001',hash:'#cindyClipboard=1234.'+'a'.repeat(64)},fetch:(_u,opts)=>{calls.push(JSON.parse(opts.body));return new Promise(r=>pending.push(()=>r({ok:true,json:async()=>({ok:true,timing:{total:5}})})));}};
+ const context={window,document,URLSearchParams,AbortSignal,location:{pathname:'/simulators/00000000-0000-4000-8000-000000000001',hash:'#cindyClipboard=1234.'+'a'.repeat(64)+(pasteOnly?'&cindyTextInput=paste':'')},fetch:(_u,opts)=>{calls.push(JSON.parse(opts.body));return new Promise(r=>pending.push(()=>r({ok:true,json:async()=>({ok:true,timing:{total:5}})})));}};
  load(context,'parts/keyboard.js');
  const el=Object.assign(emitter(),{tabIndex:-1,children:[],appendChild(c){this.children.push(c);},focus(){document.activeElement=el;el.fire('focus');}});
  const keyboard=new window.Baguette._Keyboard({},{});keyboard.attach(el);
@@ -97,10 +97,11 @@ test('Chromium: committed insertText goes through paste once; keydown path is un
  const key=sink.fire('beforeinput',{inputType:'insertText',data:'',isComposing:false});assert.equal(key.defaultPrevented,undefined);
  el.fire('keydown',{code:'KeyA',keyCode:65,metaKey:false,ctrlKey:false,shiftKey:false,altKey:false,repeat:false});
  await flush();
- assert.deepEqual(calls.map(c=>[c.action,c.text,c.code]),[['paste','中文ABC',undefined],['key',undefined,'KeyA']]);
+ // CJK is pasted, printable US ASCII is typed as key chords, in order
+ assert.deepEqual(calls.map(c=>[c.action,c.text,c.code]),[['paste','中文',undefined],['type','ABC',undefined],['key',undefined,'KeyA']]);
  // document-level Cmd+V paste still works while the sink owns focus, and is not doubled
  document.fire('paste',{clipboardData:{getData:()=>'Google'}});await flush();
- assert.deepEqual(calls.slice(2).map(c=>[c.action,c.text]),[['paste','Google']]);
+ assert.deepEqual(calls.slice(3).map(c=>[c.action,c.text]),[['paste','Google']]);
 });
 
 test('Chromium: IME composition sends only the committed text; composing keys are not forwarded',async()=>{
@@ -165,9 +166,9 @@ function assertNoWordJoinPaste(calls,label){
  }
 }
 // What the simulator receives: pastes append text, Space keys append ' '.
-const received=(calls)=>calls.map(c=>c.action==='paste'?c.text:(c.action==='key'&&c.code==='Space'?' ':`<${c.code}>`)).join('');
-async function typeChars(text,{gapFlushes=false}={}){
- const h=keyboardHarness({safari:false});h.el.focus();
+const received=(calls)=>calls.map(c=>c.action==='paste'||c.action==='type'?c.text:(c.action==='key'&&c.code==='Space'?' ':`<${c.code}>`)).join('');
+async function typeChars(text,opts={}){
+ const h=keyboardHarness({safari:false,...opts});h.el.focus();
  // the sink receives one insertText commit per character while earlier requests are still in flight
  for(const ch of [...text])h.sink.fire('beforeinput',{inputType:'insertText',data:ch,isComposing:false});
  await h.flush();
@@ -179,6 +180,8 @@ test('per-character commits never lose repeated letters or spaces (hello world /
   const h=await typeChars(text);
   assert.equal(received(h.calls),text,text);
   assertNoWordJoinPaste(h.calls,text);
+  assert.ok(h.calls.every(c=>c.action!=='paste'||/[^\x20-\x7e]/.test(c.text)),'ASCII is never pasted: '+text);
+  assert.ok(h.calls.length<[...text].length||[...text].length<=2||text==='a'.repeat(5)&&h.calls.length<=5,'burst is batched: '+text);
  }
 });
 
@@ -192,11 +195,11 @@ test('commits are not subject to paste duplicate suppression; a held Cmd+V paste
  assert.deepEqual(d.calls.map(c=>c.text),['Google']);
 });
 
-test('whitespace-only commits use Space keys; spaces inside a burst stay in the paste; order with keys is kept',async()=>{
+test('spaces are typed like any other ASCII; order with keys is kept',async()=>{
  const h=keyboardHarness({safari:false});h.el.focus();
  h.sink.fire('beforeinput',{inputType:'insertText',data:' ',isComposing:false});
  await h.flush();
- assert.deepEqual(h.calls.map(c=>[c.action,c.code,c.text]),[['key','Space',undefined]]);
+ assert.deepEqual(h.calls.map(c=>[c.action,c.code,c.text]),[['type',undefined,' ']]);
  h.calls.length=0;
  h.sink.fire('beforeinput',{inputType:'insertText',data:'a',isComposing:false});
  h.sink.fire('beforeinput',{inputType:'insertText',data:' ',isComposing:false});
@@ -205,7 +208,7 @@ test('whitespace-only commits use Space keys; spaces inside a burst stay in the 
  h.sink.fire('beforeinput',{inputType:'insertText',data:'c',isComposing:false});
  await h.flush();
  assert.equal(received(h.calls),'a b<Enter>c');
- assert.deepEqual(h.calls.map(c=>c.action),['paste','key','paste','key','paste']); // a, Space, b, Enter, c (nothing queued to merge the space into)
+ assert.deepEqual(h.calls.map(c=>c.action),['type','type','key','type']); // a | ' b' (merged while a is in flight) | Enter | c
 });
 
 test('IME composition end is also coalesced without loss',async()=>{
@@ -214,25 +217,46 @@ test('IME composition end is also coalesced without loss',async()=>{
  await h.flush();assert.equal(received(h.calls),'你好你好');
 });
 
-test('word-adjacent multi-character pastes are split; free-standing text stays one paste',async()=>{
- // controller E2E: "h" is pasted alone, the rest arrives while it is in flight
+test('ASCII text is typed as key chords in batches; hello world / Hello, World! 123 / aa  bb stay exact',async()=>{
  const h=await typeChars('hello world');
- assert.deepEqual(h.calls.map(c=>c.action==='key'?`<${c.code}>`:c.text),['h','e','l','l','o','<Space>','world']);
- const g=await typeChars('abc 123');
- assert.equal(received(g.calls),'abc 123');assertNoWordJoinPaste(g.calls,'abc 123');
- // a fresh field accepts a whole word / sentence in one paste, and so does text after a tap
+ // "h" goes alone (idle), the rest arrives while it is in flight and travels as one typed batch
+ assert.deepEqual(h.calls.map(c=>[c.action,c.text]),[['type','h'],['type','ello world']]);
+ for(const text of ['Hello, World! 123','aa  bb','~!@#$%^&*()_+{}|:"<>?`-=[]\\;\',./ AZaz09']){
+  const t=await typeChars(text);
+  assert.equal(received(t.calls),text);assert.ok(t.calls.every(c=>c.action==='type'),text);
+ }
+ // a fresh field / after a tap: one request for a whole sentence
  const w=keyboardHarness({safari:false});w.el.focus();
+ w.sink.fire('beforeinput',{inputType:'insertText',data:'hello world',isComposing:false});await w.flush();
+ assert.deepEqual(w.calls.map(c=>[c.action,c.text]),[['type','hello world']]);
+ // typed requests never exceed the bridge limit
+ const long=await typeChars('x'.repeat(600));
+ assert.equal(received(long.calls),'x'.repeat(600));assert.ok(long.calls.every(c=>c.text.length<=256));
+});
+
+test('mixed ASCII and non-ASCII keep their order: ASCII typed, the rest pasted',async()=>{
+ const m=keyboardHarness({safari:false});m.el.focus();
+ m.sink.fire('beforeinput',{inputType:'insertText',data:'hi 中文 ok, café 🙂!',isComposing:false});await m.flush();
+ assert.deepEqual(m.calls.map(c=>[c.action,c.text]),[['type','hi '],['paste','中文'],['type',' ok, caf'],['paste','é'],['type',' '],['paste','🙂'],['type','!']]);
+ const k=await typeChars('hi 中文 ok');
+ assert.equal(received(k.calls),'hi 中文 ok');
+ assert.deepEqual(k.calls.filter(c=>c.action==='paste').map(c=>c.text).join(''),'中文');
+});
+
+test('paste-only mode (#cindyTextInput=paste) keeps text on the pasteboard; word-adjacent multi-character pastes are split',async()=>{
+ const h=await typeChars('hello world',{pasteOnly:true});
+ assert.deepEqual(h.calls.map(c=>c.action==='key'?`<${c.code}>`:c.text),['h','e','l','l','o','<Space>','world']);
+ const g=await typeChars('abc 123',{pasteOnly:true});
+ assert.equal(received(g.calls),'abc 123');assertNoWordJoinPaste(g.calls,'abc 123');
+ const w=keyboardHarness({safari:false,pasteOnly:true});w.el.focus();
  w.sink.fire('beforeinput',{inputType:'insertText',data:'hello world',isComposing:false});await w.flush();
  assert.deepEqual(w.calls.map(c=>c.text),['hello world']);
  w.el.fire('pointerdown',{});
  w.sink.fire('beforeinput',{inputType:'insertText',data:'again here',isComposing:false});await w.flush();
  assert.deepEqual(w.calls.map(c=>c.text),['hello world','again here']);
- // after a non-word tail the whole next chunk is one paste
- const p=keyboardHarness({safari:false});p.el.focus();
- p.sink.fire('beforeinput',{inputType:'insertText',data:'hi,',isComposing:false});await p.flush();
- p.sink.fire('beforeinput',{inputType:'insertText',data:'there',isComposing:false});await p.flush();
- assert.deepEqual(p.calls.map(c=>c.text),['hi,','there']);
- // CJK carries no inter-word spacing: no splitting
+});
+
+test('CJK carries no inter-word spacing: no splitting',async()=>{
  const z=keyboardHarness({safari:false});z.el.focus();
  for(const w2 of ['你','好吗','你好']){z.sink.fire('compositionstart',{});z.sink.fire('compositionend',{data:w2});}
  await z.flush();assert.equal(received(z.calls),'你好吗你好');assert.ok(z.calls.length<5);

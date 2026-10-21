@@ -12,6 +12,7 @@ import './baguette/native-release.test.cjs';
 import './baguette/paste-compat.test.cjs';
 import './baguette/screen-pieces.test.cjs';
 import './baguette/chromium-touch-text.test.cjs';
+import './baguette/typed-keys.test.cjs';
 import './baguette/fold-orientation.test.cjs';
 import './baguette/runtime.test.cjs';
 import './baguette/device-manager.test.cjs';

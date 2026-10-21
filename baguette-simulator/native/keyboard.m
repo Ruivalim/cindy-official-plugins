@@ -35,10 +35,24 @@ static BOOL releaseKeys(id client,HID hid){
  // that a late callback may still be writing; its block retains its resources.
  return dispatch_group_wait(pending,dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC))==0 && created && delivered;
 }
+// One chord: modifiers down, key down, hold, key up, modifiers up. The full
+// release is always attempted, including after a partial failure.
+static BOOL deliverChord(id client,HID hid,int key,int mask){
+ BOOL ok=YES;
+ for(int i=0;i<4;i++)if(mask&(1<<i))if(!sendEvent(client,hid(0x32,7,224+i,1)))ok=NO;
+ if(ok)ok=sendEvent(client,hid(0x32,7,key,1));
+ usleep(20000);
+ if(!sendEvent(client,hid(0x32,7,key,2)))ok=NO;
+ for(int i=3;i>=0;i--)if(!sendEvent(client,hid(0x32,7,224+i,2)))ok=NO;
+ return ok;
+}
 int main(int argc,const char **argv){@autoreleasepool{
- if(argc!=6)return 2; // device set, UDID, developer dir, HID usage (0=release), modifier bitmask
- NSString *setPath=@(argv[1]),*udid=@(argv[2]),*dev=@(argv[3]);int key=atoi(argv[4]),mask=atoi(argv[5]);
- if(key<0||key>103||mask<0||mask>15||![[NSUUID alloc]initWithUUIDString:udid])return 2;
+ // device set, UDID, developer dir, then (HID usage, modifier bitmask) pairs; one pair
+ // with usage 0 is a plain release, up to 256 pairs type a sequence in one process.
+ if(argc<6||(argc-4)%2!=0||(argc-4)/2>256)return 2;
+ NSString *setPath=@(argv[1]),*udid=@(argv[2]),*dev=@(argv[3]);int pairs=(argc-4)/2;
+ for(int i=0;i<pairs;i++){int k=atoi(argv[4+2*i]),m=atoi(argv[5+2*i]);if(k<0||k>103||m<0||m>15||(k==0&&pairs>1))return 2;}
+ if(![[NSUUID alloc]initWithUUIDString:udid])return 2;
  int lock=open([[setPath stringByAppendingPathComponent:[NSString stringWithFormat:@".keyboard-%@.lock",udid]]fileSystemRepresentation],O_CREAT|O_RDWR,0600);
  if(lock<0||flock(lock,LOCK_EX|LOCK_NB)!=0)return 3;
  if(!dlopen("/Library/Developer/PrivateFrameworks/CoreSimulator.framework/CoreSimulator",RTLD_NOW|RTLD_GLOBAL))return 4;
@@ -54,13 +68,10 @@ int main(int argc,const char **argv){@autoreleasepool{
  BOOL ok=YES;
  // Release existing latched keys before any new chord. No key-down during recovery.
  if(!releaseKeys(client,hid))return 5;
- if(key){
-  for(int i=0;i<4;i++)if(mask&(1<<i))if(!sendEvent(client,hid(0x32,7,224+i,1)))ok=NO;
-  if(ok)ok=sendEvent(client,hid(0x32,7,key,1));
-  usleep(20000);
-  // Always attempt the full release, including on partial failure.
-  if(!sendEvent(client,hid(0x32,7,key,2)))ok=NO;
-  for(int i=3;i>=0;i--)if(!sendEvent(client,hid(0x32,7,224+i,2)))ok=NO;
+ // Stop at the first failed chord: a partially typed sequence is reported, never continued.
+ for(int i=0;i<pairs;i++){
+  int key=atoi(argv[4+2*i]),mask=atoi(argv[5+2*i]);
+  if(key&&!deliverChord(client,hid,key,mask)){ok=NO;break;}
  }
  if(!ok)releaseKeys(client,hid);
  close(lock);return ok?0:5;
