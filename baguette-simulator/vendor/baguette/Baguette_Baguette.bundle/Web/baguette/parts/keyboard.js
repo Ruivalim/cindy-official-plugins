@@ -62,6 +62,14 @@
   // One coalesced commit stays well below the bridge's 8000-character cap.
   const COMMIT_MAX = 2000;
 
+  // A word character other than ideographs/kana/hangul, which carry no
+  // inter-word spacing.
+  const WORD = /[\p{L}\p{N}]/u;
+  const UNSPACED = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+  const isWord = (c) => c !== null && WORD.test(c) && !UNSPACED.test(c);
+  const firstChar = (t) => String.fromCodePoint(t.codePointAt(0));
+  const lastChar = (t) => { const a = Array.from(t); return a[a.length - 1] || null; };
+
   class Keyboard {
     /**
      * @param {object} _def      SimulatorDefinition.keyboard (reserved)
@@ -84,11 +92,14 @@
       this._onPaste = (ev) => this._handlePaste(ev);
       this._sink = null;
       this._composing = false;
+      // Last character this viewer delivered, or null when unknown (fresh
+      // field, after a tap, after a non-text key).
+      this._tail = null;
       this._onElFocus = () => this._focusSink();
       // Touch input (e.g. CDP / mobile) never produces the mousedown that
       // focuses the screen, because the touch source cancels touchstart.
       // pointerdown/touchstart are not cancelled by that, so use them.
-      this._onPointerFocus = () => { if (this._sink && document.activeElement !== this._sink) this._focusSink(); };
+      this._onPointerFocus = () => { this._tail = null; if (this._sink && document.activeElement !== this._sink) this._focusSink(); };
       this._onBeforeInput = (ev) => this._handleBeforeInput(ev);
       this._onInput = () => { if (!this._composing && this._sink) this._sink.value = ''; };
       this._onCompositionStart = () => { this._composing = true; };
@@ -222,17 +233,49 @@
     /** Committed text typed on a soft keyboard / IME — every character is
      *  meaningful, so unlike `paste` (whose adjacent-duplicate suppression
      *  guards a held Cmd+V) nothing is dropped here. While a request is in
-     *  flight, text coalesces into the last queued commit so a burst of
-     *  per-character commits becomes a few exact pastes. A lone run of
-     *  spaces is sent as Space key presses: no pasteboard round trip for
-     *  whitespace-only text. */
+     *  flight, text coalesces into the last queued commit; `_planCommit`
+     *  decides how the coalesced text is delivered. */
     commitText(text) {
       if (this._inputPending && this._mergeCommit(text)) return;
-      if (/^ {1,16}$/.test(text)) {
-        for (let i = 0; i < text.length; i++) this.key('Space', []);
-        return;
-      }
       this._clipboard('paste', text, undefined, undefined, 'commit');
+    }
+
+    /** Split a commit into deliveries that keep the result identical to
+     *  the typed text:
+     *   - leading spaces become Space key presses (a whitespace-only
+     *     pasteboard write was observed to be unreliable, and spaces keep
+     *     exact positions that way);
+     *   - multi-character text that starts with a word character right
+     *     after a word character we already delivered is sent one
+     *     character at a time, because the device inserted a separating
+     *     space in front of such a paste ("h" + "ello world" became
+     *     "h ello world");
+     *   - everything else stays one paste. */
+    _planCommit(text) {
+      const plan = [];
+      let tail = this._tail;
+      let rest = text;
+      while (rest) {
+        const c = firstChar(rest);
+        if (c === ' ') {
+          plan.push(['key', undefined, 'Space', [], undefined]);
+          tail = ' ';
+          rest = rest.slice(1);
+        } else if (rest.length > c.length && isWord(c) && isWord(tail)) {
+          plan.push(['paste', c, undefined, undefined, 'commit']);
+          tail = c;
+          rest = rest.slice(c.length);
+        } else {
+          plan.push(['paste', rest, undefined, undefined, 'commit']);
+          break;
+        }
+      }
+      return plan;
+    }
+
+    _noteSent(action, text, code) {
+      if (action === 'paste') this._tail = lastChar(text);
+      else if (action === 'key') this._tail = code === 'Space' ? ' ' : code === 'Enter' ? '\n' : null;
     }
 
     _mergeCommit(text) {
@@ -259,11 +302,18 @@
         else window.alert('Input queue is full. Wait for pending input to finish, then retry.');
         return;
       }
+      if (commit === 'commit' && action === 'paste') {
+        const plan = this._planCommit(text);
+        [action, text, code, modifiers, commit] = plan[0];
+        this._inputQueue.unshift(...plan.slice(1));
+      }
+      this._noteSent(action, text, code);
       this._inputPending = true;
       this._activeInput = [action,text,code,modifiers,commit];
       const capability = new URLSearchParams(location.hash.slice(1)).get('cindyClipboard');
       const match = /^(\d{1,5})\.([a-f0-9]{64})$/.exec(capability || '');
       const udid = /^\/simulators\/([a-f0-9-]{36})\/?$/i.exec(location.pathname)?.[1];
+      const startedAt = Date.now();
       try {
         if (!match || !udid) throw Error('Reopen the simulator with open_viewer.');
         const response = await fetch('/clipboard', {
@@ -272,9 +322,14 @@
         });
         const result = await response.json();
         if (!response.ok || !result.ok) throw Error(result.error || 'Clipboard failed');
+        // Last 50 round trips (durations only, never contents) for latency diagnosis.
+        const log = root.__baguetteInputTimings || (root.__baguetteInputTimings = []);
+        log.push({ action, chars: action === 'paste' ? Array.from(text).length : undefined, roundTripMs: Date.now() - startedAt, server: result.timing });
+        if (log.length > 50) log.shift();
       } catch (error) {
         // Visible feedback; never print potentially sensitive clipboard contents.
         this._inputQueue.length = 0;
+        this._tail = null;
         window.alert('Input failed: ' + error.message);
       } finally { this._inputPending = false; this._activeInput = null; const next = this._inputQueue.shift(); if (next) this._clipboard(...next); }
     }

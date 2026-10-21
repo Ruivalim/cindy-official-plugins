@@ -78,12 +78,12 @@ function keyboardHarness({safari}){
  const window=Object.assign(emitter(),{alert(m){throw Error('Unexpected alert: '+m);}});
  if(safari)window.GestureEvent=function(){};
  const document=Object.assign(emitter(),{activeElement:null,createElement:()=>sinkEmitter()});
- const context={window,document,URLSearchParams,AbortSignal,location:{pathname:'/simulators/00000000-0000-4000-8000-000000000001',hash:'#cindyClipboard=1234.'+'a'.repeat(64)},fetch:(_u,opts)=>{calls.push(JSON.parse(opts.body));return new Promise(r=>pending.push(()=>r({ok:true,json:async()=>({ok:true})})));}};
+ const context={window,document,URLSearchParams,AbortSignal,location:{pathname:'/simulators/00000000-0000-4000-8000-000000000001',hash:'#cindyClipboard=1234.'+'a'.repeat(64)},fetch:(_u,opts)=>{calls.push(JSON.parse(opts.body));return new Promise(r=>pending.push(()=>r({ok:true,json:async()=>({ok:true,timing:{total:5}})})));}};
  load(context,'parts/keyboard.js');
  const el=Object.assign(emitter(),{tabIndex:-1,children:[],appendChild(c){this.children.push(c);},focus(){document.activeElement=el;el.fire('focus');}});
  const keyboard=new window.Baguette._Keyboard({},{});keyboard.attach(el);
  const flush=async()=>{while(pending.length){pending.shift()();await new Promise(r=>setImmediate(r));}};
- return {keyboard,el,document,calls,flush,sink:el.children[0]};
+ return {keyboard,el,document,calls,flush,window,sink:el.children[0]};
 }
 
 test('Chromium: committed insertText goes through paste once; keydown path is unchanged',async()=>{
@@ -150,6 +150,20 @@ test('Chromium: touch/pointer down hands focus to the sink (touchstart is cancel
  assert.equal(s.el.handlers.pointerdown,undefined);
 });
 
+const WORDCH=/[A-Za-z0-9]/;
+// Observed on the device: a multi-character paste that starts with a word character right after a word
+// character got a separating space in front ("h" + "ello world" -> "h ello world").
+function assertNoWordJoinPaste(calls,label){
+ let tail=null;
+ for(const c of calls){
+  if(c.action==='paste'){
+   const chars=[...c.text];
+   assert.ok(!(chars.length>1&&WORDCH.test(chars[0])&&tail&&WORDCH.test(tail)),`${label}: ${JSON.stringify(c.text)} pasted after ${JSON.stringify(tail)}`);
+   assert.ok(!/^\s/.test(c.text),`${label}: paste must not start with whitespace: ${JSON.stringify(c.text)}`);
+   tail=chars[chars.length-1];
+  }else tail=c.code==='Space'?' ':null;
+ }
+}
 // What the simulator receives: pastes append text, Space keys append ' '.
 const received=(calls)=>calls.map(c=>c.action==='paste'?c.text:(c.action==='key'&&c.code==='Space'?' ':`<${c.code}>`)).join('');
 async function typeChars(text,{gapFlushes=false}={}){
@@ -164,7 +178,7 @@ test('per-character commits never lose repeated letters or spaces (hello world /
  for(const text of ['hello world','aa  bb','hi 中文 ok','l l  l','a'.repeat(5)]){
   const h=await typeChars(text);
   assert.equal(received(h.calls),text,text);
-  assert.ok(h.calls.length<[...text].length||[...text].length<=2,'burst is coalesced: '+text);
+  assertNoWordJoinPaste(h.calls,text);
  }
 });
 
@@ -198,4 +212,52 @@ test('IME composition end is also coalesced without loss',async()=>{
  const h=keyboardHarness({safari:false});h.el.focus();
  for(const w of ['你','好','你','好']){h.sink.fire('compositionstart',{});h.sink.fire('compositionend',{data:w});}
  await h.flush();assert.equal(received(h.calls),'你好你好');
+});
+
+test('word-adjacent multi-character pastes are split; free-standing text stays one paste',async()=>{
+ // controller E2E: "h" is pasted alone, the rest arrives while it is in flight
+ const h=await typeChars('hello world');
+ assert.deepEqual(h.calls.map(c=>c.action==='key'?`<${c.code}>`:c.text),['h','e','l','l','o','<Space>','world']);
+ const g=await typeChars('abc 123');
+ assert.equal(received(g.calls),'abc 123');assertNoWordJoinPaste(g.calls,'abc 123');
+ // a fresh field accepts a whole word / sentence in one paste, and so does text after a tap
+ const w=keyboardHarness({safari:false});w.el.focus();
+ w.sink.fire('beforeinput',{inputType:'insertText',data:'hello world',isComposing:false});await w.flush();
+ assert.deepEqual(w.calls.map(c=>c.text),['hello world']);
+ w.el.fire('pointerdown',{});
+ w.sink.fire('beforeinput',{inputType:'insertText',data:'again here',isComposing:false});await w.flush();
+ assert.deepEqual(w.calls.map(c=>c.text),['hello world','again here']);
+ // after a non-word tail the whole next chunk is one paste
+ const p=keyboardHarness({safari:false});p.el.focus();
+ p.sink.fire('beforeinput',{inputType:'insertText',data:'hi,',isComposing:false});await p.flush();
+ p.sink.fire('beforeinput',{inputType:'insertText',data:'there',isComposing:false});await p.flush();
+ assert.deepEqual(p.calls.map(c=>c.text),['hi,','there']);
+ // CJK carries no inter-word spacing: no splitting
+ const z=keyboardHarness({safari:false});z.el.focus();
+ for(const w2 of ['你','好吗','你好']){z.sink.fire('compositionstart',{});z.sink.fire('compositionend',{data:w2});}
+ await z.flush();assert.equal(received(z.calls),'你好吗你好');assert.ok(z.calls.length<5);
+});
+
+test('bridge reports server-side durations (no contents) and the viewer keeps the last round trips',async()=>{
+ const {createClipboard}=require('../../baguette-simulator/node/clipboard.cjs');
+ const origin='http://127.0.0.1:49113',udid='00000000-0000-4000-8000-000000000001';
+ const bridge=await createClipboard(origin,async p=>({timing:{release:3,clipboard:5,paste:7,total:15}}));bridge.devices.add(udid);
+ try{
+  const [port,token]=bridge.fragment.split('=')[1].split('.');
+  const reply=await fetch(`http://127.0.0.1:${port}/clipboard`,{method:'POST',headers:{Origin:origin,'X-Cindy-Clipboard':token},body:JSON.stringify({action:'paste',text:'secret words',udid})});
+  const body=await reply.json();
+  assert.deepEqual(body,{ok:true,execution:'executed',timing:{release:3,clipboard:5,paste:7,total:15}});
+  assert.ok(!JSON.stringify(body).includes('secret'));
+  // a bridge whose perform returns nothing keeps the original reply shape
+  const plain=await createClipboard(origin,async()=>{});plain.devices.add(udid);
+  try{const [p2,t2]=plain.fragment.split('=')[1].split('.');
+   const b2=await (await fetch(`http://127.0.0.1:${p2}/clipboard`,{method:'POST',headers:{Origin:origin,'X-Cindy-Clipboard':t2},body:JSON.stringify({action:'copy',udid})})).json();
+   assert.deepEqual(b2,{ok:true,execution:'executed'});
+  }finally{plain.close();}
+ }finally{bridge.close();}
+ const h=keyboardHarness({safari:false});
+ h.keyboard.key('KeyA',[]);h.keyboard.paste('abc');await h.flush();
+ const log=Array.from(h.window.__baguetteInputTimings);
+ assert.deepEqual(log.map(x=>[x.action,x.chars,x.server.total]),[['key',undefined,5],['paste',3,5]]);
+ assert.ok(log.every(x=>typeof x.roundTripMs==='number'));assert.ok(!JSON.stringify(log).includes('abc'));
 });

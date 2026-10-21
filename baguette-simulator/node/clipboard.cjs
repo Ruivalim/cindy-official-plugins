@@ -52,7 +52,7 @@ async function createClipboard(origin,perform,control){
    if(!['paste','copy','key','release'].includes(p.action)||(p.action==='paste'&&(typeof p.text!=='string'||!p.text.length||p.text.length>8000||p.text.includes('\0'))))return reply(400,{error:'Invalid clipboard request',execution:'not_executed'});
    if(busy)return reply(409,{error:'Clipboard busy; try again',execution:'not_executed'});
    busy=true;
-   try{const operation=async()=>{await control?.guard?.();await perform(p);control?.touch?.();};await(control?.run?control.run(operation):operation());reply(200,{ok:true,execution:'executed'});}
+   try{let timing;const operation=async()=>{await control?.guard?.();timing=(await perform(p))?.timing;control?.touch?.();};await(control?.run?control.run(operation):operation());reply(200,{ok:true,execution:'executed',...(timing&&typeof timing==='object'?{timing}:{})});}
    catch(error){reply(500,{error:'Clipboard operation failed; check the device and retry.',execution:error.execution||'unknown'});}
    finally{busy=false;}
   }catch{if(!res.headersSent)reply(400,{error:'Invalid request',execution:'not_executed'});}

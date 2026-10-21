@@ -68,14 +68,18 @@ async function nativeKey(device,code,modifiers=[]) {
 async function clipboardAction(p) {
  if(keyboardBusy)throw new Failure('INPUT_BUSY','Another keyboard operation is running; retry after it finishes');
  keyboardBusy=true;
+ // Millisecond durations only (never contents): lets the viewer show where one
+ // input operation spends its time.
+ const timing={},began=Date.now();let mark=began;
+ const lap=name=>{const now=Date.now();timing[name]=now-mark;mark=now;};
  try{
-  const device=await target(p);
-  if(p.action==='release')return await nativeKey(device,null);
-  if(p.action==='key')return await nativeKey(device,p.code,p.modifiers);
+  const device=await target(p);lap('target');
+  if(p.action==='release'){await nativeKey(device,null);lap('release');timing.total=Date.now()-began;return {timing};}
+  if(p.action==='key'){await nativeKey(device,p.code,p.modifiers);lap('key');timing.total=Date.now()-began;return {timing};}
   if(p.action==='paste') {
     const text=string(p.text,'text',8000);
     // First release any existing repeat before replacing its clipboard payload.
-    await nativeKey(device,null);
+    await nativeKey(device,null);lap('release');
     // Xcode 27 simctl pbcopy can report success without changing the guest
     // clipboard. Match Baguette 0.2.0: prefer CoreDevice, retaining the private
     // device-set fallback for Xcode 26 or devices CoreDevice does not know.
@@ -94,12 +98,15 @@ async function clipboardAction(p) {
       }
       if(actual.stdout!==text)throw new Failure('CLIPBOARD_UNVERIFIED','Guest clipboard did not match requested text; paste was not sent','unknown');
     }
-    await nativeKey(device,'KeyV',['command']);
+    lap('clipboard');
+    await nativeKey(device,'KeyV',['command']);lap('paste');
   } else if(p.action==='copy') {
     await nativeKey(device,'KeyC',['command']);
     await new Promise(resolve=>setTimeout(resolve,250));
-    await sim(['pbsync',device.udid,'host'],{mutation:true});
+    await sim(['pbsync',device.udid,'host'],{mutation:true});lap('copy');
   } else throw new Failure('INVALID_ARGUMENT','Unknown input action');
+ timing.total=Date.now()-began;
+ return {timing};
  }finally{keyboardBusy=false;}
 }
 async function dispatch(method,p={}) {
