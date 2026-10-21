@@ -134,3 +134,18 @@ test('Chromium: detach removes the sink; Safari never creates one and keeps focu
  assert.equal(s.sink,undefined);s.el.focus();assert.equal(s.document.activeElement,s.el);
  assert.equal(s.el.handlers.focus,undefined);
 });
+
+test('Chromium: touch/pointer down hands focus to the sink (touchstart is cancelled, so no mousedown); Safari does not',()=>{
+ for(const type of ['pointerdown','touchstart']){
+  const c=keyboardHarness({safari:false});
+  assert.notEqual(c.document.activeElement,c.sink);
+  c.el.fire(type,{});
+  assert.equal(c.document.activeElement,c.sink);
+  assert.equal(c.sink.focused,1);
+  c.el.fire(type,{});assert.equal(c.sink.focused,1); // already focused: no churn
+  c.keyboard.detach();c.el.fire(type,{});assert.equal(c.sink.focused,1);
+ }
+ const s=keyboardHarness({safari:true});
+ s.el.fire('pointerdown',{});s.el.fire('touchstart',{});assert.notEqual(s.document.activeElement,s.el);
+ assert.equal(s.el.handlers.pointerdown,undefined);
+});

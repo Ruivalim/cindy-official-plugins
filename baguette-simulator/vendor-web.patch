@@ -138,32 +138,36 @@
 +      };
 +      this._onVisibility = () => { if (document.hidden) this._onBlur(); };
 +      this._onRelease = ev => { if (ev.origin === location.origin && ev.data?.type === 'cindy-release-input') this._onBlur(); };
-@@ -62,0 +82,7 @@
+@@ -62,0 +82,11 @@
 +      this._sink = null;
 +      this._composing = false;
 +      this._onElFocus = () => this._focusSink();
++      // Touch input (e.g. CDP / mobile) never produces the mousedown that
++      // focuses the screen, because the touch source cancels touchstart.
++      // pointerdown/touchstart are not cancelled by that, so use them.
++      this._onPointerFocus = () => { if (this._sink && document.activeElement !== this._sink) this._focusSink(); };
 +      this._onBeforeInput = (ev) => this._handleBeforeInput(ev);
 +      this._onInput = () => { if (!this._composing && this._sink) this._sink.value = ''; };
 +      this._onCompositionStart = () => { this._composing = true; };
 +      this._onCompositionEnd = (ev) => this._handleCompositionEnd(ev);
-@@ -72,0 +99,3 @@
+@@ -72,0 +103,3 @@
 +      // Safari already reports gesture* events and keeps its original
 +      // focus behaviour; everywhere else the text sink receives commits.
 +      if (typeof root.GestureEvent === 'undefined') this._attachSink(el);
-@@ -73,0 +103 @@
+@@ -73,0 +107 @@
 +      el.addEventListener('blur', this._onBlur);
-@@ -78,0 +109,2 @@
+@@ -78,0 +113,2 @@
 +      document.addEventListener('visibilitychange', this._onVisibility);
 +      window.addEventListener('message', this._onRelease);
-@@ -82,0 +115 @@
+@@ -82,0 +119 @@
 +      this._detachSink();
-@@ -83,0 +117,2 @@
+@@ -83,0 +121,2 @@
 +      this._el.removeEventListener('blur', this._onBlur);
 +      this._inputQueue.length = 0;
-@@ -84,0 +120,2 @@
+@@ -84,0 +124,2 @@
 +      document.removeEventListener('visibilitychange', this._onVisibility);
 +      window.removeEventListener('message', this._onRelease);
-@@ -87,0 +125,60 @@
+@@ -87,0 +129,68 @@
 +    _attachSink(el) {
 +      const sink = document.createElement('textarea');
 +      sink.setAttribute('aria-hidden', 'true');
@@ -179,6 +183,8 @@
 +      el.appendChild(sink);
 +      this._sink = sink;
 +      el.addEventListener('focus', this._onElFocus);
++      el.addEventListener('pointerdown', this._onPointerFocus, { capture: true, passive: true });
++      el.addEventListener('touchstart', this._onPointerFocus, { capture: true, passive: true });
 +      // keydown bubbles from the sink to the screen element's listener.
 +      sink.addEventListener('blur', this._onBlur);
 +      sink.addEventListener('beforeinput', this._onBeforeInput);
@@ -191,6 +197,8 @@
 +      const sink = this._sink;
 +      if (!sink) return;
 +      this._el.removeEventListener('focus', this._onElFocus);
++      this._el.removeEventListener('pointerdown', this._onPointerFocus, { capture: true });
++      this._el.removeEventListener('touchstart', this._onPointerFocus, { capture: true });
 +      sink.remove();
 +      this._sink = null;
 +      this._composing = false;
@@ -199,7 +207,11 @@
 +    /** Hand keyboard focus to the sink; the screen element itself stays
 +     *  the logical owner (see `_hasFocus`). */
 +    _focusSink() {
-+      if (this._sink) this._sink.focus({ preventScroll: true });
++      if (!this._sink) return;
++      // Inside an embedded viewer the frame itself must own focus before
++      // a host-side insertText can reach the sink.
++      if (typeof root.focus === 'function') root.focus();
++      this._sink.focus({ preventScroll: true });
 +    }
 +
 +    _hasFocus() {
@@ -224,21 +236,21 @@
 +      if (typeof ev.data === 'string' && ev.data) this.paste(ev.data);
 +    }
 +
-@@ -93,3 +190 @@
+@@ -93,3 +202 @@
 -      const env = { type: 'key', code };
 -      if (modifiers && modifiers.length) env.modifiers = modifiers;
 -      this.transport._dispatch(env);
 +      this._clipboard('key', undefined, code, modifiers);
-@@ -100 +195 @@
+@@ -100 +207 @@
 -      this.transport._dispatch({ type: 'type', text });
 +      this.paste(text);
-@@ -106 +201 @@
+@@ -106 +213 @@
 -      this.transport._dispatch({ type: 'paste', text });
 +      this._clipboard('paste', text);
-@@ -114 +209 @@
+@@ -114 +221 @@
 -      this.transport._dispatch({ type: 'copy' });
 +      this._clipboard('copy');
-@@ -116,0 +212,29 @@
+@@ -116,0 +224,29 @@
 +    async _clipboard(action, text, code, modifiers) {
 +      if (this._inputPending) {
 +        const request = [action,text,code,modifiers];
@@ -268,15 +280,15 @@
 +      } finally { this._inputPending = false; this._activeInput = null; const next = this._inputQueue.shift(); if (next) this._clipboard(...next); }
 +    }
 +
-@@ -121 +245,4 @@
+@@ -121 +257,4 @@
 -      if (document.activeElement !== this._el) return;
 +      if (!this._hasFocus()) return;
 +      // Keys that drive an active IME composition belong to the IME; its
 +      // committed text arrives via compositionend.
 +      if (ev.isComposing || ev.keyCode === 229) return;
-@@ -122,0 +250 @@
+@@ -122,0 +262 @@
 +      if (ev.repeat) { ev.preventDefault(); return; }
-@@ -146 +274 @@
+@@ -146 +286 @@
 -      if (document.activeElement !== this._el) return;
 +      if (!this._hasFocus()) return;
 --- a/farm/farm.html

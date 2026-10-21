@@ -82,6 +82,10 @@
       this._sink = null;
       this._composing = false;
       this._onElFocus = () => this._focusSink();
+      // Touch input (e.g. CDP / mobile) never produces the mousedown that
+      // focuses the screen, because the touch source cancels touchstart.
+      // pointerdown/touchstart are not cancelled by that, so use them.
+      this._onPointerFocus = () => { if (this._sink && document.activeElement !== this._sink) this._focusSink(); };
       this._onBeforeInput = (ev) => this._handleBeforeInput(ev);
       this._onInput = () => { if (!this._composing && this._sink) this._sink.value = ''; };
       this._onCompositionStart = () => { this._composing = true; };
@@ -137,6 +141,8 @@
       el.appendChild(sink);
       this._sink = sink;
       el.addEventListener('focus', this._onElFocus);
+      el.addEventListener('pointerdown', this._onPointerFocus, { capture: true, passive: true });
+      el.addEventListener('touchstart', this._onPointerFocus, { capture: true, passive: true });
       // keydown bubbles from the sink to the screen element's listener.
       sink.addEventListener('blur', this._onBlur);
       sink.addEventListener('beforeinput', this._onBeforeInput);
@@ -149,6 +155,8 @@
       const sink = this._sink;
       if (!sink) return;
       this._el.removeEventListener('focus', this._onElFocus);
+      this._el.removeEventListener('pointerdown', this._onPointerFocus, { capture: true });
+      this._el.removeEventListener('touchstart', this._onPointerFocus, { capture: true });
       sink.remove();
       this._sink = null;
       this._composing = false;
@@ -157,7 +165,11 @@
     /** Hand keyboard focus to the sink; the screen element itself stays
      *  the logical owner (see `_hasFocus`). */
     _focusSink() {
-      if (this._sink) this._sink.focus({ preventScroll: true });
+      if (!this._sink) return;
+      // Inside an embedded viewer the frame itself must own focus before
+      // a host-side insertText can reach the sink.
+      if (typeof root.focus === 'function') root.focus();
+      this._sink.focus({ preventScroll: true });
     }
 
     _hasFocus() {
