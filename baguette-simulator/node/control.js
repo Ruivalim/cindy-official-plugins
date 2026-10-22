@@ -1,6 +1,6 @@
 'use strict';
 const zh=document.documentElement.lang==='zh-CN';
-const T=zh?{connected:'设备运行中 · 画面已连接',off:'设备已关闭',service:'画面服务已停止',recovering:'正在恢复连接…',offline:'画面连接已断开，设备状态未知',retry:'请点击“恢复画面”。',disconnected:'请到「插件 → Baguette」查看设备状态或关闭设备。画面断开不代表设备已关闭。',failed:'未能确认操作结果，请到插件设置页核对设备状态。',released:'按键已释放。',stopping:'正在关闭设备…',stopped:'设备已关闭，App 和连接已停止；数据保留。',idle:'闲置后自动关闭：',minute:' 分钟。',manual:'自动关闭未开启，请用“关闭设备”结束使用。',soon:'设备即将因闲置关闭；操作画面可继续使用。'}:{connected:'Device running · Viewer connected',off:'Device shut down',service:'Viewer stopped',recovering:'Reconnecting…',offline:'Viewer disconnected · Device state unknown',retry:'Click Recover view to retry.',disconnected:'Open Plugins → Baguette to check or shut down the device. Losing the picture does not mean the device is off.',failed:'Operation not confirmed. Check device status in plugin settings.',released:'Keys released.',stopping:'Shutting down device…',stopped:'Device shut down. Apps and connections stopped; data kept.',idle:'Automatic idle shutdown: ',minute:' minutes.',manual:'Automatic shutdown is off. Use Shut down device when finished.',soon:'Idle shutdown is approaching. Interact with the screen to continue.'};
+const T=zh?{connected:'设备运行中 · 画面已连接',off:'设备已关闭',service:'画面服务已停止',recovering:'正在恢复连接…',offline:'画面连接已断开，设备状态未知',retry:'请点击“恢复画面”。',disconnected:'请到「插件 → Baguette」查看设备状态或关闭设备。画面断开不代表设备已关闭。',failed:'未能确认操作结果，请到插件设置页核对设备状态。',released:'按键已释放。',stopping:'正在关闭设备…',stopped:'设备已关闭，App 和连接已停止；数据保留。',idle:'闲置后自动关闭：',minute:' 分钟。',manual:'自动关闭未开启，请用“关闭设备”结束使用。',soon:'设备即将因闲置关闭；操作画面可继续使用。',enterFull:'全屏设备',exitFull:'退出全屏',settings:'显示设置'}:{connected:'Device running · Viewer connected',off:'Device shut down',service:'Viewer stopped',recovering:'Reconnecting…',offline:'Viewer disconnected · Device state unknown',retry:'Click Recover view to retry.',disconnected:'Open Plugins → Baguette to check or shut down the device. Losing the picture does not mean the device is off.',failed:'Operation not confirmed. Check device status in plugin settings.',released:'Keys released.',stopping:'Shutting down device…',stopped:'Device shut down. Apps and connections stopped; data kept.',idle:'Automatic idle shutdown: ',minute:' minutes.',manual:'Automatic shutdown is off. Use Shut down device when finished.',soon:'Idle shutdown is approaching. Interact with the screen to continue.',enterFull:'Full-screen device',exitFull:'Exit full screen',settings:'Display settings'};
 let udid=new URLSearchParams(location.search).get('udid');
 const cap=new URLSearchParams(location.hash.slice(1)).get('cindyClipboard');
 const token=cap?.split('.')[1];
@@ -49,6 +49,26 @@ shutdown.onclick=async()=>{
 function activity(event){if(!event.isTrusted||stopped||stopping||switching||Date.now()-lastTouch<10000)return;lastTouch=Date.now();api('activity').catch(()=>{});}
 screen.addEventListener('load',()=>{applyZoom();try{const doc=screen.contentDocument;for(const name of ['pointerdown','keydown','wheel'])doc?.addEventListener(name,activity,{passive:true,capture:true});}catch{}});
 zoom.onchange=()=>{applyZoom();};
+// Full-screen device: collapse the settings so the viewer fills the page. Automatic while the primary pointer
+// is coarse (a phone viewing this page); a manual choice always wins and is remembered (best effort).
+const fullscreenButton=document.getElementById('fullscreen'),settingsFab=document.getElementById('settings-fab');
+const LAYOUT_KEY='baguette.fullscreenDevice',coarse=globalThis.matchMedia?.('(pointer: coarse)');
+let layoutChoice=null,sheetOpen=false;
+try{const saved=globalThis.localStorage?.getItem(LAYOUT_KEY);layoutChoice=saved==='on'?true:saved==='off'?false:null;}catch{}
+const fullscreenOn=()=>layoutChoice!==null?layoutChoice:!!coarse?.matches;
+function renderLayout(){
+  const on=fullscreenOn();if(!on)sheetOpen=false;
+  const classes=document.body?.classList;
+  classes?.toggle('immersive',on);classes?.toggle('sheet',on&&sheetOpen);
+  if(settingsFab){settingsFab.setAttribute('aria-expanded',String(on&&sheetOpen));settingsFab.setAttribute('aria-label',T.settings);settingsFab.title=T.settings;}
+  if(fullscreenButton){fullscreenButton.textContent=on?T.exitFull:T.enterFull;fullscreenButton.setAttribute('aria-pressed',String(on));}
+  applyZoom();
+}
+if(fullscreenButton)fullscreenButton.onclick=()=>{layoutChoice=!fullscreenOn();sheetOpen=false;try{globalThis.localStorage?.setItem(LAYOUT_KEY,layoutChoice?'on':'off');}catch{}renderLayout();};
+if(settingsFab)settingsFab.onclick=()=>{sheetOpen=!sheetOpen;renderLayout();};
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&sheetOpen){sheetOpen=false;renderLayout();}});
+coarse?.addEventListener?.('change',()=>{if(layoutChoice===null)renderLayout();});
+renderLayout();
 new ResizeObserver(applyZoom).observe(document.getElementById('viewport'));applyZoom();
 globalThis.baguetteController={api,check,message,get udid(){return udid;},get busy(){return recovering||stopping;},
  switching(value,label){switching=value;if(value){screen.src='about:blank';generation=null;status.textContent=label;button.disabled=release.disabled=shutdown.disabled=true;}},
