@@ -1,9 +1,10 @@
 {
   "date": "2026-10-20",
-  "pluginVersion": "0.1.24",
+  "pluginVersion": "0.1.25",
   "baguette": "0.2.0",
   "status": "viewer-chromium-touch-text-verified-in-headless-chrome-without-simulator",
   "passed": [
+    "0.1.25: ⚙ merged into the device toolbar in full-screen device layout (headless Chrome via CDP, no window, 402×874 mobile emulation, real sim.html + sim-native.js with stubbed endpoints, no simulator booted): iframe 402×844 below a 30 px strip before, 402×874 after (+30 px, the viewer's own height budget follows); #cindyGear is the last child of the toolbar; a click opens the settings sheet below it; the floating button returns when the framed page has no #cindyGear; the fine-pointer layout is unchanged",
     "node --test of the four repository gate files plus the baguette suite passed, including new cases for Chromium two-finger touch2, Safari no-duplicate hand-off, committed text, IME, sink focus, the US-layout character→key table (all 95 printable ASCII characters against an independent reference), the type bridge action and limits, and the native multi-chord delivery order and failure release",
     "Real headless Chrome (CDP, no window) running the vendored touch and keyboard modules against a mock screen and transport: single then two-finger touch produced touch1-down/up, touch2-down, six touch2-move and touch2-up; Input.insertText('中文ABC') produced exactly one beforeinput insertText and one paste request; a following real 'a' keypress produced one key request",
     "Real headless Chrome (CDP, no window) in the embedded layout (control page + same-origin iframe#screen, sink not pre-focused): before the focus hand-off a single-finger tap followed by Input.insertText produced no paste request; after it the tap focuses the sink and Input.insertText('hello 中文') produced exactly one paste request",
@@ -18,7 +19,7 @@
     "Two device-side behaviours behind earlier symptoms cannot be reproduced without a device: a lone-space pasteboard write that did not land, and a space inserted in front of a multi-character paste that follows a word character ('h ello world'). Typed text now avoids the pasteboard for ASCII; the cause on the device is inferred, not confirmed",
     "Per-step server durations (target, release, clipboard, paste, total) are now returned by the bridge and kept in window.__baguetteInputTimings, but no real device timing has been collected; any latency reduction beyond fewer requests needs those numbers from a booted device",
     "The rebuilt native/keyboard (multi-chord) was not run against a booted simulator: argument validation (exit 2) and the delivery order against a fake HID client are tested, real key delivery, per-character latency and the effect of the device's hardware-keyboard layout and auto-correction are not device-verified",
-    "The full-screen layout was not checked with the real Baguette viewer page inside the iframe or on a real phone through the Cindy remote desktop; the iframe content in the screenshots is a mock device box using the viewer's own height budget formula"
+    "The full-screen layout, including the ⚙ in the device toolbar, was checked with the real viewer scripts in the iframe but with no booted simulator (power-card state, no bezel image), so the +30 px device height gain follows from the viewer's height budget and was not measured with a real device frame; it was not checked on a real phone through the Cindy remote desktop"
   ],
   "previousReleaseVerification": {
     "date": "2026-10-13",

@@ -1874,6 +1874,23 @@
     // Re-measure once layout settles (fonts, device frame, format pills).
     requestAnimationFrame(layoutToolbar);
     setTimeout(layoutToolbar, 400);
+
+    // Embedded in the Cindy control page: the page asks for a settings
+    // button at the toolbar's right end instead of a strip of its own.
+    const gear = document.getElementById('cindyGear');
+    if (gear && window.parent !== window) {
+      gear.parentElement.appendChild(gear);   // after the clusters built above: the bar's right end
+      window.addEventListener('message', (ev) => {
+        const d = ev.data;
+        if (ev.origin !== location.origin || ev.source !== window.parent || !d || d.type !== 'cindy-gear') return;
+        gear.hidden = !d.on;
+        gear.setAttribute('aria-expanded', String(!!d.expanded));
+        if (d.label) { gear.title = d.label; gear.setAttribute('aria-label', d.label); }
+        layoutToolbar();
+      });
+      gear.addEventListener('click', () => window.parent.postMessage({ type: 'cindy-gear-toggle' }, location.origin));
+      window.parent.postMessage({ type: 'cindy-gear-ready' }, location.origin);
+    }
   }
 
   function wireActions() {

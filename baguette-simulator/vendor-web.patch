@@ -437,9 +437,15 @@
 +  const GEOCODE_URL = '/map/search';
 --- a/sim-native.html
 +++ b/sim-native.html
-@@ -1589 +1589 @@
+@@ -917,0 +918,2 @@
++  #simNativeView #cindyGear[hidden] { display: none; }
++  #simNativeView #cindyGear { font-size: 16px; line-height: 1; flex: 0 0 auto; }
+@@ -1589 +1591 @@
 -    cursor: crosshair;
 +    cursor: default;
+@@ -2881,0 +2884,2 @@
++      <button class="ico-btn" id="cindyGear" type="button" hidden aria-expanded="false"
++              title="Display settings" aria-label="Display settings">&#9881;&#xFE0E;</button>
 --- a/sim-native.js
 +++ b/sim-native.js
 @@ -491,0 +492,8 @@
@@ -465,7 +471,25 @@
 +        '<span class="tb-label"></span>' +
 @@ -1718,0 +1729 @@
 +    row.querySelector('.tb-label').textContent = label;
-@@ -2253,0 +2265 @@
+@@ -1865,0 +1877,17 @@
++
++    // Embedded in the Cindy control page: the page asks for a settings
++    // button at the toolbar's right end instead of a strip of its own.
++    const gear = document.getElementById('cindyGear');
++    if (gear && window.parent !== window) {
++      gear.parentElement.appendChild(gear);   // after the clusters built above: the bar's right end
++      window.addEventListener('message', (ev) => {
++        const d = ev.data;
++        if (ev.origin !== location.origin || ev.source !== window.parent || !d || d.type !== 'cindy-gear') return;
++        gear.hidden = !d.on;
++        gear.setAttribute('aria-expanded', String(!!d.expanded));
++        if (d.label) { gear.title = d.label; gear.setAttribute('aria-label', d.label); }
++        layoutToolbar();
++      });
++      gear.addEventListener('click', () => window.parent.postMessage({ type: 'cindy-gear-toggle' }, location.origin));
++      window.parent.postMessage({ type: 'cindy-gear-ready' }, location.origin);
++    }
+@@ -2253,0 +2282 @@
 +          onLitPanelChange: syncLitPanel,
 --- a/stream-session.js
 +++ b/stream-session.js

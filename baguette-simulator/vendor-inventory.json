@@ -411,13 +411,13 @@
   },
   {
     "path": "vendor/baguette/Baguette_Baguette.bundle/Web/sim-native.html",
-    "bytes": 147338,
-    "sha256": "015ab141009cb9eded47c816c59b7898393687f49aaa976a1ea182b80b0dfe71"
+    "bytes": 147656,
+    "sha256": "4cc6ab478d340c7944b794dd513133cfc72d70db0327e1be229b244a0f852eb2"
   },
   {
     "path": "vendor/baguette/Baguette_Baguette.bundle/Web/sim-native.js",
-    "bytes": 124301,
-    "sha256": "98832745c234404e7b5b4cb156f5a45d567c23d2fe922286d35e00dbd17ee65e"
+    "bytes": 125263,
+    "sha256": "2a6640b8af0d39598e2ec4d090757deffd1cd2dd884297036dee2ce3618d3ae8"
   },
   {
     "path": "vendor/baguette/Baguette_Baguette.bundle/Web/sim-network.js",

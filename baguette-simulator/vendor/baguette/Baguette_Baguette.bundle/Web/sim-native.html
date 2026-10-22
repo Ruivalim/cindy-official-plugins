@@ -915,6 +915,8 @@
   #simNativeView .ico-btn:active { background: var(--nv-btn-active); }
   #simNativeView .ico-btn.active { background: var(--nv-accent); color: var(--nv-accent-text); }
   #simNativeView .ico-btn svg { display: block; }
+  #simNativeView #cindyGear[hidden] { display: none; }
+  #simNativeView #cindyGear { font-size: 16px; line-height: 1; flex: 0 0 auto; }
 
   /* Sidebar-view toggle — floating glass pill on the bottom-left,
      mirror of the theme toggle. Click navigates back to the inline
@@ -2879,6 +2881,8 @@
            is an `overflow-x: auto` container, and the popover this chip
            opens would be clipped at its edge. -->
       <div id="nativeCaptureSize"></div>
+      <button class="ico-btn" id="cindyGear" type="button" hidden aria-expanded="false"
+              title="Display settings" aria-label="Display settings">&#9881;&#xFE0E;</button>
     </div>
   </div>
 

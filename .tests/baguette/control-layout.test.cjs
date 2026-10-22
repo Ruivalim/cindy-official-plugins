@@ -8,15 +8,19 @@ function page({lang='en',coarse=false,stored=null,storageThrows=false}={}){
  const media={matches:coarse,addEventListener:(t,f)=>{if(t==='change')mediaListeners.push(f);}};
  const queries=[];
  const els={};
- const make=id=>({id,style:{},attrs:{},title:'',textContent:'',value:'1',addEventListener(){},setAttribute(k,v){this.attrs[k]=v;},getBoundingClientRect:()=>({width:402,height:844}),querySelector:()=>null,contentDocument:{querySelector:()=>null}});
- const document={documentElement:{lang},body:{classList:{toggle:(c,on)=>{on?classes.add(c):classes.delete(c);},contains:c=>classes.has(c)}},
+ const posted=[];
+ const make=id=>({id,style:{},contentWindow:id==='screen'?{postMessage:(m,o)=>posted.push([m,o])}:undefined,attrs:{},title:'',textContent:'',value:'1',addEventListener(t,f){if(id==='screen'&&t==='load')(handlers.screenload||(handlers.screenload=[])).push(f);},setAttribute(k,v){this.attrs[k]=v;},getBoundingClientRect:()=>({width:402,height:844}),querySelector:()=>null,contentDocument:{querySelector:()=>null}});
+ const document={documentElement:{lang},body:{style:{setProperty(){}},classList:{toggle:(c,on)=>{on?classes.add(c):classes.delete(c);},contains:c=>classes.has(c)}},
   getElementById:id=>els[id]||(els[id]=make(id)),addEventListener:(t,f)=>{(handlers[t]||(handlers[t]=[])).push(f);}};
- const context={ResizeObserver:class{observe(){}},URLSearchParams,AbortSignal,location:{search:'?udid=test',hash:'#cindyClipboard=123.token'},document,
+ const context={ResizeObserver:class{observe(){}},URLSearchParams,AbortSignal,location:{origin:'http://x',search:'?udid=test',hash:'#cindyClipboard=123.token'},document,
   setInterval(){},fetch:async()=>({ok:true,json:async()=>({ok:true,device:{state:'Booted'},ready:true,generation:1})}),
+  addEventListener:(t,f)=>{(handlers['w:'+t]||(handlers['w:'+t]=[])).push(f);},
   matchMedia:q=>{queries.push(q);return media;},
   localStorage:storageThrows?{getItem(){throw Error('denied');},setItem(){throw Error('denied');}}:{getItem:k=>store.has(k)?store.get(k):null,setItem:(k,v)=>store.set(k,String(v))}};
  vm.runInNewContext(read('control.js'),context);
- return {els,classes,store,queries,media,
+ return {els,classes,store,queries,media,posted,
+  message(data,{origin='http://x',fromFrame=true}={}){for(const f of handlers['w:message']||[])f({origin,source:fromFrame?els.screen.contentWindow:{},data});},
+  frameLoaded(gear){els.screen.contentDocument={getElementById:id=>id==='cindyGear'&&gear?{getBoundingClientRect:()=>({bottom:44})}:null};for(const f of handlers.screenload||[])f();},
   setCoarse(v){media.matches=v;for(const f of mediaListeners)f({matches:v});},
   key(key){for(const f of handlers.keydown||[])f({key});},
   get immersive(){return classes.has('immersive');},get sheet(){return classes.has('sheet');}};
@@ -82,4 +86,46 @@ test('the stylesheet only changes the layout under body.immersive; the default l
  assert.match(css,/height:100vh;height:100dvh/);
  // the original header/devices rules still exist
  for(const needle of ['header{display:flex;align-items:center','#viewport{flex:1;min-height:0;overflow:auto}','.devices{padding:10px 16px'])assert.ok(css.includes(needle),needle);
+});
+
+test('in full screen the ⚙ moves into the viewer toolbar; the floating button stays whenever the frame has none',()=>{
+ const t=page({coarse:true});
+ assert.equal(t.classes.has('gear-in-bar'),false,'blank frame: floating button stays');
+ t.frameLoaded(true);
+ assert.equal(t.classes.has('gear-in-bar'),true);
+ const last=t.posted[t.posted.length-1];
+ assert.deepEqual(JSON.parse(JSON.stringify(last[0])),{type:'cindy-gear',on:true,expanded:false,label:'Display settings'});assert.equal(last[1],'http://x');
+ t.message({type:'cindy-gear-toggle'});assert.equal(t.sheet,true);assert.equal(t.posted[t.posted.length-1][0].expanded,true);
+ t.message({type:'cindy-gear-toggle'});assert.equal(t.sheet,false);
+ t.frameLoaded(false);assert.equal(t.classes.has('gear-in-bar'),false,'a frame without the button brings the floating one back');
+ assert.equal(t.posted[t.posted.length-1][0].on,false);
+});
+
+test('toolbar messages are ignored from other origins or windows, and outside full screen',()=>{
+ const t=page({coarse:true});
+ t.message({type:'cindy-gear-ready'},{origin:'http://evil'});assert.equal(t.classes.has('gear-in-bar'),false);
+ t.message({type:'cindy-gear-ready'},{fromFrame:false});assert.equal(t.classes.has('gear-in-bar'),false);
+ t.message({type:'cindy-gear-ready'});assert.equal(t.classes.has('gear-in-bar'),true);
+ t.message({type:'cindy-gear-toggle'},{origin:'http://evil'});assert.equal(t.sheet,false);
+ const d=page({coarse:false});d.message({type:'cindy-gear-ready'});
+ assert.equal(d.classes.has('gear-in-bar'),false,'desktop layout never uses the toolbar button');
+ d.message({type:'cindy-gear-toggle'});assert.equal(d.sheet,false);
+ assert.ok(d.posted.every(([m])=>m.on===false));
+ const z=page({lang:'zh-CN',coarse:true});z.message({type:'cindy-gear-ready'});assert.equal(z.posted[z.posted.length-1][0].label,'显示设置');
+});
+
+test('viewer side: the ⚙ is hidden, last in the toolbar, driven only by same-origin parent messages, and re-measures the bar',()=>{
+ const web=require('node:path').join(__dirname,'../../baguette-simulator/vendor/baguette/Baguette_Baguette.bundle/Web/');
+ const html=fs.readFileSync(web+'sim-native.html','utf8'),js=fs.readFileSync(web+'sim-native.js','utf8');
+ assert.match(html,/<button class="ico-btn" id="cindyGear" type="button" hidden /);
+ assert.match(html,/#cindyGear\[hidden\] \{ display: none; \}/);
+ assert.ok(html.indexOf('id="nativeCaptureSize"')<html.indexOf('id="cindyGear"'));
+ const block=js.slice(js.indexOf("const gear = document.getElementById('cindyGear')"));
+ assert.match(block,/window\.parent !== window/);
+ assert.match(block,/ev\.origin !== location\.origin \|\| ev\.source !== window\.parent/);
+ assert.match(block,/gear\.parentElement\.appendChild\(gear\)/);
+ assert.match(block,/layoutToolbar\(\)/);
+ assert.match(block,/postMessage\(\{ type: 'cindy-gear-toggle' \}, location\.origin\)/);
+ const css=fs.readFileSync(require.resolve(NODE+'control.css'),'utf8');
+ assert.match(css,/body\.immersive\.gear-in-bar #settings-fab\{display:none\}body\.immersive\.gear-in-bar #viewport\{margin-top:0\}/);
 });

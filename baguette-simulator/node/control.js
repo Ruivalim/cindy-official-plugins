@@ -53,19 +53,31 @@ zoom.onchange=()=>{applyZoom();};
 // is coarse (a phone viewing this page); a manual choice always wins and is remembered (best effort).
 const fullscreenButton=document.getElementById('fullscreen'),settingsFab=document.getElementById('settings-fab');
 const LAYOUT_KEY='baguette.fullscreenDevice',coarse=globalThis.matchMedia?.('(pointer: coarse)');
-let layoutChoice=null,sheetOpen=false;
+let layoutChoice=null,sheetOpen=false,gearHosted=false;
 try{const saved=globalThis.localStorage?.getItem(LAYOUT_KEY);layoutChoice=saved==='on'?true:saved==='off'?false:null;}catch{}
 const fullscreenOn=()=>layoutChoice!==null?layoutChoice:!!coarse?.matches;
 function renderLayout(){
   const on=fullscreenOn();if(!on)sheetOpen=false;
   const classes=document.body?.classList;
   classes?.toggle('immersive',on);classes?.toggle('sheet',on&&sheetOpen);
+  const gearIn=on&&gearHosted;classes?.toggle('gear-in-bar',gearIn);
+  if(gearIn&&sheetOpen){try{const g=screen.contentDocument?.getElementById('cindyGear')?.getBoundingClientRect();if(g)document.body.style?.setProperty('--gear-sheet-top',Math.round(g.bottom+8)+'px');}catch{}}
+  try{screen.contentWindow?.postMessage({type:'cindy-gear',on:gearIn,expanded:on&&sheetOpen,label:T.settings},location.origin);}catch{}
   if(settingsFab){settingsFab.setAttribute('aria-expanded',String(on&&sheetOpen));settingsFab.setAttribute('aria-label',T.settings);settingsFab.title=T.settings;}
   if(fullscreenButton){fullscreenButton.textContent=on?T.exitFull:T.enterFull;fullscreenButton.setAttribute('aria-pressed',String(on));}
   applyZoom();
 }
 if(fullscreenButton)fullscreenButton.onclick=()=>{layoutChoice=!fullscreenOn();sheetOpen=false;try{globalThis.localStorage?.setItem(LAYOUT_KEY,layoutChoice?'on':'off');}catch{}renderLayout();};
 if(settingsFab)settingsFab.onclick=()=>{sheetOpen=!sheetOpen;renderLayout();};
+// With the viewer page in the frame, the ⚙ lives at the right end of its device toolbar (no strip of its own);
+// without it (blank, error or stopped device) the floating button above stays.
+screen.addEventListener('load',()=>{try{gearHosted=!!screen.contentDocument?.getElementById('cindyGear');}catch{gearHosted=false;}renderLayout();});
+globalThis.addEventListener?.('message',event=>{
+  if(event.origin!==location.origin||event.source!==screen.contentWindow)return;
+  const type=event.data?.type;
+  if(type==='cindy-gear-ready'){gearHosted=true;renderLayout();}
+  else if(type==='cindy-gear-toggle'&&fullscreenOn()){sheetOpen=!sheetOpen;renderLayout();}
+});
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&sheetOpen){sheetOpen=false;renderLayout();}});
 coarse?.addEventListener?.('change',()=>{if(layoutChoice===null)renderLayout();});
 renderLayout();
