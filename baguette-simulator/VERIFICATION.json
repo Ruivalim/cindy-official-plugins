@@ -1,6 +1,6 @@
 {
   "date": "2026-10-24",
-  "pluginVersion": "0.2.7",
+  "pluginVersion": "0.2.8",
   "baguette": "0.2.10",
   "status": "android-parity-development-package-verified",
   "passed": [
@@ -9,7 +9,8 @@
     "Real viewer file upload: APK content comparison returns unchanged for the identical installed build; PNG and exported WebM copied to Downloads with exact byte-size verification and media-scan request.",
     "Real viewer recording across rotation exported a playable silent WebM; Chrome decoded 720x1600 video (18 frames observed).",
     "Packaged 0.2.7 installed through the normal update API in isolated Cindy Dev (host commit d75ffb3b85); installed viewer exercised Unicode paste, selected copy, pinch, narrow viewport, dark mode and recording export without page errors.",
-    "Pinned Android dependency/vendor inventory check passed. Targeted tests cover import failure progress, upload authentication and cleanup, APK comparison failures, partial state updates and wheel touch sequencing."
+    "Pinned Android dependency/vendor inventory check passed. Targeted tests cover import failure progress, upload authentication and cleanup, APK comparison failures, partial state updates and wheel touch sequencing.",
+    "0.2.8 packaging-only follow-up: three portable OCR resources moved to existing SHA-pinned build inputs. Official archive SHA-512 matches npm lock and selected resource bytes exactly match the 0.2.7 installed/tested package. Runtime interaction code unchanged."
   ],
   "notVerified": [
     "Stable production/Beta installation of the 0.2.7 package remains pending. Development acceptance is not the repository device attestation; minCindyVersion remains 0.1.116.",

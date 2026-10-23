@@ -172,3 +172,8 @@ File upload uses the existing exact loopback Host/Origin/capability boundary and
 Continuous recording is browser-local canvas/MediaRecorder work; it adds no host execution, network destination or audio permission. The viewer limits recording to five minutes/128 MiB, stops capture tracks/timers after recording, and exports a local WebM. Rotation keeps a fixed recording canvas with letterboxing. Leaving a recording viewer requires saving first; no persistent recovery mechanism is introduced.
 
 Agent parity reuses shared per-device locks, busy/job results, viewer readiness, foreground activity ownership, and partial/unknown execution vocabulary. A failed installed-APK fingerprint comparison is never treated as an absent or stale app: automatic installation stops and asks the Agent to inspect; explicit full install remains available. Device switching only changes selection and never starts, stops or transfers apps implicitly.
+
+
+## OCR packaging follow-up 0.2.8
+
+The three unchanged portable OCR resources (WASM plus English/Chinese model gzip files) now use the repository's existing `binary-dependencies.json` build-input mechanism instead of contributing to tracked binary totals. Each official npm tarball is pinned by SHA-256 and additionally verified against the lockfile's SHA-512 integrity; each selected member is byte-identical to the 0.2.7 installed resource and the vendor inventory. These resources are shared across platforms, contain no host-native executable, and remain inside the final self-contained `.cindy`. There is no runtime download or new build hook.
