@@ -36,8 +36,13 @@ const STAGE_STYLE='<style id="cindy-stage-style">'+[
  '#simNativeView[data-handheld] #nativeDeviceFrame>div>div:first-child{border-radius:var(--cindy-screen-radius,0)!important}',
  '#simNativeView[data-handheld] #nativeDeviceFrame>div{outline:1px solid rgba(0,0,0,.08);outline-offset:-1px;border-radius:var(--cindy-screen-radius,0)}',
 ].join('\n')+'</style>';
+// Older iPhone/iPad chrome defines Home relative to the horizontal centre,
+// but upstream treats its zero x offset as the left edge. Centre the overlay
+// in the unrotated bezel so its image and hit target rotate/scale together.
+// Independent translate preserves the button's hover/pressed transform.
+const DEVICE_STYLE='<style id="cindy-device-style">#nativeDeviceFrame button[data-btn="home"]{left:50%!important;translate:-50% 0}</style>';
 // viewer-stage.js keeps the 3D backdrop on Cindy's light/dark mode after attach.
-const STAGE_HEAD=STAGE_STYLE+'<script src="/viewer-stage.js"></script>';
+const STAGE_HEAD=DEVICE_STYLE+STAGE_STYLE+'<script src="/viewer-stage.js"></script>';
 const DEVICE_PAGE=/^\/simulators\/[^/?#]+\/?(?:[?#]|$)/;
 function stagedPage(url){
  if(!DEVICE_PAGE.test(url))return false;
@@ -49,7 +54,7 @@ function authScript(token){
  return token?`<script src="/viewer-auth.js?cindyViewer=${encodeURIComponent(token)}"></script>`:'';
 }
 function injectStage(html,token,staged=true){
- const inject=(staged?STAGE_HEAD:'')+authScript(token);
+ const inject=(staged?STAGE_HEAD:DEVICE_STYLE)+authScript(token);
  const at=html.search(/<\/head>/i);
  if(at>=0)return html.slice(0,at)+inject+html.slice(at);
  const open=html.search(/<head[^>]*>/i);
