@@ -19,7 +19,7 @@
       "description": "현재 화면을 캡처합니다. 지원하는 Cindy는 이미지를 결과에 첨부합니다. 이전 버전이거나 JPEG 압축 후에도 130 KB를 넘으면 path만 반환하므로 조작 전에 이미지 도구로 여세요. 사용자가 보는 방향으로 세우고 모서리와 다이내믹 아일랜드를 포함합니다. 기본 1픽셀 = 1뷰 포인트라 좌표를 tap과 gesture에 그대로 쓸 수 있습니다. grid=true는 눈금, region은 일부 영역, scale 2–3은 고해상도(좌표는 scale로 나눔)."
     },
     "describe_ui": {
-      "description": "화면의 요소(접근성 트리)를 읽습니다. 기본은 읽는 순서의 간단한 목록으로 역할, 텍스트, id, 뷰 포인트 frame과 center(center를 바로 탭 가능). query/role로 거르고, x,y는 그 지점의 요소, mode=full은 전체 트리. 접근성이 없는 게임이나 직접 그린 UI는 화면의 글자를 읽어 위치와 함께 반환합니다(source=ocr). 글자 없는 아이콘은 screenshot으로 보세요. OCR 실패는 오류로 반환하며, 글자가 없다는 뜻이 아닙니다. tvOS/visionOS는 OCR 텍스트를 반환하며 접근성 트리나 요소 ID는 제공하지 않습니다. Apple TV는 리모컨으로 조작하세요."
+      "description": "화면의 요소(접근성 트리)를 읽습니다. 기본은 읽는 순서의 간단한 목록으로 역할, 텍스트, id, 뷰 포인트 frame과 center(center를 바로 탭 가능). query/role로 거르고, x,y는 그 지점의 요소, mode=full은 전체 트리. 접근성이 없는 게임이나 직접 그린 UI는 화면의 글자를 읽어 위치와 함께 반환합니다(source=ocr). 글자 없는 아이콘은 screenshot으로 보세요. OCR 실패는 오류로 반환하며, 글자가 없다는 뜻이 아닙니다. tvOS/visionOS는 모든 모드(full 및 x,y 지점 조회 포함)에서 OCR 텍스트 목록을 반환하며 접근성 트리나 요소 ID는 제공하지 않습니다. Apple TV는 리모컨으로 조작하세요."
     },
     "tap": {
       "description": "시뮬레이터의 시스템 터치 경로로 하는 실제 터치. 창이 필요 없고 Mac이 잠겨 있어도 되며 App은 손가락 터치로 받습니다. text나 id(role, nth 가능)로 요소를 지정(게임에서는 화면에서 읽은 글자와 일치), 또는 x,y 뷰 포인트(본 뒤 화면이 회전했으면 잘못 누르지 않고 다시 보라고 알림). count=2는 두 번 탭, duration≥0.5는 길게 누르기. 기본적으로 약 0.6초 뒤 새 요소를 반환(observe=ui), observe=screenshot이면 스크린샷 첨부. App 프로세스에 이벤트를 주입하지 마세요. until=텍스트는 그 글자가 나타날 때까지 기다린 뒤 반환합니다(다음 페이지, 대화상자). settle을 추측하는 것보다 정확합니다. Vision Pro는 화면 좌표를 한 손 핀치 선택·길게 누르기로 변환합니다. Apple TV는 press를 사용하세요."

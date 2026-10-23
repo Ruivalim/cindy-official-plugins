@@ -6,6 +6,8 @@ globalThis.createVisionStage = function({canvas,api,message,onError,zh}) {
  let mode='interact',keyboard=false,twoHands=false,contact=null,pointer=null,stopped=false;
  let idleTimer=null,beat=null,lastHover=0,keys=new Set(),keyTimer=null,wheel=null;
  let recording=null,saving=false,hoverBlocked=false,game=null,gameTimer=null,gameFailed=false;
+ // Ending and queued contacts still belong to this controller until settled.
+ const contacts=new Set();
  async function record(){
   if(saving)return;
   try{
@@ -17,14 +19,15 @@ globalThis.createVisionStage = function({canvas,api,message,onError,zh}) {
  const point=e=>{const r=canvas.getBoundingClientRect();return {x:clamp((e.clientX-r.left)/r.width,0,1),y:clamp((e.clientY-r.top)/r.height,0,1),aspect:r.width/r.height};};
  const usable=()=>!stopped&&!document.hidden;
  const captureError=()=>message(zh?'未能捕获鼠标。请先激活查看器窗口后重试；当前浏览器也可能不支持鼠标捕获。':'Pointer capture failed. Activate the viewer window and retry; the browser may not support pointer lock.');
- function done(c){c.finished=true;c.resolve();if(contact===c){contact=null;clearTimeout(beat);beat=null;}}
+ function done(c){c.finished=true;contacts.delete(c);c.resolve();if(contact===c){contact=null;clearTimeout(beat);beat=null;}}
+ function failed(c){hoverBlocked=true;gameFailed=true;onError();done(c);cancel();}
  async function pump(c){
   if(c.busy||!c.ready||c.finished)return;
   const pending=c.pending;if(!pending&&!c.ending)return;
   c.pending=null;c.busy=true;
   const phase=pending?'changed':'ended',sample=pending||c.sent;
   try{await api('spatial',{...sample,gesture:c.id,phase});c.sent=sample;if(phase==='ended')done(c);}
-  catch{hoverBlocked=true;gameFailed=true;onError();done(c);pointer=null;keys.clear();}
+  catch{failed(c);}
   finally{c.busy=false;if(!c.finished)pump(c);}
  }
  function heartbeat(c){
@@ -35,18 +38,21 @@ globalThis.createVisionStage = function({canvas,api,message,onError,zh}) {
   const previous=contact;if(previous&&!previous.ending)finish();
   const c={id:crypto.randomUUID(),last:{z:0,spread:.1,angle:0,aspect:canvas.width/canvas.height||16/9,...value},pending:null,ready:false,busy:false,ending:false,finished:false};
   c.initial={...c.last};c.sent=c.initial;
-  c.done=new Promise(resolve=>{c.resolve=resolve;});contact=c;
+  c.done=new Promise(resolve=>{c.resolve=resolve;});contacts.add(c);contact=c;
   (previous?.done||Promise.resolve()).then(async()=>{
    if(!usable()||c.cancelled){done(c);return;}
    try{await api('spatial',{...c.initial,gesture:c.id,phase:'began'});c.ready=true;pump(c);if(!c.ending)heartbeat(c);}
-   catch{hoverBlocked=true;gameFailed=true;onError();done(c);pointer=null;keys.clear();}
+   catch{failed(c);}
   });return c;
  }
  function update(c,value){if(!c||c.ending||c.finished)return;c.last={...c.last,...value};c.pending=c.last;pump(c);}
  function finish(discard=false){
   clearTimeout(idleTimer);idleTimer=null;clearTimeout(beat);beat=null;wheel=null;
-  if(!contact)return Promise.resolve();const c=contact;
-  c.ending=true;if(discard){c.pending=null;c.cancelled=!c.ready;}pump(c);return c.done;
+  const current=contact;
+  for(const c of discard?contacts:current?[current]:[]){
+   c.ending=true;if(discard){c.pending=null;c.cancelled=!c.ready;}pump(c);
+  }
+  return current?.done||Promise.resolve();
  }
  function cancel(){pointer=null;game=null;keys.clear();clearTimeout(keyTimer);keyTimer=null;finish(true);}
  // Toolbar drags are temporary camera gestures, independent of the selected

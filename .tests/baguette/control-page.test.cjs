@@ -26,9 +26,9 @@ function fakeDocument(){
  for(const id of IDS){byId[id]=el(id.startsWith('btn')||id.includes('cancel')||id.includes('ok')||id.includes('save')||id==='device-chip'?'button':'div');byId[id].id=id;}
  const screen=byId.screen;let src='about:blank';screen.loads=[];
  Object.defineProperty(screen,'src',{get:()=>src,set:v=>{src=v;screen.loads.push(v);}});
- screen.contentDocument={querySelector:()=>null,addEventListener(){},documentElement:null};screen.contentWindow={};
+ screen.contentDocument={querySelector:()=>null,getElementById:()=>null,addEventListener(){},documentElement:null};screen.contentWindow={};
  const body=el('body');
- const document={documentElement:{lang:'zh-CN',clientWidth:400,style:{}},body,hidden:false,getElementById:id=>byId[id]||null,createElement:el,addEventListener(){},listeners:{}};
+ const document={documentElement:{lang:'zh-CN',clientWidth:400,style:{}},body,hidden:false,getElementById:id=>byId[id]||null,createElement:el,addEventListener(name,fn){(this.listeners[name]??=[]).push(fn);},listeners:{}};
  return {document,byId,body,text:n=>[n.textContent,...all(n).map(c=>c.textContent)].join(' ')};
 }
 
@@ -71,6 +71,19 @@ test('a newly opened task view connects while its first status request is pendin
    assert.match(dom.text(dom.byId.overlay),/画面已断开/);
    assert.equal(dom.byId.overlay.querySelector('button').textContent,'恢复画面');
   }
+ }
+});
+
+test('modified arrows rotate only iOS and remain available to TV and Vision device input',async()=>{
+ for(const runtime of ['iOS-27','tvOS-27','xrOS-27']){
+  const {dom}=await boot({respond:()=>status({device:{udid,runtime,state:'Booted'}})}),rotations=[];
+  dom.byId.screen.contentWindow.__nativeRotateBy=step=>rotations.push(step);
+  const shortcut=dom.document.listeners.keydown[0];
+  for(const modifier of ['metaKey','ctrlKey'])for(const key of ['ArrowLeft','ArrowRight'])for(const shiftKey of [false,true]){
+   const event={key,[modifier]:true,shiftKey,target:{tagName:'CANVAS'},preventDefault(){this.prevented=true;},stopImmediatePropagation(){this.stopped=true;}};
+   shortcut(event);assert.equal(!!event.prevented,runtime==='iOS-27');assert.equal(!!event.stopped,runtime==='iOS-27');
+  }
+  assert.deepEqual(rotations,runtime==='iOS-27'?[-1,-1,1,1,-1,-1,1,1]:[]);
  }
 });
 

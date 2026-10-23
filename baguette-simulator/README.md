@@ -56,7 +56,8 @@ use `move` with `[right,up,back]` or `dolly distance` for depth.
 Take another screenshot after moving the camera.
 
 Orientation, posture, status-bar override, touch-menu paste, `scroll_to` and `heal` remain
-iOS-only. tvOS/visionOS use OCR instead of accessibility trees/IDs. Input adapters
+iOS-only. tvOS/visionOS return OCR text lists in all query modes, including
+`mode=full` and `x,y` hit tests, instead of accessibility trees/IDs. Input adapters
 were exercised with Xcode 27 and tvOS/visionOS 27; other versions are unverified.
 See [native protocol and verification notes](native/platform-support.md).
 Stable/Beta Cindy package installation and embedded-preview acceptance are pending.

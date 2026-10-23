@@ -19,7 +19,7 @@
       "description": "截取当前画面：支持内联图片的 Cindy 会在结果里附图；旧版 Cindy 或压缩后仍超过 130 KB 时只返回 path，必须用读图工具打开。图片已按用户看到的方向摆正，带屏幕圆角与灵动岛；默认 1 像素 = 1 视图点，图上读到的坐标可直接传给 tap 与 gesture。grid=true 叠加带刻度的坐标网格；region 截取局部（看小字、核对边框与安全区）；scale 2–3 更清晰（坐标除以 scale）。"
     },
     "describe_ui": {
-      "description": "读取当前界面元素（无障碍树）。默认返回精简列表：角色、文字、id、frame 与 center（视图点，可直接点击），按阅读顺序排列。query/role 过滤；x、y 查询某一点下的元素；mode=full 返回完整树。游戏或自绘界面没有无障碍元素时，自动改为识别画面上的文字（source=ocr），同样带坐标；没有文字的图标用 screenshot 看。识别失败会报错，不表示画面没有文字。 tvOS/visionOS 使用 OCR 文本列表，不提供无障碍树或元素 ID。Apple TV 文字坐标仅用于观察，操作用遥控。"
+      "description": "读取当前界面元素（无障碍树）。默认返回精简列表：角色、文字、id、frame 与 center（视图点，可直接点击），按阅读顺序排列。query/role 过滤；x、y 查询某一点下的元素；mode=full 返回完整树。游戏或自绘界面没有无障碍元素时，自动改为识别画面上的文字（source=ocr），同样带坐标；没有文字的图标用 screenshot 看。识别失败会报错，不表示画面没有文字。 tvOS/visionOS 的所有模式（含 full 和 x,y 点位查询）均返回 OCR 文本列表，不提供无障碍树或元素 ID。Apple TV 文字坐标仅用于观察，操作用遥控。"
     },
     "tap": {
       "description": "真实触摸点击：走模拟器的系统触摸通道，不依赖窗口，Mac 锁屏也能用，App 收到的就是手指触摸。按 text 或 id（可加 role、nth）点元素，游戏里 text 按画面上识别出的文字点；或按 x、y 视图点点击（屏幕转向后会要求重新看图，不会点错位置）。count=2 双击；duration≥0.5 长按。默认点击后约 0.6 秒返回新的界面元素（observe=ui），observe=screenshot 直接附上截图。验证交互要用它，不要往 App 进程里注入事件。 until=文字：点完等这段文字出现再返回（翻页、弹窗），比猜 settle 准。 Vision Pro：把画面坐标投射为单手捏合点击/长按；Apple TV 请用 press 遥控。"

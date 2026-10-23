@@ -42,7 +42,7 @@ AI 可使用 `tap` 的截图坐标/OCR 文字、`press digital-crown`（或 `hom
 前后移动用 `move` 的 `[右,上,后]` 或 `dolly distance`；移动相机后重新截图。
 
 屏幕旋转、折叠姿态、状态栏覆盖、触摸菜单粘贴、`scroll_to` 及 `heal` 仅用于 iOS。
-tvOS/visionOS 使用 OCR，不提供无障碍树和元素 ID。
+tvOS/visionOS 所有查询模式均使用 OCR 文本列表（含 `mode=full` 和 `x,y` 点位查询），不提供无障碍树和元素 ID。
 新增输入适配已验证 Xcode 27、tvOS/visionOS 27；其他版本尚未验证。
 详见[原生协议及验证记录](native/platform-support.md)。正式版/Beta Cindy 整包安装及内嵌预览验收待完成。
 

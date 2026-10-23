@@ -12,6 +12,8 @@ Vision Pro 临时拖动视角按钮不改变当前模式。画面里的具体手
 使用 `press` 遥控（up/down/left/right/select/back/menu/home/play-pause）；Vision Pro
 使用 `tap` 空间点击、长按及键盘，`press digital-crown` 返回主界面。截图与 OCR
 坐标遵循同一视图点空间，Vision Pro 点击通过单手捏合发送。
+TV/Vision 的 `describe_ui` 所有模式均返回 OCR 文本列表，`mode=full` 不提供无障碍树，
+`x,y` 按文字框筛选并优先返回最小包含框；OCR 失败会报错，不视为空画面。
 
 Apple TV 的实时画面支持双指触控板移动，连续发送原生 Siri Remote 触点的开始、
 移动和结束事件，长滑可以跨越多个选项。单击确认当前焦点项，右键或 macOS Control

@@ -145,7 +145,27 @@ function createAgent({binary, deviceSet, root, run, sim, Failure, spatialAction,
     return radius;
   }
 
+  async function describeText(device, p) {
+    const limit = number(p.limit, 'limit', 1, 600, 250), atPoint = p.x !== undefined || p.y !== undefined;
+    if (atPoint && (p.x === undefined || p.y === undefined)) throw failure('INVALID_ARGUMENT', 'Provide both x and y to query a screen point.');
+    const read = await readText(device, {deadline: p._deadline});
+    look(device, read.screen);
+    const q = typeof p.query === 'string' ? p.query.trim().toLowerCase() : '';
+    let elements = read.elements.filter(e => (!q || e.label.toLowerCase().includes(q)) && (p.role === undefined || p.role === e.role));
+    let at;
+    if (atPoint) {
+      const view = G.viewSize(read.screen);
+      at = [number(p.x, 'x', 0, view.width), number(p.y, 'y', 0, view.height)];
+      elements = elements.filter(e => at[0] >= e.frame[0] && at[0] <= e.frame[0] + e.frame[2] && at[1] >= e.frame[1] && at[1] <= e.frame[1] + e.frame[3])
+        .sort((a, b) => a.frame[2] * a.frame[3] - b.frame[2] * b.frame[3]);
+    }
+    const count = atPoint ? Math.min(limit, 8) : limit;
+    return {udid: device.udid, screen: viewInfo(read.screen), source: 'ocr', ...(at ? {at} : {}), elements: elements.slice(0, count), total: elements.length, truncated: elements.length > count,
+      note: platform(device) === 'tvOS' ? 'Text read from the screen image (OCR), without accessibility trees or element IDs. Use press up/down/left/right/select/back to move focus and select; Apple TV has no touchscreen.' : 'Text read from the screen image (OCR), without accessibility trees or element IDs. tap text=… and wait_for text=… work on text; use screenshot for icons.'};
+  }
+
   async function describe(device, p = {}) {
+    if (platform(device) !== 'iOS') return describeText(device, p);
     if (p.x !== undefined || p.y !== undefined) {
       // What is under a point: the elements whose frame contains it, innermost first.
       // (Baguette's hit test can answer with a whole container, i.e. the page.)
@@ -171,11 +191,7 @@ function createAgent({binary, deviceSet, root, run, sim, Failure, spatialAction,
     const result = G.compactTree(tree, screen, {query: p.query, role: p.role, limit});
     // No accessibility at all (a game, an engine-drawn UI): read the text off the pixels instead.
     if (!result.total && (p.role === undefined || p.role === 'text') && noAx.has(device.udid)) {
-      const read = await readText(device, {deadline: p._deadline});
-      const q = typeof p.query === 'string' ? p.query.trim().toLowerCase() : '';
-      const elements = q ? read.elements.filter(e => e.label.toLowerCase().includes(q)) : read.elements;
-      return {udid: device.udid, screen: viewInfo(read.screen), source: 'ocr', elements: elements.slice(0, limit), total: elements.length, truncated: elements.length > limit,
-        note: platform(device) === 'tvOS' ? 'Text read from the screen image (OCR). Use press up/down/left/right/select/back to move focus and select; Apple TV has no touchscreen.' : 'Text read from the screen image (OCR). tap text=… and wait_for text=… work on text; use screenshot for icons.'};
+      return describeText(device, p);
     }
     return {udid: device.udid, screen: viewInfo(screen), ...result,
       ...(!result.total && !p.query && !p.role ? {note: 'No accessibility elements: a game or custom-drawn UI. Use screenshot (grid on) and tap by coordinates.'} : {})};

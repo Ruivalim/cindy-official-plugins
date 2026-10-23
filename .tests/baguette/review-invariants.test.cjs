@@ -882,6 +882,25 @@ test('describe distinguishes successful empty OCR from screenshot, Vision and bu
   }
 });
 
+test('TV and Vision describe modes always use real OCR, including point and full queries',async()=>{
+ for(const runtime of ['tvOS-27','xrOS-27']){
+  const f=agentFixture(),device={...f.device,runtime};
+  f.state.enumeration='Screen ID: 1\n Device Name: primary\n Pixel Size: {3840, 2160}\n Preferred UI Scale: 2\n';
+  f.state.ocr=[{text:'Continue',box:[.1,.1,.2,.1]},{text:'Go',box:[.11,.12,.05,.03]},{text:'Other',box:[.7,.7,.1,.1]}];
+  for(const params of [{},{mode:'full'},{x:220,y:140},{query:'continue'},{role:'button'},{x:0,y:0}]){
+   const result=await f.agent.describe(device,params);assert.equal(result.source,'ocr');assert.equal(result.tree,undefined);
+   if(params.x===220)assert.deepEqual(Array.from(result.elements,e=>e.label),['Go','Continue']);
+   else if(params.x===0||params.role==='button')assert.equal(result.elements.length,0);
+   else assert.equal(result.total,params.query?1:3);
+  }
+  assert.ok(!f.state.calls.some(([,args])=>args[0]==='describe-ui'));
+  for(const params of [{mode:'full'},{x:220,y:140}]){
+   f.state.ocr=null;await assert.rejects(f.agent.describe(device,params),/OCR unavailable/);
+   f.state.ocr=[];const empty=await f.agent.describe(device,params);assert.equal(empty.source,'ocr');assert.equal(empty.elements.length,0);
+  }
+ }
+});
+
 test('explicit viewer close survives task polling and worker restart; an unexpected exit can reconnect',async t=>{
   const {createRuntime}=require(path.join(dir,'runtime.cjs'));let wanted=true,live=false,opens=0;
   const bindings=new Map([['task-1',{udid:A}]]),settingsFile=path.join(await temporary(t),'settings.json');

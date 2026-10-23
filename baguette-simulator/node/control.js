@@ -473,10 +473,10 @@
       event.preventDefault(); event.stopImmediatePropagation(); if (!event.repeat) press(remote[event.key]); return;
     }
     if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
-    const k = event.key, action =
+    const k = event.key, ios = M.platform(state.status?.device) === 'iOS', action =
       (k === '=' || k === '+') ? () => zoomBy(1) : k === '-' ? () => zoomBy(-1) : k === '0' ? () => setZoom({ mode: 'fit' })
         : (k === '1' && state.fitPct) ? () => setZoom({ mode: 'pct', pct: 100 })
-          : k === 'ArrowLeft' ? () => rotate(-1) : k === 'ArrowRight' ? () => rotate(1)
+          : (ios && k === 'ArrowLeft') ? () => rotate(-1) : (ios && k === 'ArrowRight') ? () => rotate(1)
             : (event.shiftKey && (k === 'h' || k === 'H')) ? home : (!event.shiftKey && (k === 's' || k === 'S')) ? screenshot : null;
     if (!action) return;
     event.preventDefault(); event.stopImmediatePropagation(); action();

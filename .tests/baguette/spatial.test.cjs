@@ -50,6 +50,28 @@ test('blur, hidden page, stream reset and page exit discard unsent gestures',asy
   const active=stage();active.emit('pointerdown');await tick();stop(active);await tick();assert.deepEqual(active.calls.map(p=>p.phase),['began','ended']);
  }
 });
+test('cancellation retires cached motion and queued starts across every unfinished gesture',async()=>{
+ for(const phase of ['began','changed','ended'])for(const stop of [s=>s.blur(),s=>s.hide(),s=>s.control.cancel(),s=>s.exit(),s=>s.emit('pointercancel')]){
+  let ack;const s=stage(p=>p.phase===phase?new Promise(resolve=>ack=resolve):Promise.resolve());
+  s.emit('pointerdown');await tick();
+  s.emit('pointermove',{clientX:1000});await tick();
+  s.emit('pointermove',{clientX:1100});s.emit('pointerup');await tick();
+  s.emit('pointerdown',{pointerId:2});s.emit('pointerup',{pointerId:2});s.emit('pointerdown',{pointerId:3});
+  const count=s.calls.length,old=s.calls[0].gesture;stop(s);ack();await tick();
+  assert.ok(s.calls.every(p=>p.gesture===old),'no queued gesture starts after cancellation');
+  assert.ok(s.calls.slice(count).every(p=>p.phase==='ended'),'only release may follow cancellation');
+  if(s.calls.at(-1).phase==='ended'&&phase==='ended')ack();await tick();
+  assert.equal(s.calls.filter(p=>p.phase==='ended').length,1);
+ }
+});
+test('uncertain delivery cancels queued gestures instead of starting them after the failed owner',async()=>{
+ for(const phase of ['began','changed','ended']){
+  let reject;const s=stage(p=>p.phase===phase?new Promise((_resolve,r)=>reject=r):Promise.resolve());
+  s.emit('pointerdown');await tick();s.emit('pointermove',{clientX:1000});await tick();s.emit('pointerup');await tick();
+  s.emit('pointerdown',{pointerId:2});const old=s.calls[0].gesture;reject(Error('lost acknowledgement'));await tick();
+  assert.ok(s.calls.every(p=>p.gesture===old));assert.equal(s.errors(),1);
+ }
+});
 test('two hands and camera controls use spatial modes; failed begin is never retried',async()=>{
  const s=stage();s.control.choose('two-hands');s.emit('pointerdown');await tick();s.emit('pointermove',{clientX:1152,clientY:432});s.emit('pointerup');await tick();
  assert.equal(s.calls[0].mode,'two-hands');assert.ok(Math.abs(s.calls.at(-1).spread-.2)<1e-9);assert.ok(s.calls.at(-1).angle>0);

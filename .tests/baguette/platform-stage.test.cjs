@@ -41,6 +41,16 @@ test('Vision drops queued keyboard and paste input if the switch is disabled bef
  s.emit('keydown',{code:'Enter'});s.emit('paste',{clipboardData:{getData:()=> 'queued'}});
  s.choose('keyboard');release();await tick();assert.equal(s.calls.length,1);
 });
+test('TV and captured Vision forward modified arrow keys with their original modifiers',async()=>{
+ for(const platform of ['tvOS','visionOS']){
+  const s=stage(platform,undefined,platform==='visionOS');if(platform==='visionOS')s.choose('keyboard');
+  for(const modifier of ['metaKey','ctrlKey'])for(const code of ['ArrowLeft','ArrowRight'])s.emit('keydown',{code,[modifier]:true,shiftKey:true});
+  await tick();assert.deepEqual(s.calls.map(p=>[p.action,p.code,p.modifiers]),[
+   ['key','ArrowLeft',['shift','command']],['key','ArrowRight',['shift','command']],
+   ['key','ArrowLeft',['control','shift']],['key','ArrowRight',['control','shift']]
+  ]);
+ }
+});
 test('TV screen click confirms focus anywhere; right-click returns once without selecting',async()=>{
  const s=stage();s.emit('pointerdown');s.emit('pointerup');await tick();
  s.emit('pointerdown',{button:2});s.emit('pointerup',{button:2});const menu=s.emit('contextmenu');await tick();
