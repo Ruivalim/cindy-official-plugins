@@ -1,8 +1,8 @@
 {
   "date": "2026-10-24",
-  "pluginVersion": "0.2.17",
+  "pluginVersion": "0.2.18",
   "baguette": "0.2.10",
-  "status": "discovery-failures-source-verified-package-acceptance-pending",
+  "status": "permission-api-and-text-dispatch-source-verified-package-acceptance-pending",
   "baseCommit": "e13abcd2caad2f83a66ed7b1716312ed4145eae8",
   "passed": [
     "Rebased onto main e13abcd (#199). TV/Vision native helpers, platform-stage, vision-stage, spatial and trackpad implementation files are byte-identical to main. Android review fixes retained.",
@@ -17,10 +17,12 @@
     "Real API36: after confirming each test lock setting has settled, four physical orientations preserve accelerometer_rotation=0 and =1. Original lock setting and portrait/Home restored; the private test device returned to Shutdown. No other Apple device or installed Cindy was changed.",
     "Binary package offline fixtures: 21 Python tests completed, 1 opt-in live case skipped. The existing ZIP source-copy loop omits directory entries before collecting dependencies. The same final 256-entry cap and source/expanded/archive limits remain: 256 regular entries pass, 257 fail. Source bytes, dependency bytes, executable modes and final path validation remain covered.",
     "0.2.17: Android discovery retains non-ENOENT directory/record errors, non-ESRCH process-probe errors and invalid live private connection records. Preflight failures stop lifecycle writes; failed post-shutdown observation remains unknown; existing core platformErrors and runtime stopAll preserve incomplete stop evidence. No new retry/state mechanism. Android tests 90/90, including file-system faults and all four stop-all entry points; new regressions fail on the previous implementation. No emulator or installed Cindy was changed in this round.",
-    "0.2.17 full repository gate including binary dependencies: 411/414 passed; only the same three Bash 3 baseline publishing failures on unchanged main e13abcd. Final manifest/localization checks 27/27. Forge validation passed."
+    "0.2.17 full repository gate including binary dependencies: 411/414 passed; only the same three Bash 3 baseline publishing failures on unchanged main e13abcd. Final manifest/localization checks 27/27. Forge validation passed.",
+    "0.2.18: removed auto/touch observation-error fallback; typeText marks its single sent owner only after rpc passes synchronous budget/argument checks and starts a request. Clear, direct type, clipboard and keys share this boundary; only started modifiers are released. Guest API read precedes every privacy batch: API 23–32 uses READ_EXTERNAL_STORAGE; API 33+ READ_MEDIA_*; background location and motion follow API 29 introduction. Invalid/unsupported API and read failures stop all batch writes. New budget-interleaving and permission-boundary regressions fail on 0.2.17. No retries, caches, queues, installed Cindy changes or actual emulator operations.",
+    "0.2.18: Android regression 191/191. Full repository gate including binary dependencies 512/515, with only the same three Bash 3 baseline publishing failures on unchanged main e13abcd. Final four-language manifest/localization checks 27/27; permission API boundaries and storage scope are disclosed in the tool description and paired READMEs."
   ],
   "notVerified": [
-    "0.2.17 packaged acceptance on production/Beta Cindy is pending. Dash confirmed 0.2.14 on Beta; that historical attestation does not cover this rebased package.",
+    "0.2.18 packaged acceptance on production/Beta Cindy is pending. Dash confirmed 0.2.14 on Beta; that historical attestation does not cover this rebased package.",
     "No other iOS/tvOS/visionOS device was started or stopped for this integration. Upstream real-device evidence remains recorded separately.",
     "Android Windows/Linux physical-host acceptance remains pending."
   ],

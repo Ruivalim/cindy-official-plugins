@@ -139,15 +139,19 @@ function createAgent({root,devices,run}){
     if(p.method==='touch'&&(p.clear||p.keys!==undefined))throw fail('INVALID_ARGUMENT','Touch paste cannot be combined with clear or keys.');
     let method=p.method||'auto',focused=null;
     if(method==='touch'||method==='auto'){
-      const ui=await describe(d,p).catch(()=>null);focused=ui?.elements.find(e=>e.role==='field'&&e.focused);
+      const ui=await describe(d,p);focused=ui.elements.find(e=>e.role==='field'&&e.focused);
       if(method==='touch'&&!focused)throw fail('FIELD_NOT_FOCUSED','Touch paste needs a focused Android text field. Tap it first.');
       if(method==='auto')method=!ui?.elements.some(e=>e.role==='field')&&/^[\x20-\x7e\n\t]{1,300}$/.test(p.text||'')?'type':'paste';
     }
     let sent=false;
+    // rpc rejects expired budgets/invalid values synchronously, before it can
+    // start a request. All text mutations share that one dispatch boundary.
+    const input=(method,value)=>{const pending=call(d,method,value,p);sent=true;return pending;};
+    const inputKey=key=>input('sendKey',{key,eventType:2});
     try{
-      if(p.clear){sent=true;await call(d,'sendKey',{key:'Control',eventType:0},p);await key(d,'a',p);await call(d,'sendKey',{key:'Control',eventType:1},p);await key(d,'Backspace',p);}
-      if(p.text!==undefined){sent=true;if(method==='type')for(const char of p.text)await key(d,char==='\n'?'Enter':char==='\t'?'Tab':char,p);else{
-        await call(d,'setClipboard',{text:p.text},p);const actual=await call(d,'getClipboard',{},p);if(actual.text!==p.text)throw fail('CLIPBOARD_UNVERIFIED','Android clipboard did not match the input. Paste was not sent.','unknown');
+      if(p.clear){await input('sendKey',{key:'Control',eventType:0});await inputKey('a');await input('sendKey',{key:'Control',eventType:1});await inputKey('Backspace');}
+      if(p.text!==undefined){if(method==='type')for(const char of p.text)await inputKey(char==='\n'?'Enter':char==='\t'?'Tab':char);else{
+        await input('setClipboard',{text:p.text});const actual=await call(d,'getClipboard',{},p);if(actual.text!==p.text)throw fail('CLIPBOARD_UNVERIFIED','Android clipboard did not match the input. Paste was not sent.','unknown');
         if(method==='touch'){
           await gesture(d,{_deadline:p._deadline,kind:'tap',x:focused.center[0],y:focused.center[1],duration:0.7,observe:'none'});await sleep(300,p._deadline);
           const menu=await describe(d,p),paste=menu.elements.find(e=>/^(paste|粘贴|貼り付け|붙여넣기)$/i.test(e.label||''));
@@ -155,7 +159,7 @@ function createAgent({root,devices,run}){
           await gesture(d,{_deadline:p._deadline,kind:'tap',x:paste.center[0],y:paste.center[1],observe:'none'});
         }else await devices.adb(d,['shell','input','keyevent','279'],{deadline:p._deadline,mutation:true});
       }}
-      for(const k of parsed){sent=true;try{for(const m of k.modifiers)await call(d,'sendKey',{key:m,eventType:0},p);await key(d,k.key,p);}finally{for(const m of k.modifiers.reverse())await call(d,'sendKey',{key:m,eventType:1},{_deadline:Date.now()+3000}).catch(()=>{});}}
+      for(const k of parsed){const pressed=[];try{for(const m of k.modifiers){const pending=input('sendKey',{key:m,eventType:0});pressed.push(m);await pending;}await inputKey(k.key);}finally{for(const m of pressed.reverse())await call(d,'sendKey',{key:m,eventType:1},{_deadline:Date.now()+3000}).catch(()=>{});}}
     }catch(e){if(sent)e.execution='unknown';throw e;}finally{if(sent&&method!=='touch')await call(d,'sendKey',{key:'Control',eventType:1},{_deadline:Date.now()+3000}).catch(()=>{});}
     return after(d,{...p,observe:p.observe??'none'},{udid:d.udid,method,execution:sent?'executed':'not_executed'});
   }

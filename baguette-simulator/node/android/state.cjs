@@ -31,10 +31,16 @@ function createState({devices,agent}){
       if(p.status_bar==='clear')demo('exit');else{demo('enter');demo('clock',['-e','hhmm','0941']);demo('battery',['-e','level','100','-e','plugged','false']);demo('network',['-e','wifi','show','-e','level','4']);}
     }
     if(p.privacy!==undefined){
-      const q=p.privacy,id=packageId(q.bundleId),permissions={camera:['CAMERA'],microphone:['RECORD_AUDIO'],contacts:['READ_CONTACTS','WRITE_CONTACTS'],calendar:['READ_CALENDAR','WRITE_CALENDAR'],location:['ACCESS_FINE_LOCATION','ACCESS_COARSE_LOCATION'],'location-always':['ACCESS_FINE_LOCATION','ACCESS_COARSE_LOCATION','ACCESS_BACKGROUND_LOCATION'],photos:['READ_MEDIA_IMAGES','READ_MEDIA_VIDEO'],'photos-add':[],motion:['ACTIVITY_RECOGNITION'],'media-library':['READ_MEDIA_AUDIO']};
+      const q=p.privacy,id=packageId(q.bundleId);
       if(!['grant','revoke','reset'].includes(q.action))throw fail('Unknown privacy action.');
       if(q.action==='reset')throw fail('Android supports grant/revoke only. Permission reset is iOS-only; no permissions were changed.');
-      if(q.service==='all'||!permissions[q.service]?.length)throw fail('Choose a specific Android permission: camera, microphone, contacts, calendar, location, location-always, photos, motion or media-library.');
+      if(!['camera','microphone','contacts','calendar','location','location-always','photos','motion','media-library'].includes(q.service))throw fail('Choose a specific Android permission: camera, microphone, contacts, calendar, location, location-always, photos, motion or media-library.');
+      // Resolve the running guest API before executing any field in the batch.
+      const {stdout}=await devices.adb(d,['shell','getprop','ro.build.version.sdk'],{deadline:p._deadline,timeout:4000});
+      const api=/^\d+$/.test(stdout.trim())?Number(stdout.trim()):0;
+      if(!Number.isSafeInteger(api)||api<23)throw fail('Android runtime permissions require a confirmed device API level of 23 or later; no settings were changed.');
+      if(q.service==='motion'&&api<29)throw fail('Android motion runtime permission requires API 29 or later; no settings were changed.');
+      const permissions={camera:['CAMERA'],microphone:['RECORD_AUDIO'],contacts:['READ_CONTACTS','WRITE_CONTACTS'],calendar:['READ_CALENDAR','WRITE_CALENDAR'],location:['ACCESS_FINE_LOCATION','ACCESS_COARSE_LOCATION'],'location-always':['ACCESS_FINE_LOCATION','ACCESS_COARSE_LOCATION',...(api>=29?['ACCESS_BACKGROUND_LOCATION']:[])],photos:api>=33?['READ_MEDIA_IMAGES','READ_MEDIA_VIDEO']:['READ_EXTERNAL_STORAGE'],motion:['ACTIVITY_RECOGNITION'],'media-library':api>=33?['READ_MEDIA_AUDIO']:['READ_EXTERNAL_STORAGE']};
       for(const permission of permissions[q.service])add('privacy',['shell','pm',q.action==='grant'?'grant':'revoke',id,'android.permission.'+permission]);
     }
     for(const [index,operation] of operations.entries()){try{await operation.run();appliedSteps.push({field:operation.name,step:operations.slice(0,index+1).filter(o=>o.name===operation.name).length});if(operations[index+1]?.name!==operation.name)applied.push(operation.name);}catch(e){return {udid:d.udid,execution:e.execution==='not_executed'&&!appliedSteps.length?'not_executed':'unknown',outcome:'partial',applied:[...new Set(applied)],appliedSteps,stateError:{field:operation.name,step:appliedSteps.filter(s=>s.field===operation.name).length+1,code:e.code||'STATE_FAILED',message:e.message,execution:e.execution||'unknown'},nextAction:'Inspect the failed field and its completed steps; do not repeat the entire batch.'};}}

@@ -5,7 +5,7 @@
   "name": "设备模拟器",
   "description": "独立的 iPhone、iPad、Apple TV、Vision Pro 与安卓模拟器，共用任务画面、设备管理和操作工具。默认闲置 15 分钟关机并保留数据。Apple 平台需要 macOS 15+、Apple Silicon、完整 Xcode 与对应运行时；安卓支持 Mac、Windows x64、Linux x64，确认下载大小和许可后安装环境。Apple 后端基于 Baguette（Apache-2.0）。",
   "whenToUse": "iPhone、iPad、Apple TV、Vision Pro 与安卓模拟器；App 安装启动、真实输入、TV 遥控、Vision 空间手势、截图、界面检查、状态和日志排查。先 devices 选择设备，按手册验证结果。",
-  "version": "0.2.17",
+  "version": "0.2.18",
   "kind": "chip",
   "entry": "main.js",
   "icon": "assets/icon.png",
@@ -765,7 +765,7 @@
     },
     {
       "name": "set_state",
-      "description": "改变设备状态，可一次改多项：orientation 方向；posture 折叠姿态；appearance light/dark；contrast 增强对比度；text_size 字号；network 档位/offline/clear 或 {latency,bandwidth,loss}；location 坐标；status_bar clean/clear；privacy {action,service,bundleId}。iOS 专有：posture 铰链、location=clear 清除模拟位置、privacy reset；iOS 改权限会结束 App，启动前设置。安卓无铰链或任意丢包率；location 仅 {lat,lon} 且会启用定位服务，clear 在任何批量修改前拒绝；offline/100-loss 关闭 Wi-Fi/移动数据，其余档位开启两者，network=clear 恢复全带宽/无延迟。安卓权限仅具体 service 的 grant/revoke。全部步骤与读回共享截止时间；失败后停止，applied 列完整字段，安卓 appliedSteps 记录成功的 field/step，stateError 含 field/step/code/message/execution；部分执行不能当未执行，不整批重试。转向后屏幕仅确认成功才返回，current 的 null 表示未确认。 Apple TV/Vision Pro 不支持 orientation、posture、status_bar，其他设置依赖运行时。",
+      "description": "改变设备状态，可一次改多项：orientation 方向；posture 折叠姿态；appearance light/dark；contrast 增强对比度；text_size 字号；network 档位/offline/clear 或 {latency,bandwidth,loss}；location 坐标；status_bar clean/clear；privacy {action,service,bundleId}。iOS 专有：posture 铰链、location=clear 清除模拟位置、privacy reset；iOS 改权限会结束 App，启动前设置。安卓无铰链或任意丢包率；location 仅 {lat,lon} 且会启用定位服务，clear 在任何批量修改前拒绝；offline/100-loss 关闭 Wi-Fi/移动数据，其余档位开启两者，network=clear 恢复全带宽/无延迟。安卓权限仅具体 service 的 grant/revoke，要求 API23+ 与 App 声明；photos/media-library 在 API33 前为共享存储 READ_EXTERNAL_STORAGE，33+ 为 READ_MEDIA_*，motion 要求 API29+。权限 API 预检失败在所有批量写入前拒绝。全部步骤与读回共享截止时间；失败后停止，applied 列完整字段，安卓 appliedSteps 记录成功的 field/step，stateError 含 field/step/code/message/execution；部分执行不能当未执行，不整批重试。转向后屏幕仅确认成功才返回，current 的 null 表示未确认。 Apple TV/Vision Pro 不支持 orientation、posture、status_bar，其他设置依赖运行时。",
       "parameters": {
         "type": "object",
         "properties": {

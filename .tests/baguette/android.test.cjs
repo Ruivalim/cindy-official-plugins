@@ -459,6 +459,70 @@ test('capture rechecks the display after its first stream frame before executing
   assert.equal(result.captureError.code,'SCREEN_CHANGED');assert.equal(result.execution,'not_executed');assert.equal(actions,0);
 });
 
+test('Android text input owns dispatch evidence across preflight, first-send and later failures',async t=>{
+  const source=await fs.readFile(path.join(A,'agent.cjs'),'utf8'),budget=require('../../baguette-simulator/node/budget.cjs').commandBudget;
+  for(const request of [{text:'AB'},{method:'touch',text:'AB'},{method:'type',text:'AB'},{method:'paste',text:'你好'},{method:'type',clear:true},{method:'type',keys:['ctrl+shift+x']}])for(const phase of ['preflight','first-send','after-send','connection',...(request.method==='touch'?[]:['success'])])await t.test(JSON.stringify(request)+' '+phase,async t=>{
+    let clock=100,writes=0;const events=[],deadline=200,screen=image();t.mock.method(Date,'now',()=>clock);
+    const rpc=(_endpoint,method,value={},options={})=>{
+      budget(1000,options.deadline,()=>clock);
+      if(method==='getScreenshot')return Promise.resolve({format:{width:108,height:240,rotation:{rotation:0}},image:screen});
+      if(method==='getClipboard')return Promise.resolve({text:request.text});
+      events.push({method,...value});writes++;
+      if(phase==='connection'&&writes===1)return Promise.reject(Object.assign(Error('connection closed'),{code:'ANDROID_GRPC_FAILED',execution:'unknown'}));
+      if(phase==='after-send'&&writes===1)clock=deadline;
+      return Promise.resolve({});
+    };
+    const devices={adb:async(_d,args)=>{
+      if(args.includes('dumpsys')){if(phase==='preflight')clock=deadline;return {stdout:'Viewport INTERNAL: displayId=0, orientation=0'};}
+      if(args.includes('uiautomator')){
+        if(phase==='first-send')clock=deadline;
+        const field=request.method==='touch';return {stdout:`<?xml version="1.0"?><hierarchy rotation="0"><node bounds="[1,1][40,30]" text="Visible" class="${field?'EditText':'TextView'}" focused="true" clickable="true" enabled="true"/></hierarchy>`};
+      }
+      budget(1000,deadline,()=>clock);events.push({method:'adb'});return {stdout:''};
+    }};
+    const context={module:{exports:{}},Buffer,Date,setTimeout,require:n=>n==='./grpc.cjs'?{rpc}:require(n.startsWith('.')?path.resolve(A,n):n)};
+    require('node:vm').runInNewContext(source,context);const agent=context.module.exports.createAgent({devices});
+    const explicit=!['auto','touch'].includes(request.method||'auto');if(explicit&&['preflight','first-send'].includes(phase))clock=deadline;
+    const action=agent.typeText({udid:id,endpoint:{},model:{width:108,height:240,density:160}},{...request,_deadline:deadline,observe:'none'});
+    if(phase==='success')assert.equal((await action).execution,'executed');
+    else await assert.rejects(action,e=>{
+      assert.equal(e.code,phase==='connection'?'ANDROID_GRPC_FAILED':'TIME_BUDGET_EXHAUSTED');
+      assert.equal(e.execution,['preflight','first-send'].includes(phase)?'not_executed':'unknown');return true;
+    });
+    if(['preflight','first-send'].includes(phase))assert.deepEqual(events,[],'no input or cleanup before first dispatch');
+    else assert.ok(events.length);
+    if(request.keys&&phase==='after-send')assert.ok(!events.some(e=>e.key==='Shift'),'only actually started modifiers can be released');
+  });
+});
+test('Android permissions resolve the guest API before every batch and preserve per-step evidence',async t=>{
+  const create=require(path.join(A,'state.cjs')).createState;
+  for(const api of [23,28,29,32,33,36])for(const service of ['photos','media-library','location-always','motion','camera'])for(const action of ['grant','revoke'])await t.test(api+' '+service+' '+action,async()=>{
+    const writes=[],state=create({devices:{adb:async(_d,args,options)=>{
+      if(args.includes('getprop')){assert.equal(options.mutation,undefined);return {stdout:String(api)};}
+      writes.push(args);return {stdout:''};
+    }},agent:{frame:async()=>({screen:{}})}});
+    const p={appearance:'dark',privacy:{action,service,bundleId:'test.example'}};
+    if(service==='motion'&&api<29){await assert.rejects(state({},p),e=>e.execution==='not_executed');assert.deepEqual(writes,[]);return;}
+    const result=await state({},p);assert.equal(result.execution,'executed');assert.equal(writes[0][2],'uimode');
+    const expected=service==='photos'?(api>=33?['READ_MEDIA_IMAGES','READ_MEDIA_VIDEO']:['READ_EXTERNAL_STORAGE']):service==='media-library'?[api>=33?'READ_MEDIA_AUDIO':'READ_EXTERNAL_STORAGE']:service==='location-always'?['ACCESS_FINE_LOCATION','ACCESS_COARSE_LOCATION',...(api>=29?['ACCESS_BACKGROUND_LOCATION']:[])]:[service==='motion'?'ACTIVITY_RECOGNITION':'CAMERA'];
+    assert.deepEqual(writes.slice(1),expected.map(name=>['shell','pm',action,'test.example','android.permission.'+name]));assert.equal(result.appliedSteps.length,1+expected.length);
+  });
+  for(const failure of ['22','','invalid','33junk','TIME_BUDGET_EXHAUSTED','COMMAND_FAILED'])await t.test('API preflight '+failure,async()=>{
+    let writes=0;const state=create({devices:{adb:async(_d,args)=>{
+      if(args.includes('getprop')){if(failure.endsWith('FAILED')||failure==='TIME_BUDGET_EXHAUSTED')throw Object.assign(Error(failure),{code:failure,execution:'not_executed'});return {stdout:failure};}
+      writes++;return {stdout:''};
+    }},agent:{}});
+    await assert.rejects(state({},{appearance:'dark',privacy:{action:'grant',service:'photos',bundleId:'test.example'}}),e=>e.execution==='not_executed');assert.equal(writes,0);
+  });
+  for(const api of [32,33])for(const failAt of [0,1])await t.test('partial '+api+' '+failAt,async()=>{
+    let writes=0;const state=create({devices:{adb:async(_d,args)=>{
+      if(args.includes('getprop'))return {stdout:String(api)};
+      if(writes++===failAt)throw Object.assign(Error('pm failed'),{code:'COMMAND_FAILED',execution:'unknown'});return {stdout:''};
+    }},agent:{frame:async()=>({screen:{}})}});
+    const result=await state({},{privacy:{action:'revoke',service:'photos',bundleId:'test.example'}});
+    if(api===32&&failAt===1)assert.equal(result.execution,'executed');else{assert.equal(result.execution,'unknown');assert.equal(result.appliedSteps.length,failAt);assert.equal(result.stateError.step,failAt+1);}
+  });
+});
 async function privateAndroid(t){
   const root=await temp(t),runtime='android:android-36:google_apis:arm64-v8a';
   const sdk={inspect:async()=>({ready:true,images:[{identifier:runtime,directory:path.join(root,'image'),abi:'arm64-v8a',version:'36'}]})};
