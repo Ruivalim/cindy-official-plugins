@@ -25,13 +25,35 @@ const source=fs.readFileSync(require('node:path').join(__dirname,'../../baguette
 const tick=()=>new Promise(r=>setImmediate(r));
 function stage(respond=async()=>{}){
  const events={},windowEvents={},docEvents={},calls=[],timers=new Map();let timer=0,focused=true,pads=[];
- const canvas={width:1920,height:1080,style:{},focus(){},setPointerCapture(){},getBoundingClientRect:()=>({left:0,top:0,width:1920,height:1080}),addEventListener:(name,fn)=>events[name]=fn};
- const context={crypto:require('node:crypto'),Date,Math,Promise,navigator:{getGamepads:()=>pads},parent:{document:{getElementById:()=>null}},document:{activeElement:canvas,hasFocus:()=>focused,hidden:false,addEventListener:(name,fn)=>docEvents[name]=fn},addEventListener:(name,fn)=>windowEvents[name]=fn,setTimeout:fn=>{timers.set(++timer,fn);return timer;},clearTimeout:id=>timers.delete(id)};
+ const buttons=['keyboard','pointer'].map(vision=>({dataset:{vision},attrs:{},setAttribute(k,v){this.attrs[k]=v;}}));
+ const bar={querySelectorAll:()=>buttons};
+ const canvas={width:1920,height:1080,style:{},focus(){},setPointerCapture(){},requestPointerLock(){context.document.pointerLockElement=canvas;docEvents.pointerlockchange();},getBoundingClientRect:()=>({left:0,top:0,width:1920,height:1080}),addEventListener:(name,fn)=>events[name]=fn};
+ const context={crypto:require('node:crypto'),Date,Math,Promise,navigator:{getGamepads:()=>pads},parent:{document:{getElementById:()=>bar}},document:{activeElement:canvas,hasFocus:()=>focused,hidden:false,exitPointerLock(){this.pointerLockElement=null;docEvents.pointerlockchange();},addEventListener:(name,fn)=>docEvents[name]=fn},addEventListener:(name,fn)=>windowEvents[name]=fn,setTimeout:fn=>{timers.set(++timer,fn);return timer;},clearTimeout:id=>timers.delete(id)};
  vm.runInNewContext(source,context);let errors=0;
  const control=context.createVisionStage({canvas,api:async(action,p)=>{calls.push({action,...p});await respond(p);},message(){},onError(){errors++;},zh:false});
  const emit=(name,p={})=>events[name]({type:name,button:0,buttons:name==='pointerup'?0:1,pointerId:1,clientX:960,clientY:540,preventDefault(){},...p});
- return {calls,control,emit,errors:()=>errors,lock:()=>{context.document.pointerLockElement=canvas;docEvents.pointerlockchange();},pad:p=>{pads=p?[p]:[];windowEvents.gamepadconnected();},blur:()=>{focused=false;windowEvents.blur();},hide:()=>{context.document.hidden=true;docEvents.visibilitychange();},exit:()=>windowEvents.pagehide(),pulse:()=>{const fs=[...timers.values()];timers.clear();fs.forEach(f=>f());}};
+ return {calls,control,emit,errors:()=>errors,pressed:id=>buttons.find(b=>b.dataset.vision===id).attrs['aria-pressed'],lock:()=>{context.document.pointerLockElement=canvas;docEvents.pointerlockchange();},unlock:()=>context.document.exitPointerLock(),lockError:()=>docEvents.pointerlockerror(),pad:p=>{pads=p?[p]:[];windowEvents.gamepadconnected();},blur:()=>{focused=false;windowEvents.blur();},hide:()=>{context.document.hidden=true;docEvents.visibilitychange();},exit:()=>windowEvents.pagehide(),pulse:()=>{const fs=[...timers.values()];timers.clear();fs.forEach(f=>f());}};
 }
+test('keyboard and pointer capture retain independent routing and toolbar states',()=>{
+ for(const initiallyEnabled of [false,true]){
+  const s=stage();if(initiallyEnabled)s.control.choose('keyboard');
+  const check=(enabled,locked)=>{
+   assert.equal(s.control.acceptsKeyboard(),enabled);assert.equal(s.control.key({code:'KeyB',preventDefault(){}}),!enabled);
+   assert.equal(s.pressed('keyboard'),String(enabled));assert.equal(s.pressed('pointer'),String(locked));
+  };
+  check(initiallyEnabled,false);
+  for(let i=0;i<2;i++){
+   s.control.choose('pointer');check(initiallyEnabled,true);
+   s.lock();s.lockError();check(initiallyEnabled,true);
+   s.control.choose('keyboard');check(!initiallyEnabled,true);
+   s.unlock();check(!initiallyEnabled,false); // Exit preserves the latest choice, not an entry snapshot.
+   s.unlock();s.lockError();check(!initiallyEnabled,false);
+   s.control.choose('keyboard');check(initiallyEnabled,false);
+  }
+  s.control.choose('pointer');s.control.key({code:'Escape',preventDefault(){}});check(false,false);
+  s.lock();s.unlock();check(false,false);assert.equal(s.calls.length,0);
+ }
+});
 test('captured pointer preserves every button edge and held buttons during partial releases',async()=>{
  for(const first of [1,2])for(const moves of [false,true]){
  let ack;const s=stage(p=>p.phase==='changed'&&!ack?new Promise(resolve=>ack=resolve):Promise.resolve());s.lock();

@@ -142,7 +142,7 @@ globalThis.createVisionStage = function({canvas,api,message,onError,onCancel=()=
   if(e.type==='pointerup'&&!buttons){finish();return;}
   if(!buttons)idleTimer=setTimeout(()=>finish(),300);
  }
- document.addEventListener('pointerlockchange',()=>{cancel();keyboard=document.pointerLockElement===canvas;state();});
+ document.addEventListener('pointerlockchange',()=>{cancel();state();});
  document.addEventListener('pointerlockerror',captureError);
  canvas.addEventListener('pointercancel',cancel);
  canvas.addEventListener('lostpointercapture',()=>{if(pointer)cancel();});
