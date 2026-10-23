@@ -2,9 +2,11 @@
 
 [简体中文](README.zh-CN.md)
 
-0.2.20 integrates Android with upstream main e13abcd (#199), retaining Apple TV/Vision Pro input and keeping Android on the handheld screen/rotation path. The 0.2.14 Beta acceptance is historical; this rebased package needs fresh packaged-client acceptance.
+0.2.21 integrates Android with upstream main e13abcd (#199), retaining Apple TV/Vision Pro input and keeping Android on the handheld screen/rotation path. Dash reconfirmed the prior 0.2.14 Beta acceptance on 2026-10-24. Subsequent package testing is not claimed; maintainers can assess that acceptance alongside the technical checks.
 
 0.2.20 unifies touch, text and hardware/sensor RPC dispatch evidence at one per-operation boundary. Synchronous first-request budget/validation rejection stays not_executed without cleanup writes. Started requests retain unknown on later failures; touch release, long-key release and shake restoration run only after dispatch. Existing ADB installation evidence and all platform behavior remain intact. No new queue, retry, lock or recovery mechanism.
+
+0.2.21 corrects the Agent input descriptions: touch-menu paste supports iOS and Android focused fields with an available paste menu; only iOS performs hardware-keyboard record cleanup. Input implementations are unchanged.
 
 One plugin (`baguette-simulator`), one device manager and one task-sidebar controller for both platforms. Devices belong to this plugin; Android Studio and Xcode default devices remain separate. The run switch, task bindings, idle shutdown, live screen, touch input, keyboard, screenshots and device switching share the same workflow. Requires Cindy 0.1.116 or later with the declared task-view capability.
 
@@ -96,8 +98,8 @@ and rotation in degrees. Spatial `pan` takes `by=[right,up]` (two axes only);
 use `move` with `[right,up,back]` or `dolly distance` for depth.
 Take another screenshot after moving the camera.
 
-Orientation, posture, status-bar override, touch-menu paste, `scroll_to` and `heal` remain
-iOS-only. tvOS/visionOS return OCR text lists in all query modes, including
+Among Apple platforms, orientation, posture, status-bar override, touch-menu paste, `scroll_to` and `heal` remain
+iOS-only; Android has its own support described above. Soft-keyboard recovery is iOS-only. tvOS/visionOS return OCR text lists in all query modes, including
 `mode=full` and `x,y` hit tests, instead of accessibility trees/IDs. Input adapters
 were exercised with Xcode 27 and tvOS/visionOS 27; other versions are unverified.
 See [native protocol and verification notes](native/platform-support.md).

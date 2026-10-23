@@ -1,8 +1,8 @@
 {
   "date": "2026-10-24",
-  "pluginVersion": "0.2.20",
+  "pluginVersion": "0.2.21",
   "baguette": "0.2.10",
-  "status": "unified-input-dispatch-source-verified-package-acceptance-pending",
+  "status": "input-platform-descriptions-aligned-source-verified",
   "baseCommit": "e13abcd2caad2f83a66ed7b1716312ed4145eae8",
   "passed": [
     "Rebased onto main e13abcd (#199). TV/Vision native helpers, platform-stage, vision-stage, spatial and trackpad implementation files are byte-identical to main. Android review fixes retained.",
@@ -23,10 +23,12 @@
     "0.2.19: removed speculative APK installer sent state. Existing job.execution alone retains devices.adb preflight not_executed versus install command unknown; later read failure cannot erase install evidence. Thirty auto/full phase cases cover inspect/comparison, unchanged APK, endpoint/identity/budget rejection, transport/timeout/unclassified/no-Success, post-install query/hash failure, mismatch and success; two controlled in-flight polling cases prove one job/no replay and final evidence. Android parity 39/39. New regressions fail on 0.2.18. No new retry, queue, lock or recovery state; no installed Cindy or actual emulator was changed.",
     "0.2.19 full repository gate including binary dependencies: 546/549 passed; only the same three Bash 3 baseline publishing failures on unchanged main e13abcd. Final manifest/localization 27/27. App install phase and controlled polling regressions 39/39.",
     "0.2.20: moved the existing text dispatch predicate to one per-operation inputFor owner, reused by gesture/typeText/press. Removed independent gesture sent prediction and async touch/key wrappers hiding synchronous rejection. First-RPC budget/validation failure remains not_executed with no cleanup; post-dispatch failures remain unknown. Touch release, long-key release and shake restoration are conditional on actual dispatch; explicit release respects the caller deadline while cleanup retains its existing bounded deadline. Notification ADB outcomes still pass through. Android regressions 252/252: all gesture forms and short/long key/release/shake/notification preflight, first-send, asynchronous connection, later-budget and success boundaries; existing text/shake/scroll matrices pass. New regressions fail on 0.2.19. No new queue, lock, retry, cache or recovery mechanism; no installed Cindy or actual emulator changes.",
-    "0.2.20 full repository gate including binary dependencies: 607/610 passed; only the same three Bash 3 baseline publishing failures on unchanged main e13abcd. Android 252/252 and final manifest/localization 27/27. Existing text, shake, scroll, installation/polling, platform and viewer regressions remain included."
+    "0.2.20 full repository gate including binary dependencies: 607/610 passed; only the same three Bash 3 baseline publishing failures on unchanged main e13abcd. Android 252/252 and final manifest/localization 27/27. Existing text, shake, scroll, installation/polling, platform and viewer regressions remain included.",
+    "0.2.21: description-only correction across manifest, all four locales and paired READMEs: iOS/Android touch paste requires a focused field and available paste menu; keyboard-record cleanup is iOS-only; TV/Vision do not support touch. Runtime input, permissions, dependencies and minimum host version unchanged.",
+    "0.2.21 full repository gate including binary dependencies: 607/610 passed; only the same three Bash 3 baseline publishing failures on unchanged main e13abcd. Final manifest/localization 27/27; runtime source unchanged from 0.2.20."
   ],
   "notVerified": [
-    "0.2.20 packaged acceptance on production/Beta Cindy is pending. Dash confirmed 0.2.14 on Beta; that historical attestation does not cover this rebased package.",
+    "No fresh 0.2.21 packaged Beta test is claimed. Dash reconfirmed prior 0.2.14 Beta acceptance on 2026-10-24 and does not require repeated acceptance requests; maintainers assess the recorded version boundary and technical checks.",
     "No other iOS/tvOS/visionOS device was started or stopped for this integration. Upstream real-device evidence remains recorded separately.",
     "Android Windows/Linux physical-host acceptance remains pending."
   ],

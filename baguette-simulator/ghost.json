@@ -5,7 +5,7 @@
   "name": "设备模拟器",
   "description": "独立的 iPhone、iPad、Apple TV、Vision Pro 与安卓模拟器，共用任务画面、设备管理和操作工具。默认闲置 15 分钟关机并保留数据。Apple 平台需要 macOS 15+、Apple Silicon、完整 Xcode 与对应运行时；安卓支持 Mac、Windows x64、Linux x64，确认下载大小和许可后安装环境。Apple 后端基于 Baguette（Apache-2.0）。",
   "whenToUse": "iPhone、iPad、Apple TV、Vision Pro 与安卓模拟器；App 安装启动、真实输入、TV 遥控、Vision 空间手势、截图、界面检查、状态和日志排查。先 devices 选择设备，按手册验证结果。",
-  "version": "0.2.20",
+  "version": "0.2.21",
   "kind": "chip",
   "entry": "main.js",
   "icon": "assets/icon.png",
@@ -525,7 +525,7 @@
     },
     {
       "name": "type_text",
-      "description": "向当前聚焦的输入框输入。text 任意文字：method=auto（默认）在普通 App 里粘贴（精确，支持中文），在没有无障碍元素的游戏里逐键输入英文、数字与符号（拼音等输入法会自动切到英文）；也可指定 paste 或 type。keys 发送按键，如 Enter、Escape、Backspace、Tab、up、a、cmd+A、shift+Tab；clear=true 先全选删除。输入前确认焦点，之后观察结果。 逐键输入时屏幕键盘不会出现；游戏里 Enter 可能直接提交，只想结束编辑就点空白处。observe、until 同 tap。 按键输入期间隐藏屏幕键盘；最后输入后约 3 秒尝试清除硬件键盘记录，重新聚焦后观察是否恢复，不保证自动弹出。检查键盘遮挡用 method=touch，无需重启。 method=touch 不可与 clear=true 或 keys 同用。 安卓 Unicode 使用剪贴板，type 限 ASCII；cmd 映射 Ctrl。 Vision Pro auto 使用粘贴；tvOS auto/type 使用 US 键盘事件，每次最多 300 字符，需英文输入法，不支持 Unicode 或剪贴板粘贴。两者支持 keys；touch 和软键盘恢复仅 iOS。",
+      "description": "向当前聚焦的输入框输入。text 任意文字：method=auto（默认）在普通 App 里粘贴（精确，支持中文），在没有无障碍元素的游戏里逐键输入英文、数字与符号（拼音等输入法会自动切到英文）；也可指定 paste 或 type。keys 发送按键，如 Enter、Escape、Backspace、Tab、up、a、cmd+A、shift+Tab；clear=true 先全选删除。输入前确认焦点，之后观察结果。 逐键输入时屏幕键盘不会出现；游戏里 Enter 可能直接提交，只想结束编辑就点空白处。observe、until 同 tap。 iOS 按键输入期间隐藏屏幕键盘；最后输入后约 3 秒尝试清除硬件键盘记录，重新聚焦后观察是否恢复，不保证自动弹出。检查键盘遮挡用 method=touch，无需重启。 method=touch 不可与 clear=true 或 keys 同用。 安卓 Unicode 使用剪贴板，type 限 ASCII；cmd 映射 Ctrl。 Vision Pro auto 使用粘贴；tvOS auto/type 使用 US 键盘事件，每次最多 300 字符，需英文输入法，不支持 Unicode 或剪贴板粘贴。两者支持 keys，不支持 touch。touch 支持 iOS/安卓，需已聚焦输入框及可用粘贴菜单；软键盘恢复仅 iOS。",
       "parameters": {
         "type": "object",
         "properties": {
