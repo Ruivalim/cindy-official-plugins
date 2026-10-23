@@ -263,11 +263,58 @@ test('scoped logs distinguish absent processes, exact matches and query failures
     await assert.rejects(agent.logs(d,{process:'test.example.app'}),e=>e.code===code);
     if(code!=='TIME_BUDGET_EXHAUSTED')await assert.rejects(agent.waitFor(d,{log:'ready',process:'test.example.app',timeout:.1}),e=>e.code===code);
   }
-  assert.equal((await create(async()=>({stdout:'PID NAME\n1 init\n8 test.example.app.other'})).logs(d,{process:'test.example.app'})).lines.length,0);
+  let reads=0;
+  const absent=await create(async()=>{reads++;return {stdout:'PID NAME\n1 init\n8 test.example.app.other'};}).logs(d,{process:'test.example.app'});
+  assert.equal(absent.lines.length,0);assert.equal(absent.processRunning,false);assert.match(absent.note,/not checked/);assert.match(absent.note,/do not establish/);assert.equal(reads,1,'absence never widens scope to device logs');
   let scope;
-  const result=await create(async(d,args)=>{if(args.includes('ps'))return {stdout:'PID NAME\n7 test.example.app\n8 test.example.app.other'};scope=args;return {stdout:Date.now()/1000+' 7 7 I test: ready'};}).logs(d,{process:'test.example.app'});
+  const result=await create(async(d,args)=>{if(args.includes('ps'))return {stdout:'PID NAME\n7 test.example.app\n8 test.example.app.other'};scope=args;return {stdout:Date.now()/1000+' 7 7 I test: ready'};}).logs(d,{process:'test.example.app',level:'info'});
   assert.ok(scope.includes('--pid=7'));assert.equal(result.lines.length,1);
   await assert.rejects(create(async()=>({stdout:''})).logs(d,{process:'test.example.app'}),e=>e.code==='PROCESS_QUERY_FAILED');
+});
+
+test('Android log defaults, explicit filters and crash buffers share one bounded query contract',async t=>{
+  t.mock.method(Date,'now',()=>2000000);
+  const raw=['1879 7 7 E app: outside','1880 7 7 W app: boundary','1910 7 7 E app: startup error',
+    '1990 7 7 I app: ready','1995 7 7 D app: debug ready','1999 7 7 F app: fatal'].join('\n');
+  const d={udid:id};
+  for(const scope of [{},{process:'test.example.app'},{bundleId:'test.example.app'}])for(const crashes of [undefined,false,true]){
+    let waiting=false;
+    const queries=[],agent=require(path.join(A,'agent.cjs')).createAgent({devices:{adb:async(d,args)=>{
+      queries.push(args);return {stdout:args.includes('ps')?'PID NAME\n7 test.example.app\n8 test.example.app.other':raw+(waiting?'\n2000 7 7 I app: ready after wait began':'')};
+    }}});
+    const p={...scope,...(crashes===undefined?{}:{crashes})},result=await agent.logs(d,p),query=queries.at(-1);
+    assert.equal(result.lastSeconds,120);assert.equal(result.level,'default');assert.equal(result.total,3);assert.equal(result.truncated,false);
+    assert.deepEqual(result.lines,[raw.split('\n')[1],raw.split('\n')[2],raw.split('\n')[5]]);
+    assert.equal(query.includes('--pid=7'),!!(scope.process||scope.bundleId));assert.ok(query.includes('3000'));
+    assert.deepEqual(query.filter((_,i)=>query[i-1]==='-b'),crashes===false?['main']:['main','crash']);
+    assert.equal(result.crashes,undefined);assert.match(result.note,/earlier PIDs/);
+    assert.deepEqual((await agent.logs(d,{...p,last_seconds:60,level:'error'})).lines,[raw.split('\n')[5]]);
+    const matched=await agent.logs(d,{...p,level:'debug',match:'ready',limit:1});
+    assert.equal(matched.total,2);assert.equal(matched.truncated,true);assert.deepEqual(matched.lines,[raw.split('\n')[4]]);
+    waiting=true;
+    assert.equal((await agent.waitFor(d,{...scope,log:'ready',timeout:.1})).goalMet,true,'log waits still include info/debug records');
+  }
+  const agent=require(path.join(A,'agent.cjs')).createAgent({devices:{adb:async()=>({stdout:Array(3000).fill('1999 7 7 W app: warning').join('\n')})}});
+  const capped=await agent.logs(d,{});assert.equal(capped.lines.length,150);assert.equal(capped.truncated,true);
+  for(const locale of ['zh-CN','en','ja','ko']){
+    const desc=JSON.parse(await fs.readFile(`baguette-simulator/locales/${locale}.json`,'utf8')).tools.logs.description;
+    for(const term of ['120','150','3000','PID','processRunning=false','crashes=false'])assert.ok(desc.includes(term),`${locale}: ${term}`);
+  }
+});
+
+test('Android log validation and transport failures cannot become empty or unscoped evidence',async()=>{
+  let reads=0;
+  const agent=require(path.join(A,'agent.cjs')).createAgent({devices:{adb:async()=>{reads++;throw Error('must not read');}}});
+  for(const p of [{match:'['},{last_seconds:0},{limit:1001},{level:'invalid'},{process:''}]){
+    await assert.rejects(agent.logs({udid:id},p),e=>e.code==='INVALID_ARGUMENT');assert.equal(reads,0);
+  }
+  for(const code of ['DEVICE_NOT_OWNED','COMMAND_FAILED','TIME_BUDGET_EXHAUSTED']){
+    const queries=[],failed=require(path.join(A,'agent.cjs')).createAgent({devices:{adb:async(d,args)=>{
+      queries.push(args);if(args.includes('ps'))return {stdout:'PID NAME\n7 test.example.app'};throw Object.assign(Error('log read failed'),{code});
+    }}});
+    await assert.rejects(failed.logs({udid:id},{bundleId:'test.example.app'}),e=>e.code===code);
+    assert.equal(queries.length,2);assert.ok(queries[1].includes('--pid=7'));
+  }
 });
 
 test('directional swipes preserve explicit starts and pan defaults to the screen center',async t=>{

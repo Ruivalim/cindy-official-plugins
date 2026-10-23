@@ -43,7 +43,7 @@
       "description": "改变设备状态，可一次改多项：orientation 方向；posture 折叠屏姿态 closed/open/flat 或角度；appearance light/dark；contrast 增强对比度；text_size 动态字体档位；network 网络条件（profile 名、offline、clear 或 {latency, bandwidth, loss}，对之后启动的 App 生效）；location {lat, lon} 或 clear；status_bar clean（9:41、满格满电，适合截图）或 clear；privacy {action: grant/revoke/reset, service, bundleId}，提前授权可避免权限弹窗。改权限会结束该 App，请在启动前设置。所有步骤与读回共用本次调用截止时间；applied 列出已完成字段，失败或预算耗尽时停止后续步骤，stateError 含失败字段 field、code、message、execution，先核对该字段，不整批重试。方向/姿态变化后的屏幕信息仅在剩余时间内确认成功时返回；current 中 null 表示未确认。 安卓支持方向、外观、字号、位置、状态栏及具体运行时权限（仅 grant/revoke，reset 仅 iOS）；无折叠铰链或自定义丢包率。安卓 appliedSteps 列出各字段已成功步骤（field、step），applied 仅列完整字段；stateError.step 是失败步骤。部分执行后不会报告未执行；先检查字段内进度，不整批重试。"
     },
     "logs": {
-      "description": "读取 App 最近的日志与崩溃报告。bundleId 或 process 指定进程；last_seconds 默认 120；level：error（只看错误与故障）、default、info、debug；match 用正则过滤；默认附带本设备上该进程最近的崩溃摘要（异常类型、原因、崩溃线程调用栈）。读取失败或预算不足时保留日志，返回 crashesError（code、message），不返回 crashes 空列表；crashes=false 跳过诊断。"
+      "description": "读取最近日志，last_seconds 默认 120 秒，limit 默认 150 行，level 默认 default（警告及以上），另支持 error/info/debug；match 为正则。iOS 默认附带本设备该进程的崩溃摘要；诊断失败保留日志并返回 crashesError，crashes=false 跳过诊断。安卓仅返回最多最新 3000 条 logcat 记录中过滤出的原始行，默认 main+crash buffer，crashes=false 只读 main；不生成 iOS 崩溃摘要。安卓 bundleId/process 只筛选当前精确 PID，退出/重启前的历史日志及崩溃不在检查范围；进程不存在时 processRunning=false。空日志不能证明没有崩溃；需历史证据时显式不指定进程读取设备日志再检查。"
     },
     "heal": {
       "description": "修复前须让用户接受影响：iOS 按 Baguette 流程在独立设备集合重启 SpringBoard，终止运行中的 App；安卓会重启整个模拟器并结束所有 App，等待 devices 再次报告 Booted 后继续。仅用户接受相应平台的重启影响后调用。卡键先用 press(release-input)。"

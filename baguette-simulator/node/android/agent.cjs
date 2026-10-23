@@ -178,7 +178,7 @@ function createAgent({root,devices,run}){
       const q={...p,_deadline:end};
       if(stable){const f=await frame(d,q),image={...f.image,channels:4};const region=p.region?Object.fromEntries(Object.entries(p.region).map(([k,v])=>[k,v*f.screen.ratio])):undefined;
         if(!previous||pixels.changedShare(previous,image,region)>number(p.tolerance,'tolerance',0,100,0.5)/100)since=Date.now();previous=image;matched=!pixels.isBlank(image,region)&&Date.now()-since>=stable*1000;
-      }else if(p.log){matched=(await logs(d,{...q,match:p.log,limit:1,_since:began/1000})).lines.length>0;}
+      }else if(p.log){matched=(await logs(d,{...q,level:'debug',match:p.log,limit:1,_since:began/1000})).lines.length>0;}
       else{const found=await find(d,q);matched=p.gone?!found.element&&!found.ui.accessibilityError:!!found.element;}
       if(matched)break;if(Date.now()+300<end)await sleep(300,end);else break;
     }catch(e){if(Date.now()>=end||e.code==='TIME_BUDGET_EXHAUSTED')break;throw e;}
@@ -186,8 +186,14 @@ function createAgent({root,devices,run}){
     const result={udid:d.udid,met:matched,goalMet:matched,matched,timedOut:!matched};if(p.screenshot||!matched){try{const {_modelImages,...shot}=await screenshot(d,p);result.screenshot=shot;if(_modelImages)result._modelImages=_modelImages;}catch(e){result.screenshot={error:e.message};}}return result;
   }
   async function logs(d,p){
-    const limit=number(p.limit,'limit',1,1000,150),seconds=number(p.last_seconds,'last_seconds',1,86400,60),args=['logcat','-d','-v','epoch','-t','3000'];
-    if(p.bundleId||p.process){const processName=p.process||p.bundleId;if(!/^[\w.:-]+$/.test(processName))throw fail('INVALID_ARGUMENT','Invalid Android process name.');
+    const limit=number(p.limit,'limit',1,1000,150),seconds=number(p.last_seconds,'last_seconds',1,86400,120),level=p.level??'default';
+    const priorities={error:'E',default:'W',info:'I',debug:'V'};
+    if(!Object.hasOwn(priorities,level))throw fail('INVALID_ARGUMENT','Invalid Android log level.');
+    let regex;try{if(p.match!==undefined){if(typeof p.match!=='string')throw Error();regex=new RegExp(p.match,'i');}}catch{throw fail('INVALID_ARGUMENT','Invalid log expression.');}
+    const processName=p.process??p.bundleId,args=['logcat','-d','-v','epoch','-t','3000','-b','main'];
+    const result={udid:d.udid,...(processName!==undefined?{process:processName}:{}),level,lastSeconds:seconds,
+      note:'Android reads at most the latest 3000 logcat records before filtering, not iOS crash summaries. Scoped reads cover only the current exact PID; logs and crashes from earlier PIDs after exit/restart are not checked. Empty lines do not establish that no crash occurred.'};
+    if(processName!==undefined){if(typeof processName!=='string'||!/^\w[\w.:-]*$/.test(processName))throw fail('INVALID_ARGUMENT','Invalid Android process name.');
       // ps succeeds even when the process is absent. Transport, identity and
       // budget errors must propagate instead of becoming an empty log result.
       const r=await devices.adb(d,['shell','ps','-A','-o','PID,NAME'],{deadline:p._deadline}),rows=r.stdout.trim().split(/\r?\n/);
@@ -195,13 +201,12 @@ function createAgent({root,devices,run}){
       const processes=rows.filter(l=>l.trim()).map(l=>/^\s*(\d+)\s+(\S+)\s*$/.exec(l));
       if(processes.some(m=>!m))throw fail('PROCESS_QUERY_FAILED','Android returned an invalid process entry. Inspect the device connection.');
       const process=processes.find(m=>m[2]===processName);
-      if(!process)return {udid:d.udid,lines:[],note:'The process is not running.'};args.push('--pid='+process[1]);}
-    if(p.crashes!==false)args.push('-b','crash','-b','main');
-    const raw=(await devices.adb(d,args,{deadline:p._deadline,maxBuffer:4e6})).stdout;let regex;
-    try{if(p.match)regex=new RegExp(p.match,'i');}catch{throw fail('INVALID_ARGUMENT','Invalid log expression.');}
-    const min=p._since??Date.now()/1000-seconds,priority={error:'E',default:'W',info:'I',debug:'V'}[p.level||'debug'];
-    const lines=raw.split('\n').filter(l=>Number(l.trim().split(/\s+/)[0])>=min&&(!regex||regex.test(l))&&'VDIWEF'.indexOf(l.match(/\s([VDIWEF])\s/)?.[1]||'V')>='VDIWEF'.indexOf(priority)).slice(-limit);
-    return {udid:d.udid,lines};
+      if(!process)return {...result,lines:[],processRunning:false,note:'The process is not running. '+result.note};args.push('--pid='+process[1]);}
+    if(p.crashes!==false)args.push('-b','crash');
+    const raw=(await devices.adb(d,args,{deadline:p._deadline,maxBuffer:4e6})).stdout;
+    const min=p._since??Date.now()/1000-seconds,records=raw.split('\n').filter(l=>l.trim());
+    const lines=records.filter(l=>Number(l.trim().split(/\s+/)[0])>=min&&(!regex||regex.test(l))&&'VDIWEF'.indexOf(l.match(/\s([VDIWEF])\s/)?.[1]||'V')>='VDIWEF'.indexOf(priorities[level]));
+    return {...result,lines:lines.slice(-limit),total:lines.length,truncated:lines.length>limit||records.length>=3000};
   }
   return {displayRotation:(d,p)=>displayRotation(devices,d,p),frame,describe,screenshot,gesture,tap:(d,p)=>gesture(d,{...p,kind:'tap'}),typeText,press,waitFor,logs,after,release,
     reveal:async p=>{if(!saved.has(p.path))throw fail('INVALID_ARGUMENT','Unknown screenshot.');const command=process.platform==='darwin'?['/usr/bin/open',['-R',p.path]]:process.platform==='win32'?['explorer.exe',['/select,',p.path]]:['xdg-open',[path.dirname(p.path)]];await run(...command,{timeout:10000});return {execution:'executed'};}};
