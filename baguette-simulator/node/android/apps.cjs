@@ -74,17 +74,19 @@ function createApps({root,devices}){
     if(p.mode!==undefined&&!['auto','full'].includes(p.mode))throw fail('INVALID_ARGUMENT','Install mode must be auto or full.');
     const id=randomUUID(),job={job:id,udid:d.udid,state:'running',mode:'checking',execution:'not_executed',startedAt:Date.now()};jobs.set(id,job);
     const work=(async()=>{
-      let sent=false;
       try{
         const local=await inspect(p.appPath),before=await info(d,{bundleId:local.bundleId});Object.assign(job,{bundleId:local.bundleId});
         if(before.comparisonError&&p.mode!=='full')throw fail('COMPARISON_UNAVAILABLE',before.comparisonError.message+' Inspect app info before choosing a full install.');
         if(before.fingerprint===local.fingerprint&&p.mode!=='full'){Object.assign(job,{state:'done',mode:'unchanged',modeReason:'APK content matches the installed build.',execution:'not_executed'});return;}
-        job.mode='installing';job.modeReason=p.mode==='full'?'Full install explicitly requested.':before.installed?'APK content changed; Android uses full installation.':'Package is not installed.';sent=true;job.execution='unknown';
-        const result=await devices.adb(d,['install','--no-incremental','-r','-t',local.appPath],{timeout:300000,mutation:true});
+        job.mode='installing';job.modeReason=p.mode==='full'?'Full install explicitly requested.':before.installed?'APK content changed; Android uses full installation.':'Package is not installed.';job.execution='unknown';
+        // ADB owns endpoint/identity preflight and command execution. Only this
+        // install error can establish that the write did not start; a later
+        // read failure cannot erase evidence of the completed install command.
+        const result=await devices.adb(d,['install','--no-incremental','-r','-t',local.appPath],{timeout:300000,mutation:true}).catch(e=>{job.execution=e.execution||'unknown';throw e;});
         if(!/\bSuccess\b/.test(result.stdout))throw fail('INSTALL_FAILED','Android did not confirm APK installation. Check signing compatibility and available storage.','unknown');
         const actual=await info(d,{bundleId:local.bundleId});if(actual.fingerprint!==local.fingerprint)throw fail('INSTALL_UNVERIFIED','APK installation completed but its content could not be verified. Inspect app info before retrying.','unknown');
         Object.assign(job,{state:'done',mode:'full',execution:'executed',versionName:actual.versionName});
-      }catch(e){Object.assign(job,{state:'failed',errorCode:e.code||'INSTALL_FAILED',message:e.message,execution:sent?'unknown':'not_executed'});}
+      }catch(e){Object.assign(job,{state:'failed',errorCode:e.code||'INSTALL_FAILED',message:e.message});}
       finally{job.finishedAt=Date.now();pending.delete(d.udid);}
     })();pending.set(d.udid,work);return wait(job,p,80);
   }

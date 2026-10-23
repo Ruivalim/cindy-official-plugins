@@ -1,8 +1,8 @@
 {
   "date": "2026-10-24",
-  "pluginVersion": "0.2.18",
+  "pluginVersion": "0.2.19",
   "baguette": "0.2.10",
-  "status": "permission-api-and-text-dispatch-source-verified-package-acceptance-pending",
+  "status": "install-execution-evidence-source-verified-package-acceptance-pending",
   "baseCommit": "e13abcd2caad2f83a66ed7b1716312ed4145eae8",
   "passed": [
     "Rebased onto main e13abcd (#199). TV/Vision native helpers, platform-stage, vision-stage, spatial and trackpad implementation files are byte-identical to main. Android review fixes retained.",
@@ -19,10 +19,12 @@
     "0.2.17: Android discovery retains non-ENOENT directory/record errors, non-ESRCH process-probe errors and invalid live private connection records. Preflight failures stop lifecycle writes; failed post-shutdown observation remains unknown; existing core platformErrors and runtime stopAll preserve incomplete stop evidence. No new retry/state mechanism. Android tests 90/90, including file-system faults and all four stop-all entry points; new regressions fail on the previous implementation. No emulator or installed Cindy was changed in this round.",
     "0.2.17 full repository gate including binary dependencies: 411/414 passed; only the same three Bash 3 baseline publishing failures on unchanged main e13abcd. Final manifest/localization checks 27/27. Forge validation passed.",
     "0.2.18: removed auto/touch observation-error fallback; typeText marks its single sent owner only after rpc passes synchronous budget/argument checks and starts a request. Clear, direct type, clipboard and keys share this boundary; only started modifiers are released. Guest API read precedes every privacy batch: API 23–32 uses READ_EXTERNAL_STORAGE; API 33+ READ_MEDIA_*; background location and motion follow API 29 introduction. Invalid/unsupported API and read failures stop all batch writes. New budget-interleaving and permission-boundary regressions fail on 0.2.17. No retries, caches, queues, installed Cindy changes or actual emulator operations.",
-    "0.2.18: Android regression 191/191. Full repository gate including binary dependencies 512/515, with only the same three Bash 3 baseline publishing failures on unchanged main e13abcd. Final four-language manifest/localization checks 27/27; permission API boundaries and storage scope are disclosed in the tool description and paired READMEs."
+    "0.2.18: Android regression 191/191. Full repository gate including binary dependencies 512/515, with only the same three Bash 3 baseline publishing failures on unchanged main e13abcd. Final four-language manifest/localization checks 27/27; permission API boundaries and storage scope are disclosed in the tool description and paired READMEs.",
+    "0.2.19: removed speculative APK installer sent state. Existing job.execution alone retains devices.adb preflight not_executed versus install command unknown; later read failure cannot erase install evidence. Thirty auto/full phase cases cover inspect/comparison, unchanged APK, endpoint/identity/budget rejection, transport/timeout/unclassified/no-Success, post-install query/hash failure, mismatch and success; two controlled in-flight polling cases prove one job/no replay and final evidence. Android parity 39/39. New regressions fail on 0.2.18. No new retry, queue, lock or recovery state; no installed Cindy or actual emulator was changed.",
+    "0.2.19 full repository gate including binary dependencies: 546/549 passed; only the same three Bash 3 baseline publishing failures on unchanged main e13abcd. Final manifest/localization 27/27. App install phase and controlled polling regressions 39/39."
   ],
   "notVerified": [
-    "0.2.18 packaged acceptance on production/Beta Cindy is pending. Dash confirmed 0.2.14 on Beta; that historical attestation does not cover this rebased package.",
+    "0.2.19 packaged acceptance on production/Beta Cindy is pending. Dash confirmed 0.2.14 on Beta; that historical attestation does not cover this rebased package.",
     "No other iOS/tvOS/visionOS device was started or stopped for this integration. Upstream real-device evidence remains recorded separately.",
     "Android Windows/Linux physical-host acceptance remains pending."
   ],
