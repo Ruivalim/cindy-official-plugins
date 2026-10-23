@@ -10,7 +10,10 @@ test('presence and overlay reflect device, service and page state in priority or
  assert.equal(M.overlay({...booted,device:{...booted.device,state:'Shutdown'}}).kind,'off');
  assert.equal(M.overlay({...booted,device:{...booted.device,state:'Booting'}}).kind,'booting');
  assert.equal(M.overlay({...booted,settings:{enabled:false}}).kind,'paused');
- assert.equal(M.overlay(null).kind,'offline');
+ assert.equal(M.overlay(null).kind,'connecting');
+ assert.deepEqual(M.presence(null),{tone:'busy',key:'connecting'});
+ assert.equal(M.overlay(null,{lost:true}).kind,'offline');
+ assert.deepEqual(M.presence(null,{lost:true}),{tone:'off',key:'offline'});
  assert.equal(M.overlay(booted,{switching:true,phase:'booting'}).kind,'switching');
  assert.equal(M.overlay({...booted,device:{...booted.device,state:'Shutdown'}},{recovering:true}).kind,'recovering','page flags win over device state');
 });
