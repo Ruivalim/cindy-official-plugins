@@ -154,7 +154,7 @@ function createAgent({root,devices,run}){
   }
   async function press(d,p){
     const keys={home:'GoHome',back:'GoBack',lock:'Power',power:'Power','volume-up':'AudioVolumeUp','volume-down':'AudioVolumeDown','app-switcher':'AppSwitch','swipe-to-app-switcher':'AppSwitch','swipe-to-home':'GoHome'};
-    if(!keys[p.button]&&!['shake','release-input','pull-down-to-notification-center','pull-down-to-lock-screen'].includes(p.button))throw fail('INVALID_ARGUMENT','This Android device has no such hardware button.');
+    if(!keys[p.button]&&!['shake','release-input','pull-down-to-notification-center'].includes(p.button))throw fail('INVALID_ARGUMENT','This Android device has no such hardware button.');
     number(p.duration,'duration',0,10,0);
     try{
     if(p.button==='shake'){
@@ -164,7 +164,7 @@ function createAgent({root,devices,run}){
       finally{await call(d,'setPhysicalModel',{target:1,value:pose.value,interpolation:1},{_deadline:Date.now()+3000});}
     }
     else if(p.button==='release-input'){await release(d);for(const key of ['Control','Shift','Alt','Meta'])await call(d,'sendKey',{key,eventType:1},p);}
-    else if(['pull-down-to-notification-center','pull-down-to-lock-screen'].includes(p.button))await devices.adb(d,['shell','cmd','statusbar','expand-notifications'],{deadline:p._deadline,mutation:true});
+    else if(p.button==='pull-down-to-notification-center')await devices.adb(d,['shell','cmd','statusbar','expand-notifications'],{deadline:p._deadline,mutation:true});
     else if(keys[p.button]){const duration=number(p.duration,'duration',0,10,0);if(duration){try{await call(d,'sendKey',{key:keys[p.button],eventType:0},p);await sleep(duration*1000,p._deadline);}finally{await call(d,'sendKey',{key:keys[p.button],eventType:1},{_deadline:Date.now()+3000});}}else await key(d,keys[p.button],p);}
     else throw fail('INVALID_ARGUMENT','This Android device has no such hardware button.');
     return {udid:d.udid,execution:'executed'};

@@ -74,10 +74,10 @@
   // Name · OS Version · Model, like Simulator's: models follow the OS chosen,
   // and the name follows the model until edited.
   const SHEET = {
-    en: { any: 'New device', android:'New Android', setup:'Set up Android…', iphone: 'New iPhone', ipad: 'New iPad', tv: 'New Apple TV', vision: 'New Vision Pro', name: 'Name', os: 'OS Version', model: 'Model', create: 'Create', cancel: 'Cancel', creating: 'Creating…',
-      loading: 'Loading models…', none: 'No matching runtime. Set up Android here, or install Apple runtimes in Xcode.', failed: 'Not created. Check Xcode and try again.' },
-    'zh-CN': { any: '新建设备', android:'新建安卓设备', setup:'安装安卓环境…', iphone: '新建 iPhone', ipad: '新建 iPad', tv: '新建 Apple TV', vision: '新建 Vision Pro', name: '名称', os: '系统版本', model: '机型', create: '创建', cancel: '取消', creating: '正在创建…',
-      loading: '正在读取机型…', none: '没有匹配的系统。可在这里安装安卓环境，Apple 系统请通过 Xcode 安装。', failed: '没有创建成功，请检查 Xcode 后重试。' },
+    en: { any: 'New device', android:'New Android', setup:'Set up Android…', iphone: 'New iPhone', ipad: 'New iPad', name: 'Name', os: 'OS Version', model: 'Model', create: 'Create', cancel: 'Cancel', creating: 'Creating…',
+      loading: 'Loading models…', none: 'No matching runtime. Set up Android here, or install Apple runtimes in Xcode.', failed: 'Could not create the device. Check the environment and available disk space, then try again.', iosFailed: 'Not created. Check Xcode and try again.' },
+    'zh-CN': { any: '新建设备', android:'新建安卓设备', setup:'安装安卓环境…', iphone: '新建 iPhone', ipad: '新建 iPad', name: '名称', os: '系统版本', model: '机型', create: '创建', cancel: '取消', creating: '正在创建…',
+      loading: '正在读取机型…', none: '没有匹配的系统。可在这里安装安卓环境，Apple 系统请通过 Xcode 安装。', failed: '没有创建成功，请检查运行环境和可用磁盘空间后重试。', iosFailed: '没有创建成功，请检查 Xcode 后重试。' },
   };
   let catalogCache = null;
   async function catalog() { if (!catalogCache) { const c = await rpc('catalog', {}); if (!c?.ok) throw c; catalogCache = c; } return catalogCache; }
@@ -128,8 +128,13 @@
         fillModels(best?.deviceType);
         nameInput.focus(); nameInput.select();
       }
-      catalog().then(populate).catch(() => { error.textContent = T.failed; });
-      setup.addEventListener('click',async()=>{if(await setupAndroid(lang)){catalogCache=null;populate(await catalog());}});
+      function showError(e) {
+        const selected = cat?.deviceTypes?.find(d => d.identifier === modelSelect.value);
+        const apple = selected ? M.platform(selected) !== 'android' : family !== 'android' && family !== 'any';
+        error.textContent = e?.message || (apple ? T.iosFailed : T.failed);
+      }
+      catalog().then(populate).catch(showError);
+      setup.addEventListener('click',async()=>{try{if(await setupAndroid(lang)){catalogCache=null;populate(await catalog());}}catch(e){showError(e);}});
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
         const name = nameInput.value.trim(); if (!name || !modelSelect.value) return;
@@ -138,7 +143,7 @@
           const r = await rpc('create', { name, deviceType: modelSelect.value, runtime: osSelect.value });
           if (!r?.ok) throw r;
           finish({ udid: r.udid, name: r.name || name });
-        } catch { error.textContent = T.failed; create.disabled = false; create.textContent = T.create; }
+        } catch (e) { showError(e); create.disabled = false; create.textContent = T.create; }
       });
     });
   }

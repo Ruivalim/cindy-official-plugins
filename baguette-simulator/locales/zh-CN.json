@@ -31,7 +31,7 @@
       "description": "向当前聚焦的输入框输入。text 任意文字：method=auto（默认）在普通 App 里粘贴（精确，支持中文），在没有无障碍元素的游戏里逐键输入英文、数字与符号（拼音等输入法会自动切到英文）；也可指定 paste 或 type。keys 发送按键，如 Enter、Escape、Backspace、Tab、up、a、cmd+A、shift+Tab；clear=true 先全选删除。输入前确认焦点，之后观察结果。 逐键输入时屏幕键盘不会出现；游戏里 Enter 可能直接提交，只想结束编辑就点空白处。observe、until 同 tap。 按键输入期间隐藏屏幕键盘；最后输入后约 3 秒尝试清除硬件键盘记录，重新聚焦后观察是否恢复，不保证自动弹出。检查键盘遮挡用 method=touch，无需重启。 method=touch 不可与 clear=true 或 keys 同用。 安卓 Unicode 使用剪贴板，type 限 ASCII；cmd 映射 Ctrl。 Vision Pro 的 auto 使用粘贴；tvOS 的 auto/type 发送 US 键盘事件（每次至多 300 字符，请先切换英文输入法），不支持剪贴板粘贴或 Unicode 文本。两者均支持 keys。method=touch 与软键盘恢复仅用于 iOS。"
     },
     "press": {
-      "description": "硬件按钮：home、lock、power、volume-up、volume-down、action、app-switcher、swipe-to-app-switcher、swipe-to-home、pull-down-to-notification-center、pull-down-to-lock-screen；duration 为按住秒数。release-input：只释放卡住的按键、停止重复输入，不重启系统也不关闭 App。 安卓另支持 back 和 shake。 Apple TV：up/down/left/right/select/back/menu/home/play-pause/volume-up/volume-down；Vision Pro：digital-crown（home 同义）。两者均支持 release-input。"
+      "description": "两平台共有：home、lock、power、volume-up、volume-down、app-switcher、swipe-to-app-switcher、swipe-to-home、pull-down-to-notification-center、release-input。iOS 专有：action、pull-down-to-lock-screen。安卓专有：back、shake；通知栏按钮展开通知，不是锁屏。未支持的按钮在投递前拒绝。duration（0–10 秒）仅用于按住硬件按键。release-input 只释放卡键并停止重复，不重启系统或关闭 App。"
     },
     "wait_for": {
       "description": "等条件成立再返回（最长 90 秒），代替固定 sleep 加反复截图。text 或 id 出现（gone=true 时等它消失；游戏里按识别出的文字判断）；stable=秒数：画面变化低于 tolerance（像素百分比，默认 0.5）持续这么久，可用 region 只看局部；log=正则：App 日志出现匹配行（配合 bundleId）。screenshot=true 附上成立时的截图。没等到返回 met=false、原因与当时截图，游戏动画会给出建议的 tolerance。 附图受本次调用剩余预算限制；失败或预算不足时保留等待结果并返回 screenshot.error，需要画面时另调 screenshot。 goalMet 与 met 同义，false 表示目标条件未满足，不能作为验收通过。"

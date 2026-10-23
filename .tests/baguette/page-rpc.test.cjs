@@ -14,12 +14,19 @@ function fixture(page,{steps=1}={}){
   const clock={setInterval:(fn,ms)=>{const id=++serial;intervals.set(id,{fn,ms});return id;},clearInterval:id=>intervals.delete(id),
     setTimeout:(fn,ms)=>{const id=++serial;timers.set(id,{fn,at:now+ms});return id;},clearTimeout:id=>timers.delete(id)};
   const elements=new Map();
+  const nodes=[];
+  const element=tag=>{
+    const n={tag,children:[],value:'',textContent:'',listeners:{},append(...children){this.children.push(...children);},replaceChildren(...children){this.children=children;},
+      setAttribute(k,v){this[k]=v;},addEventListener(k,fn){this.listeners[k]=fn;},focus(){},select(){},showModal(){},close(){},remove(){this.removed=true;},
+      get selectedOptions(){return this.children.filter(c=>c.value===this.value);}};
+    nodes.push(n);return n;
+  };
   const context={...clock,BroadcastChannel,crypto:require('node:crypto').webcrypto,AbortSignal,
-    document:{documentElement:{},getElementById:id=>{if(!elements.has(id))elements.set(id,{});return elements.get(id);}},
-    CindySimModel:{},fetch:async url=>url==='/app-context'?new Promise(()=>{}):{ok:true,json:async()=>({state:'on'})}};
+    document:{documentElement:{},body:element('body'),createElement:element,getElementById:id=>{if(!elements.has(id))elements.set(id,{});return elements.get(id);}},
+    CindySimModel:require('../../baguette-simulator/node/control-model.js'),fetch:async url=>url==='/app-context'?new Promise(()=>{}):{ok:true,json:async()=>({state:'on'})}};
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(`baguette-simulator/${page}.js`,'utf8'),context);
-  return {messages,calls,finish:(value,index=0)=>results[index].finish(value),fail:(error,index)=>results[index].fail(error),intervals,timers,
+  return {messages,calls,nodes,create:options=>context.CindySimPages.createDevice(options),finish:(value,index=0)=>results[index].finish(value),fail:(error,index)=>results[index].fail(error),intervals,timers,
     advance:async ms=>{now+=ms;for(const [id,timer] of [...timers])if(timer.at<=now){timers.delete(id);timer.fn();}await flush();},
     rpc:action=>page==='pages'?context.CindySimPages.rpc(action,{sessionId:'task-1',udid:'device-1'}):vm.runInContext(`rpc(${JSON.stringify(action)})`,context),
     tick:()=>{for(const {fn,ms} of [...intervals.values()])if(ms===500)fn();},
@@ -30,6 +37,30 @@ function fixture(page,{steps=1}={}){
         calls.push(r);return {ok:true,result:await results[calls.length-1].result};
       }}}})};
 }
+
+test('shared create sheet preserves backend errors and uses platform-correct fallbacks without replay',async()=>{
+  for(const lang of ['en','zh-CN'])for(const platform of ['android','ios'])for(const family of ['any',platform==='android'?'android':'iphone'])for(const detail of [true,false]){
+    const f=fixture('pages',{steps:3});f.start();const pending=f.create({lang,family});await flush();f.tick();await flush();
+    f.finish({ok:true,deviceTypes:[{identifier:platform==='android'?'android:phone':'iphone',platform,name:'Test phone',family:'iphone'}],
+      runtimes:[{identifier:platform==='android'?'android:36':'ios',platform,version:'36',name:'Test OS'}]});await flush();
+    const form=f.nodes.find(n=>n.tag==='form'),error=f.nodes.find(n=>n.className==='sheet-error'),submit=f.nodes.find(n=>n.type==='submit');
+    const operation=form.listeners.submit({preventDefault(){}});await flush();f.tick();await flush();
+    f.finish({ok:false,...(detail?{message:'ENOSPC: device metadata could not be written'}:{})},1);await operation;
+    if(detail)assert.equal(error.textContent,'ENOSPC: device metadata could not be written');
+    else assert.equal(error.textContent.includes('Xcode'),platform==='ios');
+    assert.equal(submit.disabled,false);assert.equal(f.calls.length,2);assert.equal(f.nodes.find(n=>n.tag==='dialog').removed,undefined);
+    for(let i=0;i<3;i++){f.tick();await flush();}assert.equal(f.calls.length,2,'rendering the failure never replays create');
+    const success=form.listeners.submit({preventDefault(){}});await flush();f.tick();await flush();
+    f.finish({ok:true,udid:'device-created',name:'Test phone'},2);await success;
+    assert.equal((await pending).udid,'device-created');assert.equal(f.nodes.find(n=>n.tag==='dialog').removed,true);
+  }
+  for(const family of ['android','any']){
+    const f=fixture('pages');f.start();const pending=f.create({family});await flush();f.tick();await flush();
+    f.finish({ok:false,message:'Android SDK metadata unreadable'});await flush();
+    assert.equal(f.nodes.find(n=>n.className==='sheet-error').textContent,'Android SDK metadata unreadable');
+    f.nodes.find(n=>n.tag==='dialog').listeners.cancel({preventDefault(){}});assert.equal(await pending,null);
+  }
+});
 
 test('startup probes never replay slow page or settings operations, on success or failure',async()=>{
   for(const [page,actions] of [['pages',['catalog','manage_state','task_state','boot']],['settings',['status','catalog','boot']]])for(const action of actions)for(const ok of [true,false]){

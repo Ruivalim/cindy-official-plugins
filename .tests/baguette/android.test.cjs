@@ -31,6 +31,35 @@ test('mixed catalogs never offer Android models against iOS runtimes',()=>{
   const catalog={deviceTypes:[{identifier:'android:phone',platform:'android',name:'Android Phone'},{identifier:'iphone',platform:'ios',name:'iPhone'}],runtimes:[{identifier:'ios',platform:'ios',version:'27'},{identifier:'android',platform:'android',version:'36'}]};
   assert.deepEqual(M.runtimesFor(catalog,'android:phone').map(r=>r.identifier),['android']);assert.deepEqual(M.runtimesFor(catalog,'iphone').map(r=>r.identifier),['ios']);
 });
+test('Android press dispatches the complete shared contract and rejects iOS-only buttons before input',async t=>{
+  const inputs=[],commands=[],endpoint=await emulator(t,(s,h,body)=>{
+    const method=h[':path'].split('/').at(-1);
+    if(method==='getPhysicalModel')return send(s,'PhysicalModelValue',{target:1,value:{data:[0,0,0]}});
+    if(method==='getSensor')return send(s,'SensorValue',{target:0,value:{data:[0,9.81,0]}});
+    inputs.push(method==='sendKey'?schema.lookupType('KeyboardEvent').decode(body.subarray(5)).key:method);send(s,'Empty',{});
+  });
+  const agent=require(path.join(A,'agent.cjs')).createAgent({root:await temp(t),devices:{adb:async(d,args)=>commands.push(args)}});
+  const manifest=JSON.parse(await fs.readFile('baguette-simulator/ghost.json','utf8'));
+  const buttons=manifest.tools.find(t=>t.name==='press').parameters.properties.button.enum;
+  const keys={home:'GoHome',back:'GoBack',lock:'Power',power:'Power','volume-up':'AudioVolumeUp','volume-down':'AudioVolumeDown','app-switcher':'AppSwitch','swipe-to-app-switcher':'AppSwitch','swipe-to-home':'GoHome'};
+  for(const button of [...buttons,'invalid']){
+    inputs.length=commands.length=0;
+    if(['action','pull-down-to-lock-screen','invalid'].includes(button)){
+      await assert.rejects(agent.press({udid:id,endpoint},{button}),e=>e.code==='INVALID_ARGUMENT'&&e.execution==='not_executed');
+      assert.equal(inputs.length+commands.length,0);continue;
+    }
+    assert.equal((await agent.press({udid:id,endpoint},{button})).execution,'executed');
+    if(keys[button])assert.deepEqual(inputs,[keys[button]]);
+    else if(button==='pull-down-to-notification-center')assert.deepEqual(commands,[['shell','cmd','statusbar','expand-notifications']]);
+    else if(button==='release-input')assert.deepEqual(inputs,['sendTouch','Control','Shift','Alt','Meta']);
+    else {assert.equal(button,'shake');assert.deepEqual(inputs,[...Array(6).fill('setSensor'),'setPhysicalModel']);}
+  }
+  for(const locale of ['zh-CN','en','ja','ko']){
+    const d=JSON.parse(await fs.readFile(`baguette-simulator/locales/${locale}.json`,'utf8')).tools.press.description;
+    assert.match(d,/iOS/);assert.match(d,/Android|安卓/);
+    for(const button of buttons)assert.ok(d.includes(button),`${locale}: ${button}`);
+  }
+});
 async function emulator(t,handler){
   const server=http2.createServer(),sessions=new Set();server.on('session',s=>{sessions.add(s);s.on('close',()=>sessions.delete(s));});
   server.on('stream',async(stream,headers)=>{assert.equal(headers.authorization,'Bearer test-capability');stream.on('error',()=>{});let chunks=[];for await(const chunk of stream)chunks.push(chunk);await handler(stream,headers,Buffer.concat(chunks));});

@@ -5,7 +5,7 @@
   "name": "设备模拟器",
   "description": "独立的 iPhone、iPad 与安卓模拟器，共用任务侧栏画面、设备管理和操作工具。默认闲置 15 分钟关机并保留数据。iOS 需要 macOS 15+、Apple Silicon、Xcode 与 iOS runtime；安卓支持 Mac、Windows x64、Linux x64，设置页引导确认下载大小与许可后安装环境。iOS 基于 Baguette（Apache-2.0）。",
   "whenToUse": "iOS 与安卓模拟器、App 安装启动、真实触摸、截图和界面检查、等待与录制变化、设备状态和日志排查。先 devices 选择设备，按手册验证结果。",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "kind": "chip",
   "entry": "main.js",
   "icon": "assets/icon.png",
@@ -584,7 +584,7 @@
     },
     {
       "name": "press",
-      "description": "硬件按钮：home、lock、power、volume-up、volume-down、action、app-switcher、swipe-to-app-switcher、swipe-to-home、pull-down-to-notification-center、pull-down-to-lock-screen；duration 为按住秒数。release-input：只释放卡住的按键、停止重复输入，不重启系统也不关闭 App。 安卓另支持 back 和 shake。 Apple TV：up/down/left/right/select/back/menu/home/play-pause/volume-up/volume-down；Vision Pro：digital-crown（home 同义）。两者均支持 release-input。",
+      "description": "两平台共有：home、lock、power、volume-up、volume-down、app-switcher、swipe-to-app-switcher、swipe-to-home、pull-down-to-notification-center、release-input。iOS 专有：action、pull-down-to-lock-screen。安卓专有：back、shake；通知栏按钮展开通知，不是锁屏。未支持的按钮在投递前拒绝。duration（0–10 秒）仅用于按住硬件按键。release-input 只释放卡键并停止重复，不重启系统或关闭 App。",
       "parameters": {
         "type": "object",
         "properties": {

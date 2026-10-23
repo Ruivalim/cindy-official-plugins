@@ -59,7 +59,7 @@ AI 空间操作沿用 `gesture`：
 
 安卓使用 `environment` 的 Android Phone/Tablet 与 `android:` runtime 创建私有设备。用 Gradle/项目脚本构建单个 `.apk`，`app install` 传绝对路径，轮询 job 到完成，再 `app info appPath` 检查 `matchesLocal`。`bundleId` 为 Android package ID；启动参数/env 只适用于 iOS。相同 APK 跳过，其余整包重装；不支持 AAB/split APK。切换只改变选择，不启停设备、不启动或搬运 App。安卓启动未确认时 appLaunched=false，检查 appTerminated（null 表示停止未确认）、launchError 与 execution；不能把 App 已停止后的失败当作未执行。删除/抹除的部分结果保留 completedSteps、failedStep、shutdown 与 deviceError，不清空任务和近期 App 记录；检查实际状态后再继续。
 
-截图与输入统一为看到的视图点；Android 横屏已在触摸层转换，勿再手动旋转。无障碍树不可用时用本地英文/简体中文 OCR；其他文字用截图判断。Unicode 粘贴，逐键输入只支持 ASCII；touch 方法需要聚焦输入框及可用粘贴菜单。`press back` 是安卓返回，`shake` 模拟摇动。安卓没有 iOS 的键盘记录清理。
+截图与输入统一为看到的视图点；Android 横屏已在触摸层转换，勿再手动旋转。无障碍树不可用时用本地英文/简体中文 OCR；其他文字用截图判断。Unicode 粘贴，逐键输入只支持 ASCII；touch 方法需要聚焦输入框及可用粘贴菜单。`press back` 是安卓返回，`shake` 模拟摇动；`pull-down-to-notification-center` 展开通知栏。`action`、`pull-down-to-lock-screen` 仅 iOS，安卓在输入前拒绝，不把锁屏下拉映射为通知栏。安卓没有 iOS 的键盘记录清理。
 
 安卓日志是 logcat/crash buffer，不是 .ips；精确进程过滤需要 App 仍在运行。仅成功查询确认进程不存在时返回空日志，连接或身份检查故障保留错误。状态支持方向、外观、字号、网络带宽/延迟/离线、定位、状态栏、具体运行时权限。安卓 appliedSteps 的 field/step 记录字段内已成功步骤，applied 仅列完整字段，stateError.step 指明失败步骤；先核对进度，勿整批重试。手机/平板无折叠铰链，不支持任意丢包率。权限仅支持 grant/revoke，reset 仅 iOS；安卓会在任何修改前拒绝 reset，依系统和 App 声明决定支持项。`heal` 会重启安卓并结束 App，先征得用户接受。画面共用控制器，但 iOS Baguette 高级工作台不适用于安卓，改用工具控制。
 
