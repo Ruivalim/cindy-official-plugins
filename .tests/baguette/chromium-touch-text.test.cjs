@@ -50,7 +50,15 @@ test('Chromium: second finger streams touch2 down/move/up and no single touch is
  el.fire('touchend',{touches:[],changedTouches:[touch(100,100)]});
  assert.equal(calls.length,3);
  // state is reset: a new single touch works again
- el.fire('touchstart',{touches:[touch(50,50)]});advance(100);assert.deepEqual([calls[3].name,calls[3].n],['down',1]);
+ el.fire('touchstart',{touches:[touch(50,50)]});advance(160);assert.deepEqual([calls[3].name,calls[3].n],['down',1]);
+});
+
+test('Chromium: a second finger up to 159 ms late (the preview acknowledges the first finger first) still starts a clean pinch',()=>{
+ const {el,calls,advance}=gestureHarness({safari:false});
+ el.fire('touchstart',{touches:[touch(80,150)]});
+ advance(150);assert.deepEqual(calls,[]);
+ el.fire('touchstart',{touches:[touch(80,150),touch(120,150)]});
+ assert.deepEqual(calls.map(c=>[c.name,c.n]),[['down',2]]);
 });
 
 test('Chromium: a lone finger is sent when it moves, lifts or has been held, never later than before',()=>{
@@ -68,7 +76,7 @@ test('Chromium: a lone finger is sent when it moves, lifts or has been held, nev
  assert.deepEqual(calls.map(c=>[c.name,c.fingers[0]]),[['down',[100,100]],['up',[100,100]]]);
  // press and hold: sent when the window ends
  calls.length=0;
- el.fire('touchstart',{touches:[touch(50,50)]});advance(99);assert.deepEqual(calls,[]);
+ el.fire('touchstart',{touches:[touch(50,50)]});advance(159);assert.deepEqual(calls,[]);
  advance(1);assert.deepEqual(calls.map(c=>c.name),['down']);
  // a second finger after the window is a lift of the sent touch, then the pair (as before)
  el.fire('touchstart',{touches:[touch(50,50),touch(90,50)]});
@@ -88,7 +96,7 @@ test('Chromium: cancel, detach and a bottom-edge touch with a held lone finger',
  assert.deepEqual(calls.map(c=>[c.name,c.n]),[['down',2],['up',2]]);
  // the edge hint of a bottom touch survives the hold
  calls.length=0;
- el.fire('touchstart',{touches:[touch(100,395)]});advance(100);
+ el.fire('touchstart',{touches:[touch(100,395)]});advance(160);
  assert.deepEqual(calls.map(c=>[c.name,c.edge]),[['down','bottom']]);
  el.fire('touchstart',{touches:[touch(100,395),touch(140,395)]});
  assert.deepEqual(calls.slice(1).map(c=>[c.name,c.n,c.edge]),[['up',1,'bottom'],['down',2,undefined]]);

@@ -16,8 +16,11 @@
   // under that finger and, when the fingers start close together, sits just
   // before the pair like the first tap of a double-tap. A move, a lift or the
   // end of the window sends the held touch first, so drags and taps start
-  // exactly when they did, and only a motionless press is delayed.
-  const SINGLE_HOLD_MS = 100;
+  // exactly when they did, and only a motionless press is delayed. 160 ms
+  // because the phone preview delivers its second finger after the first
+  // one's batch is acknowledged: a round trip through the computer measured
+  // at 50-170 ms (100 ms let 5 of 8 pinch-outs through as taps).
+  const SINGLE_HOLD_MS = 160;
 
   class TouchGestureSource extends root.Baguette._AttachableEventSource {
     /**
