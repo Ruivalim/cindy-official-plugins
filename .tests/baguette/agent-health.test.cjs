@@ -97,3 +97,29 @@ test('script activity renews use and release affects only the calling task, with
  await assert.rejects(f.runtime.request('device',{action:'activity',udid:'foreign',session_context:{session_id:'script-1'}}),e=>e.code==='DEVICE_NOT_OWNED');
  const restarted=createTaskBindings(path.join(f.root,'tasks.json'));assert.equal(restarted.usage(A,'script-2').activeTasks,0);
 });
+
+test('long reads stop fifteen minutes after completion instead of adding a second idle period',async t=>{
+ for(const method of ['wait_for','describe_ui','logs','app_info','screenshot']){
+  let state='Booted';
+  const f=await fixture(t,{dispatch:async(name,p={})=>{
+   if(name==='devices')return {devices:[{udid:A,state}]};
+   if(name==='shutdown')state='Shutdown';
+   if(name===method)f.advance(90000);
+   return {ok:true};
+  }});
+  await f.runtime.request(method,{udid:A,session_context:{session_id:'long-read'}});
+  assert.equal((await f.runtime.status()).idleDeadline,90000+15*60000,method);
+  f.advance(15*60000-1);await f.runtime.checkIdle();assert.equal(state,'Booted',method);
+  f.advance(1);await f.runtime.checkIdle();assert.equal(state,'Shutdown',method);
+ }
+});
+
+test('activity and release accept lowercase UDIDs and return canonical device identity',async t=>{
+ const id='ABCDEFAB-1234-4ABC-8ABC-ABCDEFABCDEF';
+ const f=await fixture(t,{dispatch:async()=>({devices:[{udid:id,state:'Booted'}]})});
+ const session_context={session_id:'lowercase-device'};
+ for(const action of ['activity','release']){
+  const result=await f.runtime.request('device',{action,udid:id.toLowerCase(),session_context});
+  assert.equal(result.udid,id);assert.equal(result.thisTaskActive,action==='activity');
+ }
+});

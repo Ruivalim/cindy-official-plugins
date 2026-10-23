@@ -1,11 +1,13 @@
 {
   "date": "2026-10-24",
-  "pluginVersion": "0.1.52",
+  "pluginVersion": "0.1.68",
   "baguette": "0.2.10",
   "status": "agent-health-source-replay-verified-package-install-pending",
   "baseline": "fa698acb2fc68abf43be9aa6effd79a26d7ac6a6",
   "passed": [
-    "242 of 245 repository checks pass after rebasing onto 8978c1e, including its viewer-open idle regression. The remaining three publish-workflow failures also reproduce on unchanged main with macOS Bash 3 (lowercase expansion: bad substitution); those workflow and test files are unchanged between the replay baseline and 8978c1e. Plugin contracts, four locales and simulator regressions pass.",
+    "303 of 306 repository checks pass after rebasing onto e13abcd, retaining the upstream TV/Vision tools, native helpers, shared toolbar and platform viewer routing. The remaining three Bash 3 publish-workflow failures independently reproduce on archived clean latest main e13abcd (11/14 pass). All changed-feature and platform regressions pass. Localization/contract checks pass 27/27 after compacting merged descriptions to their 1024-character limit. The preceding PR revision passed all Linux CI checks and received a Greptile 5/5 approval.",
+    "A platform integration regression first reproduced an incorrect not-installed modeReason for an already-installed compatible iPad App on Vision Pro. Full installation remains required by the existing platform policy; modeReason now reports platform-requires-full-install. The same test passes in the full integration suite.",
+    "Long-read regression tests cover wait_for, describe_ui, logs, app_info and screenshot: idle shutdown occurs exactly 15 minutes after a 90-second read completes, without a second idle period. Lowercase UDIDs work for activity/release and return canonical uppercase identity through the existing request normalization.",
     "A historical game UI task was replayed with its 6.3 GB simulator App on disposable private-set iPad Pro 11-inch M5 and iPhone 18 Pro, iOS 27.0. The same frozen App was used by baseline and changed source.",
     "Baseline: launching iPhone B while iPad A installs returns BUSY. Changed runtime: B launches in 492 ms while A still installs; conflicting launch on A remains not_executed after 1017 ms and identifies its install job.",
     "On a real native viewer serving the historical game, a controlled rolled-log condition makes baseline ready time out after 12136 ms; changed ready succeeds in 3 ms. H.264 stream delivers three frames (220353 bytes) in 1615 ms.",
@@ -21,8 +23,8 @@
   ],
   "notVerified": [
     "Final .cindy installation and task sidebar acceptance in a stable/Beta Cindy. Source-module/native replay does not meet the repository installed-package attestation.",
-    "No installed plugin replacement: the current installation includes separate TV/Vision development outside this main-based change.",
-    "No full historical conversation rerun, longitudinal Agent success-rate measurement, Xcode 26 or TV/Vision regression pass. These are targeted reproductions, not a fleet-wide performance estimate."
+    "The current installed plugin was retained per the task constraint. This health revision was not installed.",
+    "No full historical conversation rerun, longitudinal Agent success-rate measurement, Xcode 26 or fresh native TV/Vision replay for this health revision. Historical replay metrics predate the platform rebase; the integration suite includes the upstream TV/Vision automated regressions. These are targeted reproductions, not a fleet-wide performance estimate."
   ],
   "previousReleaseVerification": {
     "date": "2026-10-24",

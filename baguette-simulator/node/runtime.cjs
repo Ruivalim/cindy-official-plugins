@@ -201,7 +201,10 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
       if (!(await load()).enabled) throw failure('RUNTIME_DISABLED', 'Baguette is paused. Enable simulator operation in Plugins → Baguette settings.');
       touch();
       const result=await dispatch(method, params, deadline);
-      if (method!=='app_install_status' && result?.ok!==false) tasks?.activity?.(sessionOf(params),params.udid,now());
+      if (method!=='app_install_status' && result?.ok!==false) {
+        tasks?.activity?.(sessionOf(params),params.udid,now());
+        touch();
+      }
       return result;
     }
     // A settings refresh must not reject a user's stop/permission change.

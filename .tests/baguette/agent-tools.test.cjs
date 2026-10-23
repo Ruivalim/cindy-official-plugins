@@ -274,5 +274,7 @@ test('install rejects a wrong simulator platform before mutation and fully insta
  await assert.rejects(f.apps.install({udid:'test-device',runtime:'tvOS-27-0'},{appPath:f.app},{terminate:async()=>{throw Error('must not terminate');}}),e=>e.code==='APP_PLATFORM_MISMATCH');
  assert.ok(!f.calls.some(c=>c[0]==='simctl'&&c[1]==='install'));
  const compatible=fakeApps({installed:{same:true}});
- assert.equal((await compatible.apps.install({udid:'test-device',runtime:'xrOS-27-0'},{appPath:compatible.app},{terminate:async()=>{}})).mode,'full');
+ const result=await compatible.apps.install({udid:'test-device',runtime:'xrOS-27-0'},{appPath:compatible.app},{terminate:async()=>{}});
+ assert.equal(result.mode,'full');
+ assert.equal(result.modeReason,'platform-requires-full-install');
 });

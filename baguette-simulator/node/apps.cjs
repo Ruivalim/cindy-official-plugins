@@ -107,7 +107,7 @@ function createApps({sim, run, Failure, now = Date.now, rsync = '/usr/bin/rsync'
       job.bundleId = local.bundleId;
       const container = p.mode === 'full' || !nativePlatform ? null : await installedAt(device, local.bundleId);
       let mode = 'full';
-      job.modeReason = p.mode === 'full' ? 'requested-full' : 'not-installed';
+      job.modeReason = p.mode === 'full' ? 'requested-full' : !nativePlatform ? 'platform-requires-full-install' : 'not-installed';
       if (container) {
         const installed = await identity(container).catch(() => null);
         const changes = installed ? await differences(source, container).catch(() => null) : null;
