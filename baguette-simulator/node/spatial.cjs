@@ -4,9 +4,10 @@ const MODES=['interact','tilt','pan','orbit','dolly','move','reset','gaze','two-
 const finite=(n,min,max)=>typeof n==='number'&&Number.isFinite(n)&&n>=min&&n<=max;
 function sample(p,Failure=Error){
  const value={...p,z:p.z??0,aspect:p.aspect??1,spread:p.spread??.1,angle:p.angle??0,yaw:p.yaw??0,pitch:p.pitch??0};
+ const xyLimit=value.mode==='pointer'?1e9:10;
  if(typeof value.gesture!=='string'||!(/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value.gesture))||
    !['began','changed','ended'].includes(value.phase)||!MODES.includes(value.mode)||
-   !finite(value.x,-10,10)||!finite(value.y,-10,10)||!finite(value.z,-10,10)||!finite(value.aspect,.5,4)||!finite(value.spread,0,2)||!finite(value.angle,-20,20)||!finite(value.yaw,-20,20)||!finite(value.pitch,-20,20)||
+   !finite(value.x,-xyLimit,xyLimit)||!finite(value.y,-xyLimit,xyLimit)||!finite(value.z,-10,10)||!finite(value.aspect,.5,4)||!finite(value.spread,0,2)||!finite(value.angle,-20,20)||!finite(value.yaw,-20,20)||!finite(value.pitch,-20,20)||
    (value.mode==='pointer'&&(!Number.isInteger(value.z)||value.z<0||value.z>3)))
    throw new Failure('INVALID_ARGUMENT','Invalid Vision Pro input sample.');
  return value;

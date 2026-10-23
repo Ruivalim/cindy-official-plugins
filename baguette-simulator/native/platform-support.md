@@ -43,10 +43,17 @@ device, and serialize input with the existing per-device keyboard lock.
   events are wrapped as collections before forwarding. Mouse service is removed
   when its helper closes. These events reached a guest `GCMouse` handler.
   The continuous helper reuses the trackpad manager's ownership/acknowledgement
-  lifecycle, keyboard lock, EOF/750 ms release, 20 s/2000-sample cap and viewer
-  origin/capability/run checks. The browser coalesces absolute samples, serializes
-  release before switching modes, and cancels pending input on loss of focus,
-  visibility, stream or page. Failure never replays an uncertain pinch.
+  lifecycle, keyboard lock, EOF/750 ms release and viewer origin/capability/run
+  checks. The 20 s/2000-sample cap applies to spatial gestures; relative pointer
+  capture stays active until release or cancellation. Pointer cumulative x/y
+  offsets use 1000 pixels per unit and a separate finite +/-1e9 bound, while
+  other modes keep their +/-10 coordinate bound. Browser motion coalesces but
+  mouse button transitions remain ordered within the same gesture; partial
+  release retains the remaining buttons. Both TV and Vision controllers own
+  every unfinished contact, discard all queued motion/starts on cancellation
+  or failure, and notify queued discrete input of cancellation. Loss of focus,
+  visibility, stream or page uses that same cancellation path. Failure never
+  replays an uncertain input.
 - The helpers load system CoreSimulator and SimulatorKit from the selected Xcode,
   following the existing keyboard helper. Rebuild all helpers with `sh build.sh`;
   outputs are arm64, macOS 15 minimum, ad-hoc signed and signature-verified.

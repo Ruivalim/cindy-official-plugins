@@ -41,6 +41,20 @@ test('Vision drops queued keyboard and paste input if the switch is disabled bef
  s.emit('keydown',{code:'Enter'});s.emit('paste',{clipboardData:{getData:()=> 'queued'}});
  s.choose('keyboard');release();await tick();assert.equal(s.calls.length,1);
 });
+test('Vision cancellation invalidates queued keyboard and paste even while keyboard capture stays enabled',async()=>{
+ let release;const s=stage('visionOS',async()=>new Promise(resolve=>release=resolve),true);
+ s.choose('keyboard');s.emit('keydown',{code:'KeyB'});await tick();
+ s.emit('keydown',{code:'Enter'});s.emit('paste',{clipboardData:{getData:()=> 'queued'}});s.choose('pan');
+ release();await tick();assert.equal(s.calls.length,1);
+});
+test('Vision spatial failures invalidate queued keyboard and paste input at every delivery phase',async()=>{
+ for(const phase of ['began','changed','ended']){
+  let reject;const s=stage('visionOS',async(_action,p)=>{if(p.phase===phase)await new Promise((_resolve,r)=>reject=r);},true);
+  s.choose('keyboard');s.emit('pointerdown');await tick();s.emit('pointermove',{clientX:1000});await tick();s.emit('pointerup');await tick();
+  s.emit('keydown',{code:'Enter'});s.emit('paste',{clipboardData:{getData:()=> 'queued'}});reject(Error('lost acknowledgement'));await tick();
+  assert.ok(s.calls.every(p=>p.action==='spatial'));
+ }
+});
 test('TV and captured Vision forward modified arrow keys with their original modifiers',async()=>{
  for(const platform of ['tvOS','visionOS']){
   const s=stage(platform,undefined,platform==='visionOS');if(platform==='visionOS')s.choose('keyboard');
@@ -87,6 +101,26 @@ test('TV coalesces in-flight positions without losing displacement or queueing s
  assert.equal(s.calls.length,2);s.elapse(101);release();await tick();
  assert.equal(s.calls.length,3);assert.equal(s.calls[2].y,1);assert.equal(s.calls[2].phase,'changed');
  release();await tick();assert.equal(s.calls.length,4);assert.equal(s.calls[3].phase,'ended');
+});
+test('TV cancellation discards motion and starts across all unfinished wheel gestures',async()=>{
+ for(const phase of ['began','changed','ended'])for(const stop of [s=>s.windowEvent('blur'),s=>s.hide(),s=>s.disconnect(),s=>s.windowEvent('pagehide'),s=>s.emit('pointercancel')]){
+  let ack;const s=stage('tvOS',async(_action,p)=>{if(p.phase===phase)await new Promise(resolve=>ack=resolve);});
+  s.emit('wheel',{deltaY:-10});await tick();s.emit('wheel',{deltaY:-10});s.elapse(101);await tick();
+  s.emit('wheel',{deltaY:-10});s.elapse(101);s.emit('wheel',{deltaY:-10});
+  const n=s.calls.length,old=s.calls[0].gesture;stop(s);ack();await tick();
+  assert.ok(s.calls.every(p=>p.gesture===old),'no queued wheel gesture starts after cancellation');
+  assert.ok(s.calls.slice(n).every(p=>p.phase==='ended'),'only release follows cancellation');
+  if(phase==='ended')ack();await tick();assert.equal(s.calls.filter(p=>p.phase==='ended').length,1);
+ }
+});
+test('TV acknowledgement failure cancels every queued wheel gesture',async()=>{
+ for(const phase of ['began','changed','ended']){
+  let reject;const s=stage('tvOS',async(_action,p)=>{if(p.phase===phase)await new Promise((_resolve,r)=>reject=r);});
+  s.emit('wheel',{deltaY:-10});await tick();s.emit('wheel',{deltaY:-10});s.elapse(101);await tick();
+  s.emit('wheel',{deltaY:-10});s.elapse(101);s.emit('wheel',{deltaY:-10});
+  const old=s.calls[0].gesture;reject(Error('lost acknowledgement'));await tick();
+  assert.ok(s.calls.every(p=>p.gesture===old));assert.match(s.status.textContent,/Input not confirmed/);
+ }
 });
 test('TV lifts the contact before select/back and on blur, hidden page, stream loss or page exit',async()=>{
  for(const finish of [s=>{s.emit('pointerdown');s.emit('pointerup');},s=>s.emit('contextmenu'),s=>s.windowEvent('blur'),s=>s.hide(),s=>s.disconnect(),s=>s.windowEvent('pagehide')]){

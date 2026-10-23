@@ -132,7 +132,7 @@ static int stream(id device,id client,int lock){
  BOOL active=NO,ok=YES,pointerReady=NO;int mode=0,commands=0;double started=0,sx=0,sy=0,x=0,y=0,z=0,aspect=1,spread=.1,angle=0;
  simd_float4x4 pose=matrix_identity_float4x4;
  while(!stopping){
-  if(active&&(commands>=2000||NSProcessInfo.processInfo.systemUptime-started>=20)){ok=NO;break;}
+  if(active&&mode!=Pointer&&(commands>=2000||NSProcessInfo.processInfo.systemUptime-started>=20)){ok=NO;break;}
   char line[512];size_t n=0;BOOL complete=NO;
   while(n<sizeof(line)-1&&!stopping){
    struct pollfd fd={STDIN_FILENO,POLLIN,0};if(poll(&fd,1,active||n?750:-1)<=0)break;
@@ -140,9 +140,10 @@ static int stream(id device,id client,int lock){
   }
   if(!complete)break;line[n]=0;
   int phase=-1,nextMode=-1;double nx,ny,nz,na,ns,nr,yaw,pitch;char extra;
-  if(sscanf(line,"%d %d %lf %lf %lf %lf %lf %lf %lf %lf %c",&phase,&nextMode,&nx,&ny,&nz,&na,&ns,&nr,&yaw,&pitch,&extra)!=10||phase<0||phase>2||nextMode<0||nextMode>Pointer||
-    !isfinite(yaw)||!isfinite(pitch)||fabs(yaw)>20||fabs(pitch)>20||
-    !isfinite(nx)||!isfinite(ny)||!isfinite(nz)||!isfinite(na)||!isfinite(ns)||!isfinite(nr)||fabs(nx)>10||fabs(ny)>10||fabs(nz)>10||na<.5||na>4||ns<0||ns>2||fabs(nr)>20||
+  if(sscanf(line,"%d %d %lf %lf %lf %lf %lf %lf %lf %lf %c",&phase,&nextMode,&nx,&ny,&nz,&na,&ns,&nr,&yaw,&pitch,&extra)!=10||phase<0||phase>2||nextMode<0||nextMode>Pointer){ok=NO;break;}
+  double xyLimit=nextMode==Pointer?1e9:10;
+  if(!isfinite(yaw)||!isfinite(pitch)||fabs(yaw)>20||fabs(pitch)>20||
+    !isfinite(nx)||!isfinite(ny)||!isfinite(nz)||!isfinite(na)||!isfinite(ns)||!isfinite(nr)||fabs(nx)>xyLimit||fabs(ny)>xyLimit||fabs(nz)>10||na<.5||na>4||ns<0||ns>2||fabs(nr)>20||
     (nextMode==Pointer&&(nz<0||nz>3||floor(nz)!=nz))||(phase==0?active:(!active||mode!=nextMode))){ok=NO;break;}
   if(phase==0){
    if(flock(lock,LOCK_EX|LOCK_NB)!=0){ok=NO;break;}
@@ -150,7 +151,7 @@ static int stream(id device,id client,int lock){
    mode=nextMode;sx=nx;sy=ny;active=YES;commands=0;started=NSProcessInfo.processInfo.systemUptime;
   }
   double previousX=x,previousY=y,previousButtons=z;
-  x=nx;y=ny;z=nz;aspect=na;spread=ns;angle=nr;commands++;
+  x=nx;y=ny;z=nz;aspect=na;spread=ns;angle=nr;if(mode!=Pointer)commands++;
   if(mode==Pointer){
    if(!pointerReady){
     dlopen("/System/Library/Frameworks/IOKit.framework/IOKit",RTLD_NOW|RTLD_GLOBAL);

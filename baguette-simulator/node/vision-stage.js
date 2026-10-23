@@ -2,7 +2,7 @@
 // One live contact, using the same absolute-sample/coalescing protocol as TV.
 // A mode belongs to a gesture from pointer-down until release; modifier changes
 // cannot turn an already held pinch into a camera movement.
-globalThis.createVisionStage = function({canvas,api,message,onError,zh}) {
+globalThis.createVisionStage = function({canvas,api,message,onError,onCancel=()=>{},zh}) {
  let mode='interact',keyboard=false,twoHands=false,contact=null,pointer=null,stopped=false;
  let idleTimer=null,beat=null,lastHover=0,keys=new Set(),keyTimer=null,wheel=null;
  let recording=null,saving=false,hoverBlocked=false,game=null,gameTimer=null,gameFailed=false;
@@ -23,8 +23,8 @@ globalThis.createVisionStage = function({canvas,api,message,onError,zh}) {
  function failed(c){hoverBlocked=true;gameFailed=true;onError();done(c);cancel();}
  async function pump(c){
   if(c.busy||!c.ready||c.finished)return;
-  const pending=c.pending;if(!pending&&!c.ending)return;
-  c.pending=null;c.busy=true;
+  const pending=c.edges.shift()||c.pending;if(!pending&&!c.ending)return;
+  if(pending===c.pending)c.pending=null;c.busy=true;
   const phase=pending?'changed':'ended',sample=pending||c.sent;
   try{await api('spatial',{...sample,gesture:c.id,phase});c.sent=sample;if(phase==='ended')done(c);}
   catch{failed(c);}
@@ -36,7 +36,7 @@ globalThis.createVisionStage = function({canvas,api,message,onError,zh}) {
  function begin(value){
   if(!usable())return null;
   const previous=contact;if(previous&&!previous.ending)finish();
-  const c={id:crypto.randomUUID(),last:{z:0,spread:.1,angle:0,aspect:canvas.width/canvas.height||16/9,...value},pending:null,ready:false,busy:false,ending:false,finished:false};
+  const c={id:crypto.randomUUID(),last:{z:0,spread:.1,angle:0,aspect:canvas.width/canvas.height||16/9,...value},pending:null,edges:[],ready:false,busy:false,ending:false,finished:false};
   c.initial={...c.last};c.sent=c.initial;
   c.done=new Promise(resolve=>{c.resolve=resolve;});contacts.add(c);contact=c;
   (previous?.done||Promise.resolve()).then(async()=>{
@@ -45,16 +45,23 @@ globalThis.createVisionStage = function({canvas,api,message,onError,zh}) {
    catch{failed(c);}
   });return c;
  }
- function update(c,value){if(!c||c.ending||c.finished)return;c.last={...c.last,...value};c.pending=c.last;pump(c);}
+ function update(c,value){
+  if(!c||c.ending||c.finished)return;
+  const previous=c.last;c.last={...c.last,...value};
+  // Motion coalesces, but every mouse button transition stays ordered.
+  if(c.last.mode==='pointer'&&c.last.z!==previous.z){c.edges.push(c.last);c.pending=null;}
+  else c.pending=c.last;
+  pump(c);
+ }
  function finish(discard=false){
   clearTimeout(idleTimer);idleTimer=null;clearTimeout(beat);beat=null;wheel=null;
   const current=contact;
   for(const c of discard?contacts:current?[current]:[]){
-   c.ending=true;if(discard){c.pending=null;c.cancelled=!c.ready;}pump(c);
+   c.ending=true;if(discard){c.pending=null;c.edges.length=0;c.cancelled=!c.ready;}pump(c);
   }
   return current?.done||Promise.resolve();
  }
- function cancel(){pointer=null;game=null;keys.clear();clearTimeout(keyTimer);keyTimer=null;finish(true);}
+ function cancel(){onCancel();pointer=null;game=null;keys.clear();clearTimeout(keyTimer);keyTimer=null;finish(true);}
  // Toolbar drags are temporary camera gestures, independent of the selected
  // canvas mode. Use displacement: toolbar and canvas live in different frames.
  function cameraDrag(selected){
@@ -115,13 +122,14 @@ globalThis.createVisionStage = function({canvas,api,message,onError,zh}) {
  });
  canvas.addEventListener('pointerup',e=>{if(document.pointerLockElement===canvas){captured(e);return;}if(pointer?.id!==e.pointerId)return;pointer=null;finish();});
  function captured(e){
-  // Preserve button edges even when a move acknowledgement is still pending.
-  if(e.type==='pointerdown'){finish();begin({mode:'pointer',x:0,y:0,z:(e.buttons||0)&3});return;}
-  if(e.type==='pointerup'){finish();return;}
+  const buttons=(e.buttons||0)&3;
+  clearTimeout(idleTimer);idleTimer=null;
+  if(e.type==='pointerup'&&!buttons){finish();return;}
   if(!contact||contact.ending)begin({mode:'pointer',x:0,y:0,z:(e.buttons||0)&3});
   if(contact?.last.mode!=='pointer')return;
-  update(contact,{x:clamp(contact.last.x+(e.movementX||0)/1000,-9,9),y:clamp(contact.last.y+(e.movementY||0)/1000,-9,9),z:(e.buttons||0)&3});
-  clearTimeout(idleTimer);if(!e.buttons)idleTimer=setTimeout(()=>finish(),300);
+  const dx=Number.isFinite(e.movementX)?e.movementX/1000:0,dy=Number.isFinite(e.movementY)?e.movementY/1000:0;
+  update(contact,{x:contact.last.x+dx,y:contact.last.y+dy,z:buttons});
+  if(!buttons)idleTimer=setTimeout(()=>finish(),300);
  }
  document.addEventListener('pointerlockchange',()=>{cancel();keyboard=document.pointerLockElement===canvas;state();});
  document.addEventListener('pointerlockerror',captureError);

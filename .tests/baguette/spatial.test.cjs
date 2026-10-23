@@ -30,8 +30,42 @@ function stage(respond=async()=>{}){
  vm.runInNewContext(source,context);let errors=0;
  const control=context.createVisionStage({canvas,api:async(action,p)=>{calls.push({action,...p});await respond(p);},message(){},onError(){errors++;},zh:false});
  const emit=(name,p={})=>events[name]({type:name,button:0,buttons:name==='pointerup'?0:1,pointerId:1,clientX:960,clientY:540,preventDefault(){},...p});
- return {calls,control,emit,errors:()=>errors,pad:p=>{pads=p?[p]:[];windowEvents.gamepadconnected();},blur:()=>{focused=false;windowEvents.blur();},hide:()=>{context.document.hidden=true;docEvents.visibilitychange();},exit:()=>windowEvents.pagehide(),pulse:()=>{const fs=[...timers.values()];timers.clear();fs.forEach(f=>f());}};
+ return {calls,control,emit,errors:()=>errors,lock:()=>{context.document.pointerLockElement=canvas;docEvents.pointerlockchange();},pad:p=>{pads=p?[p]:[];windowEvents.gamepadconnected();},blur:()=>{focused=false;windowEvents.blur();},hide:()=>{context.document.hidden=true;docEvents.visibilitychange();},exit:()=>windowEvents.pagehide(),pulse:()=>{const fs=[...timers.values()];timers.clear();fs.forEach(f=>f());}};
 }
+test('captured pointer preserves every button edge and held buttons during partial releases',async()=>{
+ for(const first of [1,2])for(const moves of [false,true]){
+ let ack;const s=stage(p=>p.phase==='changed'&&!ack?new Promise(resolve=>ack=resolve):Promise.resolve());s.lock();
+ const firstButton=first===1?0:2,otherButton=first===1?2:0;
+ s.emit('pointerdown',{button:firstButton,buttons:first});await tick();s.emit('pointermove',{buttons:first,movementX:10});await tick();
+ for(let i=0;i<2;i++){s.emit(moves?'pointermove':'pointerdown',{button:otherButton,buttons:3});s.emit(moves?'pointermove':'pointerup',{button:otherButton,buttons:first});}
+ s.emit('pointermove',{buttons:first,movementX:20});ack();await tick();
+ assert.equal(s.calls.filter(p=>p.phase==='began').length,1);
+ assert.equal(s.calls.filter(p=>p.phase==='ended').length,0,'left button is still held');
+ const edges=s.calls.map(p=>p.z).filter((z,i,a)=>i===0||z!==a[i-1]);assert.deepEqual(edges,[first,3,first,3,first]);
+ s.emit('pointerup',{button:firstButton,buttons:0});await tick();assert.equal(s.calls.at(-1).phase,'ended');
+ assert.ok(s.calls.every(p=>p.gesture===s.calls[0].gesture));
+ }
+});
+test('captured pointer retains cumulative displacement beyond nine thousand pixels',async()=>{
+ const s=stage(p=>sample(p,Failure));s.lock();s.emit('pointerdown',{buttons:1});await tick();
+ for(let i=0;i<100;i++){s.emit('pointermove',{buttons:1,movementX:1200,movementY:-600});await tick();}
+ assert.ok(Math.abs(s.calls.at(-1).x-120)<1e-8);assert.ok(Math.abs(s.calls.at(-1).y+60)<1e-8);assert.equal(s.errors(),0);
+ assert.equal(s.calls.filter(p=>p.phase==='began').length,1);s.emit('pointerup',{buttons:0});await tick();assert.equal(s.calls.at(-1).phase,'ended');
+ const valid={...s.calls[0],x:120,y:-60};assert.equal(sample(valid,Failure).x,120);
+ assert.throws(()=>sample({...valid,mode:'pan'},Failure),e=>e.code==='INVALID_ARGUMENT');
+ assert.throws(()=>sample({...valid,x:Infinity},Failure),e=>e.code==='INVALID_ARGUMENT');
+});
+test('pointer cancellation drops queued button edges and later contacts while releasing the active mask',async()=>{
+ for(const phase of ['began','changed']){
+  let ack;const s=stage(p=>p.phase===phase?new Promise(resolve=>ack=resolve):Promise.resolve());s.lock();
+  s.emit('pointerdown',{buttons:1});await tick();s.emit('pointermove',{buttons:1,movementX:10});await tick();
+  s.emit('pointerdown',{button:2,buttons:3});s.emit('pointerup',{button:2,buttons:1});s.emit('pointerup',{buttons:0});
+  s.emit('pointerdown',{buttons:1});s.emit('pointerdown',{button:2,buttons:3});
+  const n=s.calls.length,old=s.calls[0].gesture;s.blur();ack();await tick();s.pulse();await tick();
+  assert.ok(s.calls.every(p=>p.gesture===old));assert.ok(s.calls.slice(n).every(p=>p.phase==='ended'));
+  assert.equal(s.calls.filter(p=>p.phase==='ended').length,1);
+ }
+});
 test('fast click waits for native begin then releases exactly once',async()=>{
  let ack;const s=stage(p=>p.phase==='began'?new Promise(r=>ack=r):Promise.resolve());
  s.emit('pointerdown');s.emit('pointerup');await tick();assert.equal(s.calls.length,1);

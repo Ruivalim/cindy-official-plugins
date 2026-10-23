@@ -29,3 +29,4 @@ import "./baguette/platform-screen.test.cjs";
 import './baguette/platform-stage.test.cjs';
 import './baguette/trackpad.test.cjs';
 import './baguette/spatial.test.cjs';
+import './baguette/native-spatial-protocol.test.cjs';
