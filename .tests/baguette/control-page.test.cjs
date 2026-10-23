@@ -121,10 +121,10 @@ test('idle countdown card appears only in the last minute and keeps the device a
  assert.equal(calls.filter(c=>c.action==='activity').length,1);assert.equal(dom.byId.dock.querySelector('.idle'),null);
 });
 
-test('switching follows the device job, then adopts the new device without exposing a UDID in the chip',async()=>{
- let job=null,current=udid;
+test('switching waits for its response, then adopts the new device without exposing a UDID in the chip',async()=>{
+ let job=null,current=udid,complete;
  const {dom,poll,calls,context}=await boot({respond:({action,targetUdid})=>{
-  if(action==='switch'){job={id:'j1',sourceUdid:udid,targetUdid,state:'running',phase:'preparing'};return {ok:true,job};}
+  if(action==='switch'){job={id:'j1',sourceUdid:udid,targetUdid,state:'running',phase:'preparing'};return new Promise(resolve=>complete=()=>resolve({ok:true,job}));}
   if(action==='status')return status({device:{udid:current,name:current===udid?'iPhone 17 Pro':'iPad',state:'Booted'},deviceJob:job});
   return {ok:true};}});
  dom.byId['device-chip'].dispatch('click');
@@ -133,7 +133,7 @@ test('switching follows the device job, then adopts the new device without expos
  rows[1].listeners.click[0]();await new Promise(r=>setImmediate(r));await poll();
  assert.equal(calls.filter(c=>c.action==='switch')[0].targetUdid,other);
  assert.match(dom.text(dom.byId.overlay),/正在切换/);
- job={...job,state:'done',phase:'done',activeUdid:other};current=other;await poll();
+ job={...job,state:'done',phase:'done',activeUdid:other};current=other;complete();await new Promise(r=>setImmediate(r));await poll();
  assert.match(context.location.href,new RegExp('udid='+other));assert.equal(dom.byId['chip-name'].textContent,'iPad');
  assert.equal(dom.byId.screen.loads.at(-1),`/simulators/${other}?handheld=0&cindyViewer=token#cindyClipboard=123.token`);
  assert.match(dom.text(dom.byId.dock),/已切换/);
@@ -141,9 +141,9 @@ test('switching follows the device job, then adopts the new device without expos
 
 // A shared status job is not a request to change every controller on its source.
 test('only the initiating controller adopts a switch; other tasks, hub and reopened views keep their device',async()=>{
- let job=null;
+ let job=null,complete;
  const respond=({action,targetUdid,udid:id})=>{
-  if(action==='switch'){job={id:'owned-switch',sourceUdid:id,targetUdid,state:'running',phase:'preparing'};return {ok:true,job};}
+  if(action==='switch'){job={id:'owned-switch',sourceUdid:id,targetUdid,state:'running',phase:'preparing'};return new Promise(resolve=>complete=()=>resolve({ok:true,job}));}
   const s=status();s.devices[1].state='Booted';
   return {...s,device:s.devices.find(d=>d.udid===id),deviceJob:job};
  };
@@ -163,7 +163,7 @@ test('only the initiating controller adopts a switch; other tasks, hub and reope
  assert.equal(owner.calls.find(c=>c.action==='switch').task,'task-1');
  for(const view of observers)await view.poll();unchanged();
  job={...job,state:'done',phase:'done',activeUdid:other};
- await owner.poll();for(const view of observers)await view.poll();unchanged();
+ complete();await new Promise(r=>setImmediate(r));await owner.poll();for(const view of observers)await view.poll();unchanged();
  assert.equal(new URL(owner.context.location.href).searchParams.get('udid'),other);
  const reopened=await boot({respond,query:'&task=task-2'});
  assert.equal(new URL(reopened.context.location.href).searchParams.get('udid'),udid,'a retained completed job never redirects a newly opened controller');
@@ -173,11 +173,11 @@ test('only the initiating controller adopts a switch; other tasks, hub and reope
  assert.equal(new URL(owner.context.location.href).searchParams.get('udid'),other);
 });
 
-test('a replaced switch result stops waiting without adopting another page selection',async()=>{
- let job=null,delay=false,release;
+test('a completed switch response survives a late status read and replacement of the shared result',async()=>{
+ let job=null,delay=false,release,complete;
  const {dom,poll,context}=await boot({respond:({action,targetUdid})=>{
-  if(action==='switch'){job={id:'own',sourceUdid:udid,targetUdid,state:'running',phase:'preparing'};return {ok:true,job};}
-  const snapshot=status({deviceJob:job});
+  if(action==='switch'){job={id:'own',sourceUdid:udid,targetUdid,state:'running',phase:'preparing'};return new Promise(resolve=>complete=result=>resolve({ok:true,job:result}));}
+  const snapshot=status({deviceJob:job});snapshot.devices[1].state='Booted';
   if(delay){delay=false;return new Promise(resolve=>release=()=>resolve(snapshot));}
   return snapshot;
  }});
@@ -185,13 +185,15 @@ test('a replaced switch result stops waiting without adopting another page selec
  dom.byId['device-chip'].dispatch('click');
  dom.body.querySelectorAll('button').find(b=>b.attrs.role==='menuitemradio'&&!b.disabled).listeners.click[0]();
  await new Promise(r=>setImmediate(r));
- release();await earlier;
- assert.match(dom.text(dom.byId.overlay),/正在切换/,'late status from before the request must not discard its job');
+ const own={...job,state:'done',activeUdid:other};
  job={id:'other-page',sourceUdid:udid,targetUdid:other,state:'done',activeUdid:other};
+ complete(own);await new Promise(r=>setImmediate(r));
+ release();await earlier;
  await poll();
- assert.equal(new URL(context.location.href).searchParams.get('udid'),udid);
+ assert.equal(new URL(context.location.href).searchParams.get('udid'),other,'only the direct response decides the selected device');
  assert.equal(dom.byId.overlay.hidden,true);
- assert.match(dom.text(dom.byId.dock),/切换没有完成/);
+ assert.match(dom.text(dom.byId.dock),/已切换/);
+ assert.doesNotMatch(dom.text(dom.byId.dock),/切换没有完成/);
 });
 
 test('selecting a stopped device never loads its stream or boots until Open is clicked',async()=>{

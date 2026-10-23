@@ -5,9 +5,9 @@ const a='00000000-0000-4000-8000-00000000000A',b='00000000-0000-4000-8000-000000
 async function fixture(t){
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'baguette-switch-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
  const devices=[{udid:a,name:'Duo',state:'Booted',isAvailable:true},{udid:b,name:'Phone',state:'Shutdown',isAvailable:true}],calls=[];
- let failAt,hold,clock=0,using=false;
+ let failAt,hold,bindStarted,clock=0,using=false;
  const bindings=new Map();
- const opts={settingsFile:path.join(dir,'settings.json'),now:()=>clock,inUse:async()=>using,tasks:{bind:async(s,id)=>{if(hold)await hold;bindings.set(s,id);},forgetDevice:async id=>{for(const [s,device] of bindings)if(device===id)bindings.delete(s);}},dispatch:async(method,p={})=>{
+ const opts={settingsFile:path.join(dir,'settings.json'),now:()=>clock,inUse:async()=>using,tasks:{bind:async(s,id)=>{if(hold){bindStarted?.();await hold;}bindings.set(s,id);},forgetDevice:async id=>{for(const [s,device] of bindings)if(device===id)bindings.delete(s);}},dispatch:async(method,p={})=>{
   calls.push({method,...p});if(method==='devices')return {devices:devices.map(d=>({...d}))};
   if(method===failAt)throw Object.assign(Error('Fixture failure'),{code:'FIXTURE_ERROR',execution:'unknown'});
   if(method==='shutdown')devices.find(d=>d.udid===p.udid).state='Shutdown';
@@ -17,7 +17,7 @@ async function fixture(t){
   return {ok:true};
  }};
  const runtime=createRuntime(opts);
- return {runtime,devices,calls,bindings,file:opts.settingsFile+'.apps.json',restart:()=>createRuntime(opts),fail:m=>failAt=m,hold:p=>hold=p,advance:ms=>clock+=ms,inUse:value=>using=value};
+ return {runtime,devices,calls,bindings,file:opts.settingsFile+'.apps.json',restart:()=>createRuntime(opts),fail:m=>failAt=m,hold:p=>{hold=p;return new Promise(resolve=>bindStarted=resolve);},advance:ms=>clock+=ms,inUse:value=>using=value};
 }
 async function finish(f){for(let i=0;i<100;i++){const job=(await f.runtime.status()).deviceJob;if(job.state!=='running')return job;await new Promise(r=>setTimeout(r,2));}assert.fail('switch did not finish');}
 test('recent App read failures never become empty records or allow a switch to mutate devices',async t=>{
@@ -131,12 +131,29 @@ test('a selected stopped device starts only on the explicit boot action',async t
  await f.runtime.request('settings_boot',{udid:b});assert.ok(f.devices.every(d=>d.state==='Booted'));
  assert.equal(f.calls.filter(c=>c.method==='boot').length,1);
 });
+test('each switch request waits for its final binding result and retains it after another selection',async t=>{
+ const f=await fixture(t);let release,answered=false;
+ const entered=f.hold(new Promise(r=>release=r));
+ const pending=f.runtime.request('viewer_switch',{udid:a,targetUdid:b,task:'task-1'}).then(result=>{answered=true;return result;});
+ await entered;
+ assert.equal(answered,false,'a running shared snapshot is not the completed request result');
+ release();const first=await pending;
+ assert.equal(first.state,'done');assert.equal(first.activeUdid,b);assert.equal(f.bindings.get('task-1'),b);
+ const next=await f.runtime.request('viewer_switch',{udid:b,targetUdid:a,task:'task-2'});
+ assert.equal(next.state,'done');assert.equal(next.activeUdid,a);
+ assert.notEqual(first.id,next.id);
+ assert.equal(first.activeUdid,b,'later selections cannot replace an earlier response');
+ assert.equal(f.bindings.get('task-1'),b);assert.equal(f.bindings.get('task-2'),a);
+ assert.deepEqual(f.devices.map(d=>d.state),['Booted','Shutdown']);
+});
+
 test('two concurrent switches cannot interleave; idle shutdown cannot interrupt the reserved operation',async t=>{
- const f=await fixture(t);let release;f.hold(new Promise(r=>release=r));
- const results=await Promise.allSettled([f.runtime.request('viewer_switch',{udid:a,targetUdid:b,task:'task-1'}),f.runtime.request('viewer_switch',{udid:a,targetUdid:b,task:'task-1'})]);
- assert.equal(results.filter(r=>r.status==='fulfilled').length,1);assert.equal(results.find(r=>r.status==='rejected').reason.code,'BUSY');
+ const f=await fixture(t);let release;const entered=f.hold(new Promise(r=>release=r));
+ const first=f.runtime.request('viewer_switch',{udid:a,targetUdid:b,task:'task-1'});
+ await entered;
+ await assert.rejects(f.runtime.request('viewer_switch',{udid:a,targetUdid:b,task:'task-1'}),e=>e.code==='BUSY');
  await f.runtime.checkIdle();assert.equal(f.devices[0].state,'Booted');await assert.rejects(f.runtime.request('rename_device',{udid:a,name:'Name'}),e=>e.code==='BUSY');
- release();assert.equal((await finish(f)).state,'done');assert.equal(f.calls.filter(c=>c.method==='boot').length,0);
+ release();assert.equal((await first).state,'done');assert.equal(f.calls.filter(c=>c.method==='boot').length,0);
 });
 test('a switch blocked by another operation keeps the source selected',async t=>{
  const f=await fixture(t);let release;
@@ -152,10 +169,11 @@ test('task binding follows the selected device without changing its power state'
  for(const targetState of ['Shutdown','Booted']) {
   const f=await fixture(t);f.devices[1].state=targetState;let release;
   await f.runtime.request('launch_app',{udid:a,bundleId:'test.example.app',session_context:{session_id:'task-1'}});
-  f.hold(new Promise(r=>release=r));
-  await f.runtime.request('viewer_switch',{udid:a,targetUdid:b,task:'task-1'});
+  const entered=f.hold(new Promise(r=>release=r));
+  const pending=f.runtime.request('viewer_switch',{udid:a,targetUdid:b,task:'task-1'});
+  await entered;
   assert.equal(f.bindings.get('task-1'),a,'starting a switch never changes binding speculatively');
-  release();const job=await finish(f);
+  release();const job=await pending;
   assert.equal(f.bindings.get('task-1'),job.activeUdid);
   assert.equal(job.activeUdid,b);assert.equal(f.devices[1].state,targetState);
  }

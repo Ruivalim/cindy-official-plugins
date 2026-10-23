@@ -57,7 +57,7 @@ function createDeviceManager({dispatch,exclusive,assertEnabled,touch,contextFile
    entry.activeUdid=source.udid;
    entry.state='failed';entry.phase='failed';touch();
   };
-  const operation=exclusive(async()=>{
+  await exclusive(async()=>{
    try{
     await assertEnabled();
     ({source,target}=await selection(p));
@@ -67,11 +67,11 @@ function createDeviceManager({dispatch,exclusive,assertEnabled,touch,contextFile
     entry.activeUdid=target.udid;entry.execution='executed';
     await onSettled(entry,p);entry.state='done';entry.phase='done';touch();
    }catch(error){await failed(error);}
-  });
+  }).catch(failed);
   // Lock acquisition can reject before the operation starts. Once acquired,
-  // failure reconciliation and task binding complete before releasing it.
-  operation.catch(failed);
-  return snapshot();
+  // selection and binding settle before replying to this caller. Return its
+  // own result, not the shared status slot that a later request can replace.
+  return {...entry};
  }
  return {snapshot,currentApp,remember,forget,start,updateRecord};
 }
