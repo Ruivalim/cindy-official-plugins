@@ -38,7 +38,8 @@ directly to adjust the view temporarily without changing the selected pointer mo
 click it to select how subsequent canvas drags behave. Hover tips explain both actions. WASD/arrows move
 forward/back/left/right; Q/E move down/up. Two-finger scrolling pans and trackpad pinch
 moves forward/back. Option-drag (or the two-hands button) scales horizontally
-and rotates vertically. Keyboard capture sends text/keys into the guest;
+and rotates vertically. Keyboard capture sends text/keys and paste into the guest;
+when disabled, only camera navigation keys are handled.
 pointer capture forwards relative mouse motion/buttons. Escape releases capture.
 The recording button saves the live view as a video. Capture requires a focused
 desktop viewer and browser support; it reports failure if capture is denied.
@@ -50,7 +51,9 @@ Agents use `tap` with screenshot coordinates/OCR text, `press digital-crown`
 (or `home`), ordinary drag/swipe/pinch/pan, or `gesture kind=spatial` with
 `action=drag|pinch|rotate|gaze|tilt|pan|orbit|dolly|move|reset`.
 Coordinates are screenshot view points; spatial camera translation is in metres
-and rotation in degrees. Take another screenshot after moving the camera.
+and rotation in degrees. Spatial `pan` takes `by=[right,up]` (two axes only);
+use `move` with `[right,up,back]` or `dolly distance` for depth.
+Take another screenshot after moving the camera.
 
 Orientation, posture, status-bar override, touch-menu paste, `scroll_to` and `heal` remain
 iOS-only. tvOS/visionOS use OCR instead of accessibility trees/IDs. Input adapters

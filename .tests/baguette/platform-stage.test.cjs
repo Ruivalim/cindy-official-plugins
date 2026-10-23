@@ -5,22 +5,42 @@ const vm=require('node:vm');
 const path=require('node:path');
 const source=fs.readFileSync(path.join(__dirname,'../../baguette-simulator/node/platform-stage.js'),'utf8');
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
-function stage(platform='tvOS',respond=async()=>({ok:true})){
+function stage(platform='tvOS',respond=async()=>({ok:true}),withVision=false){
  const events={},windowEvents={},docEvents={},calls=[],status={},timers=new Map();let now=1000,nextTimer=0,stream;
- const canvas={style:{},focus(){},setPointerCapture(){},getBoundingClientRect:()=>({left:0,top:0,width:1920,height:1080}),addEventListener:(name,fn)=>{events[name]=fn;}};
+ const listen=(target,name,fn)=>(target[name]??=[]).push(fn),fire=(target,name,event)=>{for(const fn of target[name]||[])fn(event);};
+ const canvas={width:1920,height:1080,style:{},focus(){},setPointerCapture(){},getBoundingClientRect:()=>({left:0,top:0,width:1920,height:1080}),addEventListener:(name,fn)=>listen(events,name,fn)};
  class Clock extends Date{static now(){return now;}}
  const context={URL,URLSearchParams,Date:Clock,location:{search:`?platform=${platform}&udid=test&cindyViewer=token`},
-  document:{hidden:false,getElementById:id=>id==='display'?canvas:status,addEventListener:(name,fn)=>{docEvents[name]=fn;}},
+  document:{hidden:false,activeElement:canvas,hasFocus:()=>true,getElementById:id=>id==='display'?canvas:status,addEventListener:(name,fn)=>listen(docEvents,name,fn)},
   fetch:async(_url,options)=>{const args=JSON.parse(options.body);calls.push(args);await respond(args.action,args);return {ok:true};},
   crypto:require('node:crypto'),setTimeout:(fn,ms)=>{const id=++nextTimer;timers.set(id,{at:now+ms,fn});return id;},clearTimeout:id=>timers.delete(id),
-  parent:{cindySim:{api:async(action,args)=>{calls.push({action,...args});return respond(action,args);}}},
-  addEventListener:(name,fn)=>{windowEvents[name]=fn;},
+  parent:{document:{getElementById:()=>null},cindySim:{api:async(action,args)=>{calls.push({action,...args});return respond(action,args);}}},
+  addEventListener:(name,fn)=>listen(windowEvents,name,fn),
   StreamSession:class{constructor(options){stream=options;}static buildWSUrl(){return 'ws://127.0.0.1/stream';}start(){}stop(){}},
  };
+ if(withVision)vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../baguette-simulator/node/vision-stage.js'),'utf8'),context);
  vm.runInNewContext(source,context);
- function emit(name,props={}){const e={button:0,pointerId:1,isPrimary:true,clientX:960,clientY:540,deltaX:0,deltaY:0,deltaMode:0,preventDefault(){this.prevented=true;},...props};events[name](e);return e;}
- return {emit,calls,status,advance:ms=>{now+=ms;},elapse:ms=>{now+=ms;for(const [id,t] of [...timers])if(t.at<=now){timers.delete(id);t.fn();}},windowEvent:name=>windowEvents[name](),hide:()=>{context.document.hidden=true;docEvents.visibilitychange();},show:()=>{context.document.hidden=false;},disconnect:()=>stream.onClose()};
+ function emit(name,props={}){const e={button:0,pointerId:1,isPrimary:true,clientX:960,clientY:540,deltaX:0,deltaY:0,deltaMode:0,preventDefault(){this.prevented=true;},...props};fire(events,name,e);return e;}
+ return {emit,calls,status,choose:value=>context.cindyVision.choose(value),advance:ms=>{now+=ms;},elapse:ms=>{now+=ms;for(const [id,t] of [...timers])if(t.at<=now){timers.delete(id);t.fn();}},windowEvent:name=>fire(windowEvents,name),hide:()=>{context.document.hidden=true;fire(docEvents,'visibilitychange');},show:()=>{context.document.hidden=false;},disconnect:()=>stream.onClose()};
 }
+test('Vision keyboard switch gates keys and paste while preserving camera navigation',async()=>{
+ const s=stage('visionOS',undefined,true),paste={clipboardData:{getData:()=> 'example'}};
+ for(const code of ['KeyB','Digit1','Enter'])assert.equal(s.emit('keydown',{code}).prevented,true);
+ s.emit('keydown',{code:'KeyV',metaKey:true});s.emit('paste',paste);await tick();assert.equal(s.calls.length,0);
+ s.emit('keydown',{code:'KeyW'});await tick();s.emit('keyup',{code:'KeyW'});await tick();
+ assert.ok(s.calls.length>0);assert.ok(s.calls.every(p=>p.action==='spatial'&&p.mode==='move'));
+ s.calls.length=0;s.choose('keyboard');
+ for(const code of ['KeyB','Digit1','Enter','KeyW','ArrowUp'])s.emit('keydown',{code});
+ s.emit('keydown',{code:'KeyV',metaKey:true});s.emit('paste',paste);await tick();
+ assert.deepEqual(s.calls.map(p=>p.action),['key','key','key','key','key','paste']);
+ s.emit('keydown',{code:'Escape'});s.emit('keydown',{code:'Enter'});s.emit('paste',paste);await tick();assert.equal(s.calls.length,6);
+});
+test('Vision drops queued keyboard and paste input if the switch is disabled before dispatch',async()=>{
+ let release;const held=new Promise(resolve=>release=resolve),s=stage('visionOS',async()=>held,true);
+ s.choose('keyboard');s.emit('keydown',{code:'KeyB'});await tick();assert.equal(s.calls.length,1);
+ s.emit('keydown',{code:'Enter'});s.emit('paste',{clipboardData:{getData:()=> 'queued'}});
+ s.choose('keyboard');release();await tick();assert.equal(s.calls.length,1);
+});
 test('TV screen click confirms focus anywhere; right-click returns once without selecting',async()=>{
  const s=stage();s.emit('pointerdown');s.emit('pointerup');await tick();
  s.emit('pointerdown',{button:2});s.emit('pointerup',{button:2});const menu=s.emit('contextmenu');await tick();

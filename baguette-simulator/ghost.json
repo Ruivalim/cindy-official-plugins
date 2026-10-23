@@ -5,7 +5,7 @@
   "name": "设备模拟器",
   "description": "独立的 iPhone、iPad、Apple TV 与 Vision Pro 模拟器。任务页实时画面、主视图设备管理；支持安装、启动、截图、遥控、空间手势和视角移动。需要 Apple Silicon、macOS 15+、完整 Xcode 与对应运行时。基于 Baguette。",
   "whenToUse": "iPhone、iPad、Apple TV、Vision Pro 模拟器；App 安装测试、截图与录屏、TV 遥控、Vision 空间手势与视角移动。",
-  "version": "0.1.57",
+  "version": "0.1.58",
   "kind": "chip",
   "entry": "main.js",
   "icon": "assets/icon.png",
@@ -334,7 +334,7 @@
     },
     {
       "name": "gesture",
-      "description": "滑动与多指手势，坐标为截图视图点。swipe：from→to 或 direction；drag：按住 hold 秒后拖动；pinch：center、from_spread→to_spread；pan：从 from 平移 by。iOS 另支持 edge 系统边缘、scroll_to 查找元素。Vision 支持 swipe/drag/pinch/pan；前后拖动、旋转和相机控制用 kind=spatial。Apple TV 用 press。observe/until 同 tap。 Vision Pro 空间操作：gaze 注视；drag 捏合拖动（depth 前后移动）；pinch 双手缩放；rotate 双手旋转；tilt 转向、pan 平移、orbit 环绕、dolly 前后移动、move 三轴移动、reset 复位视角。from/to/center 使用截图视图点。相机移动后重新截图再选坐标。observe/until 同 tap；操作通过模拟器系统输入，不注入 App。",
+      "description": "滑动与多指手势，坐标为截图视图点。swipe：from→to 或 direction；drag：按住 hold 秒后拖动；pinch：center、from_spread→to_spread；pan：从 from 平移 by。iOS 另支持 edge 系统边缘、scroll_to 查找元素。Vision 支持 swipe/drag/pinch/pan；前后拖动、旋转和相机控制用 kind=spatial。Apple TV 用 press。observe/until 同 tap。 Vision Pro 空间操作：gaze 注视；drag 捏合拖动（depth 前后移动）；pinch 双手缩放；rotate 双手旋转；tilt 转向、pan 平移、orbit 环绕、dolly 前后移动、move 三轴移动、reset 复位视角。from/to/center 使用截图视图点。spatial pan 的 by 为 [右,上] 米（仅二维），move 为 [右,上,后] 米；前后移动用 move 或 dolly。相机移动后重新截图再选坐标。observe/until 同 tap；操作通过模拟器系统输入，不注入 App。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -417,7 +417,7 @@
             },
             "minItems": 2,
             "maxItems": 3,
-            "description": "普通 pan：[dx, dy] 视图点；spatial pan/move：[右, 上, 后] 米；tilt/orbit：[水平角, 垂直角] 度"
+            "description": "普通 pan：[dx, dy] 视图点；spatial pan：[右, 上] 米（仅二维）；move：[右, 上, 后] 米；前后移动用 move 或 dolly；tilt/orbit：[水平角, 垂直角] 度"
           },
           "edge": {
             "type": "string",

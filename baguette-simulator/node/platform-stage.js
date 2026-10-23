@@ -23,6 +23,10 @@
     return inputQueue;
   };
   const vision=!tv&&globalThis.createVisionStage?globalThis.createVisionStage({canvas,api:(...args)=>parent.cindySim.api(...args),message:text=>{errorUntil=Date.now()+8000;message(text);},onError:inputError,zh}):null;
+  const keyboardInput=action=>{
+    const accepts=()=>!vision||vision.acceptsKeyboard();
+    if(accepts())return input(()=>{if(accepts())return action();});
+  };
   canvas.addEventListener('pointerdown', event => {
     if(vision)return;
     if(event.button !== 0 || event.ctrlKey || event.isPrimary === false){down=null;return;}
@@ -108,7 +112,7 @@
     const text=event.clipboardData?.getData('text/plain');if(!text)return;
     event.preventDefault();
     if(p.get('platform')==='tvOS'){errorUntil=Date.now()+5000;message(zh?'tvOS 不支持剪贴板，请使用键盘输入。':'tvOS does not support clipboard paste. Use keyboard input.');return;}
-    input(async()=>{const response=await fetch('/clipboard',{method:'POST',headers:{'Content-Type':'application/json','X-Cindy-Clipboard':p.get('cindyViewer')},body:JSON.stringify({udid,action:'paste',text})});if(!response.ok)throw Error('INPUT_FAILED');});
+    keyboardInput(async()=>{const response=await fetch('/clipboard',{method:'POST',headers:{'Content-Type':'application/json','X-Cindy-Clipboard':p.get('cindyViewer')},body:JSON.stringify({udid,action:'paste',text})});if(!response.ok)throw Error('INPUT_FAILED');});
   });
   canvas.addEventListener('keydown', event => {
     if(vision?.key(event))return;
@@ -116,7 +120,7 @@
     if(event.repeat||!(/^(Key[A-Z]|Digit\d|Arrow(Up|Down|Left|Right))$/.test(event.code)||['Enter','Escape','Backspace','Tab','Space','Minus','Equal','BracketLeft','BracketRight','Backslash','Semicolon','Quote','Backquote','Comma','Period','Slash'].includes(event.code)))return;
     event.preventDefault();
     const modifiers=[['control',event.ctrlKey],['shift',event.shiftKey],['option',event.altKey],['command',event.metaKey]].filter(([,on])=>on).map(([key])=>key);
-    input(async()=>{const response=await fetch('/clipboard',{method:'POST',headers:{'Content-Type':'application/json','X-Cindy-Clipboard':p.get('cindyViewer')},body:JSON.stringify({udid,action:'key',code:event.code,modifiers})});if(!response.ok)throw Error('INPUT_FAILED');});
+    keyboardInput(async()=>{const response=await fetch('/clipboard',{method:'POST',headers:{'Content-Type':'application/json','X-Cindy-Clipboard':p.get('cindyViewer')},body:JSON.stringify({udid,action:'key',code:event.code,modifiers})});if(!response.ok)throw Error('INPUT_FAILED');});
   });
   function start() {
     if (stopped) return;

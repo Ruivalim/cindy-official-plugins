@@ -145,8 +145,11 @@ globalThis.createVisionStage = function({canvas,api,message,onError,zh}) {
  }
  function key(e){
   if(e.code==='Escape'){e.preventDefault();cancel();keyboard=false;if(document.pointerLockElement)document.exitPointerLock();state();return true;}
-  if(keyboard||e.metaKey||e.ctrlKey||e.altKey||!directions[e.code])return false;
-  e.preventDefault();keys.add(e.code);if(!keyTimer)moveKeys();return true;
+  if(!usable()){e.preventDefault();return true;}
+  if(keyboard)return false;
+  e.preventDefault();
+  if(!e.metaKey&&!e.ctrlKey&&!e.altKey&&directions[e.code]){keys.add(e.code);if(!keyTimer)moveKeys();}
+  return true;
  }
  canvas.addEventListener('keyup',e=>{keys.delete(e.code);if(!keys.size){clearTimeout(keyTimer);keyTimer=null;if(contact?.last.mode==='move')finish();}});
  // Standard-mapped controllers follow Apple's navigation mapping. Only the
@@ -172,5 +175,5 @@ globalThis.createVisionStage = function({canvas,api,message,onError,zh}) {
  document.addEventListener('visibilitychange',()=>{if(!document.hidden)pollGamepad();});pollGamepad();
  addEventListener('blur',cancel);document.addEventListener('visibilitychange',()=>{if(document.hidden)cancel();});
  addEventListener('pagehide',()=>{stopped=true;cancel();clearTimeout(gameTimer);recording?.cancel();recording=null;});
- const controller={choose,key,finish,cancel,cameraDrag};globalThis.cindyVision=controller;state();return controller;
+ const controller={choose,key,finish,cancel,cameraDrag,acceptsKeyboard:()=>keyboard&&usable()};globalThis.cindyVision=controller;state();return controller;
 };

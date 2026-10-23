@@ -30,7 +30,7 @@ Vision Pro 参照[苹果 Device Hub 的操作](https://developer.apple.com/docum
 转向、平移、环绕、推拉和复位。直接拖动四个视角按钮可临时调整视角，保留当前指针模式；
 单击按钮才切换画面拖动模式，悬停提示会说明两种操作。WASD/方向键水平移动，Q/E 下降/上升。触控板双指
 滚动平移、捏合前后移动。Option 拖动或启用双手按钮后，横向缩放、纵向旋转。
-键盘捕获把文字和按键传入设备，鼠标捕获发送相对移动和按键；Escape 退出捕获。
+键盘捕获开启时把文字、按键和粘贴传入设备；关闭时仅处理视角移动键。鼠标捕获发送相对移动和按键；Escape 退出捕获。
 录屏按钮保存实时画面。捕获需要桌面查看器获得焦点且浏览器支持，拒绝时会提示。
 标准游戏手柄在画面获得焦点时可导航：左摇杆移动、R2/L2 升降、右摇杆转向。
 输入失败后先松开摇杆再继续；实体手柄验收尚未完成。
@@ -38,7 +38,8 @@ Vision Pro 参照[苹果 Device Hub 的操作](https://developer.apple.com/docum
 AI 可使用 `tap` 的截图坐标/OCR 文字、`press digital-crown`（或 `home`）、普通
 拖动/滑动/缩放/双指平移，或 `gesture kind=spatial` 搭配
 `action=drag|pinch|rotate|gaze|tilt|pan|orbit|dolly|move|reset`。
-坐标使用截图视图点，空间相机平移单位为米、旋转单位为度；移动相机后重新截图。
+坐标使用截图视图点，空间相机平移单位为米、旋转单位为度。空间 `pan` 仅接收 `by=[右,上]`，
+前后移动用 `move` 的 `[右,上,后]` 或 `dolly distance`；移动相机后重新截图。
 
 屏幕旋转、折叠姿态、状态栏覆盖、触摸菜单粘贴、`scroll_to` 及 `heal` 仅用于 iOS。
 tvOS/visionOS 使用 OCR，不提供无障碍树和元素 ID。

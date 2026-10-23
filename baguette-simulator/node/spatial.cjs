@@ -31,7 +31,7 @@ function plan(p,screen,Failure=Error){
   if(action==='pinch'){end.spread=.1*scalar(p.scale,2,.1,10);if(p.to)[end.x,end.y]=point(p.to);}
   if(action==='rotate')end.angle=scalar(p.angle,45,-360,360)*Math.PI/180;
  }else if(['tilt','pan','orbit','dolly','move','reset'].includes(action)){
-  const by=p.by??[0,0,0];if(!Array.isArray(by)||by.length<2||by.length>3||!by.every(n=>finite(n,-360,360)))fail('by must be [x, y] or [x, y, z].');
+  const by=p.by??[0,0];if(!Array.isArray(by)||(by.length!==2&&!(action==='move'&&by.length===3))||!by.every(n=>finite(n,-360,360)))fail('Use by=[x, y] for pan/tilt/orbit or by=[x, y, z] for move; use move or dolly for depth.');
   if(action==='tilt'||action==='orbit'){end.x=by[0]/180;end.y=by[1]/180;}
   else if(action==='pan'){end.x=-scalar(by[0],0,-5,5)/2;end.y=scalar(by[1],0,-5,5)/2;}
   else if(action==='dolly')end.y=scalar(p.distance,0,-5,5)/2;

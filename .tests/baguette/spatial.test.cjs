@@ -10,7 +10,7 @@ test('spatial planning validates the entire gesture before input and converts sc
  assert.equal(plan({action:'pinch',scale:2},screen).at(-1).spread,.2);
  assert.equal(plan({action:'move',by:[1,2,3]},screen).at(-1).z,3);
  assert.equal(plan({action:'pan',by:[1,-1]},screen).at(-1).x,-.5);
- for(const p of [{action:'drag',to:[1921,0]},{action:'pinch',scale:0},{action:'rotate',angle:NaN},{action:'move',by:[0,0,6]},{action:'reset',duration:Infinity},{action:'unknown'}])assert.throws(()=>plan(p,screen,Failure),e=>e.code==='INVALID_ARGUMENT');
+ for(const p of [{action:'drag',to:[1921,0]},{action:'pinch',scale:0},{action:'rotate',angle:NaN},{action:'move',by:[0,0,6]},{action:'pan',by:[0,0,1]},{action:'tilt',by:[0,0,1]},{action:'orbit',by:[0,0,1]},{action:'reset',duration:Infinity},{action:'unknown'}])assert.throws(()=>plan(p,screen,Failure),e=>e.code==='INVALID_ARGUMENT');
  const start=drag[0];for(const invalid of [{mode:'unknown'},{aspect:NaN},{x:11},{mode:'pointer',z:1.5}])assert.throws(()=>sample({...start,...invalid},Failure),e=>e.code==='INVALID_ARGUMENT');
 });
 test('insufficient time sends nothing; uncertain delivery releases without replaying',async()=>{

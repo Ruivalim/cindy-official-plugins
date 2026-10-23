@@ -1,9 +1,10 @@
 {
   "date": "2026-10-23",
-  "pluginVersion": "0.1.57",
+  "pluginVersion": "0.1.58",
   "baguette": "0.2.10",
-  "status": "vision-controls-local-simulator-verified-package-acceptance-pending",
+  "status": "vision-controls-review-regressions-verified-package-acceptance-pending",
   "passed": [
+    "0.1.58: 19 spatial/platform-stage regression tests passed, including two-axis pan validation, keyboard-off suppression of letters/digits/Enter/modifier shortcuts/paste, camera navigation while capture is off, text/key/paste delivery when enabled, Escape release, and dropping queued input after capture is disabled. These tests execute the real Vision and platform controllers together with simulated browser events.",
     "0.1.57: shared toolbar behavior, help dialog and responsive spacing verified in a real browser with mocked device APIs for iPhone, iPad, Apple TV, Vision Pro and foldable iPhone at 320/1100px in light/dark (20 combinations). Touch and keyboard help activation, Escape dismissal/focus restoration, action-vs-toggle semantics, retained camera mode and no toolbar overlap passed. No new hardware/runtime acceptance is claimed for this presentation change.",
     "0.1.56: real browser toolbar drags changed the native visionOS camera for tilt/pan/orbit/dolly while preserving the selected interact/pan mode and canvas cursor. Verified release outside button, blur cancellation, subsequent click, keyboard activation, click jitter, 320px view, and all 112 spatial API deliveries. Regression tests cover temporary gesture ownership and click/drag separation.",
     "Xcode 27 / visionOS 27: compiled and signature-verified the spatial helper; simulator input only, no guest app injection or bundled Apple frameworks.",
@@ -13,10 +14,10 @@
     "Browser standard-gamepad fixture drove the real camera through simultaneous translation/elevation/rotation, then stopped at neutral. Physical controller not used.",
     "Native EOF, malformed sample, SIGTERM and 750 ms inactivity released held input and allowed the next spatial tap to acquire the device lock.",
     "Controller checked at 1100 and 320 pixels in light/dark; spatial planner and lifecycle tests cover invalid/deadline inputs, fast clicks, absolute-motion coalescing, mode/depth stability, focus/hidden/page/stream loss, failed input without replay, gamepad neutral/focus gating.",
-    "Repository contract, localization, provisioning, publish and simulator suite: 269/272 pass. The three failures are unchanged Bash 4 lowercase-expansion workflow tests on macOS Bash 3; all three reproduced on clean main ba22c66. No changed-feature test failed."
+    "Repository contract, localization, provisioning, publish and simulator suite: 271/274 pass. The three failures are unchanged Bash 4 lowercase-expansion workflow tests on macOS Bash 3; all three reproduced on clean latest main fa698ac. No changed-feature test failed."
   ],
   "notVerified": [
-    "Final .cindy installation and embedded preview on stable/Beta Cindy; no installation or publication was requested. Do not check the PR device-attestation checkbox.",
+    "Final 0.1.58 .cindy installation and embedded preview on stable/Beta Cindy are pending. The user-confirmed 0.1.57 acceptance below predates these review fixes and does not attest the changed package.",
     "Browser pointer-lock acceptance is not established: the local automated browser could not consistently retain OS foreground focus. Failure reports that limitation; native relative-pointer delivery is independently verified.",
     "Physical game controller, immersive apps, and Xcode/runtime versions other than 27. Orbit uses a fixed one-metre pivot; exact Apple camera sensitivity and hardware input feel are not claimed."
   ],
@@ -197,5 +198,12 @@
         ]
       }
     }
+  },
+  "userConfirmedDeviceVerification": {
+    "date": "2026-10-23",
+    "pluginVersion": "0.1.57",
+    "buildCommit": "9a91dda103fe04d5b8c4a83aa41cf2f22facd917",
+    "confirmedBy": "Dash",
+    "result": "User confirmed real-device testing in the task; recorded in PR #199. Cindy version/channel not supplied; not inferred."
   }
 }
