@@ -20,9 +20,9 @@
       confirmShutdownTitle: (name) => `关闭 ${name}？`, confirmShutdownBody: 'App 会退出，设备数据和登录状态保留。', cancel: '取消', confirmShutdown: '关闭',
       stopped: '设备已关闭', released: '按键已释放', shotSaved: '截图已保存', shotFailed: '截图失败', actionFailed: '操作没有完成，请核对设备状态',
       switching: { preparing: '正在准备…', stopping: (n) => `正在关闭 ${n}…`, booting: (n) => `正在启动 ${n}…`, installing: '正在安装 App…', launching: '正在打开 App…', opening: '正在连接画面…', done: '已切换', failed: '切换没有完成', recordFailed: '任务绑定或 App 记录未保存，请检查存储，不要重复设备操作' },
-      dialogAdd: '添加设备', dialogRename: '重命名', name: '名称', model: '机型', runtime: 'iOS 版本', create: '创建', save: '保存',
+      dialogAdd: '添加设备', dialogRename: '重命名', name: '名称', model: '机型', runtime: '系统版本', create: '创建', save: '保存',
       addHint: '新设备创建后保持关闭，切换到它时才会启动。', renameHint: '改名不影响 App 和数据。',
-      noRuntime: '没有可用的 iOS 版本。请先在 Xcode 中安装。', loading: '正在读取机型…', created: '已创建', saved: '已保存',
+      noRuntime: '没有与机型兼容的系统版本。请先在 Xcode 中安装。', loading: '正在读取机型…', created: '已创建', saved: '已保存',
       runningMeta: '运行中', offMeta: '已关闭', busyMeta: '处理中',
       rotateLeft: '向左旋转', rotateRight: '向右旋转', zoomIn: '放大', zoomOut: '缩小', zoomActual: '实际大小', zoomFitShort: '适合',
       pose: { shut: '合上', open: '半展开', flat: '展开' }, posture: '姿态',
@@ -45,9 +45,9 @@
       confirmShutdownTitle: (name) => `Shut down ${name}?`, confirmShutdownBody: 'Apps quit. Device data and sign-ins are kept.', cancel: 'Cancel', confirmShutdown: 'Shut down',
       stopped: 'Device shut down', released: 'Keys released', shotSaved: 'Screenshot saved', shotFailed: 'Screenshot failed', actionFailed: 'Not completed. Check the device state.',
       switching: { preparing: 'Preparing…', stopping: (n) => `Shutting down ${n}…`, booting: (n) => `Starting ${n}…`, installing: 'Installing app…', launching: 'Opening app…', opening: 'Connecting view…', done: 'Switched', failed: 'Switch did not finish', recordFailed: 'Task or App record was not saved. Check storage; do not repeat the device operation' },
-      dialogAdd: 'Add device', dialogRename: 'Rename', name: 'Name', model: 'Model', runtime: 'iOS version', create: 'Create', save: 'Save',
+      dialogAdd: 'Add device', dialogRename: 'Rename', name: 'Name', model: 'Model', runtime: 'OS version', create: 'Create', save: 'Save',
       addHint: 'New devices stay off until you switch to them.', renameHint: 'Renaming keeps apps and data.',
-      noRuntime: 'No iOS runtime available. Install one in Xcode first.', loading: 'Loading models…', created: 'Created', saved: 'Saved',
+      noRuntime: 'No compatible OS runtime available. Install one in Xcode first.', loading: 'Loading models…', created: 'Created', saved: 'Saved',
       runningMeta: 'Running', offMeta: 'Off', busyMeta: 'Busy',
       rotateLeft: 'Rotate Left', rotateRight: 'Rotate Right', zoomIn: 'Zoom In', zoomOut: 'Zoom Out', zoomActual: 'Actual Size', zoomFitShort: 'Fit',
       pose: { shut: 'Closed', open: 'Half open', flat: 'Flat' }, posture: 'Posture',
@@ -60,16 +60,26 @@
   /** "iOS 27.1" from a CoreSimulator runtime identifier or name. */
   function runtimeLabel(runtime) {
     if (!runtime) return '';
-    const m = /iOS[-\s]?([0-9]+)(?:[-.]([0-9]+))?/.exec(runtime);
-    return m ? `iOS ${m[1]}${m[2] !== undefined ? '.' + m[2] : ''}` : runtime;
+    const m = /(iOS|tvOS|xrOS|visionOS)[-\s]?([0-9]+)(?:[-.]([0-9]+))?/.exec(runtime);
+    return m ? `${m[1] === 'xrOS' ? 'visionOS' : m[1]} ${m[2]}${m[3] !== undefined ? '.' + m[3] : ''}` : runtime;
   }
 
-  const family = (device) => /iPad/i.test(device?.deviceType || device?.name || '') ? 'ipad' : 'iphone';
+  function family(device) {
+    const type = device?.productFamily || device?.deviceType || device?.identifier || device?.name || '';
+    return /Apple[- ]?TV/i.test(type) ? 'tv' : /Apple[- ]?Vision/i.test(type) ? 'vision' : /iPad/i.test(type) ? 'ipad' : 'iphone';
+  }
+  function platform(device) {
+    const runtime = device?.runtime || device?.identifier || device?.name || '';
+    if (/tvOS/.test(runtime)) return 'tvOS';
+    if (/xrOS|visionOS/.test(runtime)) return 'visionOS';
+    const kind = family(device);
+    return kind === 'tv' ? 'tvOS' : kind === 'vision' ? 'visionOS' : 'iOS';
+  }
 
   /** Corner radius of the live screen, in CSS px, for a portrait screen box of `width` px. */
   function screenRadius(device, width) {
     if (!width || width <= 0) return 0;
-    return Math.round(width * (family(device) === 'ipad' ? 0.035 : 0.13));
+    return Math.round(width * ({iphone: 0.13, ipad: 0.035, tv: 0, vision: 0}[family(device)]));
   }
 
   /** Status dot + label from a status response and page flags. */
@@ -134,6 +144,7 @@
     const chosen = catalog?.deviceTypes?.find((d) => d.identifier === deviceTypeId);
     return (catalog?.runtimes || []).filter((r) => {
       if (!chosen) return true;
+      if (platform(r) !== platform(chosen)) return false;
       if (Array.isArray(r.supportedDeviceTypes) && !r.supportedDeviceTypes.includes(chosen.identifier)) return false;
       return version(r.version) >= version(chosen.minRuntimeVersion) && version(r.version) <= version(chosen.maxRuntimeVersion || '65535.255.255');
     }).sort((a, b) => version(a.version) - version(b.version));
@@ -148,9 +159,10 @@
     const variant = (name) => (/^iPhone \d+ Pro$/.test(name) ? 0 : /^iPhone \d+$/.test(name) ? 1 : 2);
     const numbered = types.filter((d) => generation(d.name) > 0)
       .sort((a, b) => generation(b.name) - generation(a.name) || variant(a.name) - variant(b.name));
-    const phones = types.filter((d) => !numbered.includes(d) && !/iPad/i.test(d.name));
-    const pads = types.filter((d) => /iPad/i.test(d.name));
-    for (const d of [...numbered, ...phones, ...pads]) {
+    const phones = types.filter((d) => !numbered.includes(d) && family(d) === 'iphone');
+    const pads = types.filter((d) => family(d) === 'ipad');
+    const others = types.filter((d) => ['tv', 'vision'].includes(family(d)));
+    for (const d of [...numbered, ...phones, ...pads, ...others]) {
       const runtimes = runtimesFor(catalog, d.identifier);
       if (runtimes.length) return { deviceType: d.identifier, runtime: runtimes[runtimes.length - 1].identifier, name: d.name };
     }
@@ -172,7 +184,7 @@
   /** The percentage the zoom state shows, given the fitted percentage. */
   const zoomPct = (zoom, fitPct) => Math.round(zoom?.mode === 'pct' ? zoom.pct : (fitPct > 0 ? fitPct : 100));
 
-  const api = { STRINGS, strings, runtimeLabel, family, screenRadius, presence, overlay, idleLeft, clock, deviceRows, runtimesFor, defaultChoice, ZOOM_STEPS, zoomStep, zoomFactor, zoomPct };
+  const api = { STRINGS, strings, runtimeLabel, family, platform, screenRadius, presence, overlay, idleLeft, clock, deviceRows, runtimesFor, defaultChoice, ZOOM_STEPS, zoomStep, zoomFactor, zoomPct };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.CindySimModel = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

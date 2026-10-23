@@ -135,3 +135,14 @@ test('task binding follows the settled actual device, including failure before a
   assert.equal(job.activeUdid,failAt==='shutdown'?a:b);
  }
 });
+
+test('cross-platform switches never copy or launch the source app bundle',async t=>{
+ for(const runtime of ['com.apple.CoreSimulator.SimRuntime.tvOS-27-0','com.apple.CoreSimulator.SimRuntime.xrOS-27-0']){
+  const f=await fixture(t);f.devices[0].runtime='com.apple.CoreSimulator.SimRuntime.iOS-27-0';f.devices[1].runtime=runtime;
+  await f.runtime.request('launch_app',{udid:a,bundleId:'test.example.phone'});f.calls.length=0;
+  await f.runtime.request('viewer_switch',{udid:a,targetUdid:b});
+  assert.equal((await finish(f)).state,'done');
+  assert.ok(!f.calls.some(c=>['app_bundle','install_app','launch_app'].includes(c.method)));
+  assert.equal(await f.runtime.currentApp(a),'test.example.phone');assert.equal(await f.runtime.currentApp(b),null);
+ }
+});

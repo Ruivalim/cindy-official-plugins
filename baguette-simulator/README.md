@@ -2,6 +2,37 @@
 
 [简体中文](README.zh-CN.md)
 
+## Apple TV and Vision Pro
+
+Create either device in the management view or task tab using an installed tvOS
+or visionOS runtime (`xrOS` in runtime identifiers). Build for `tvOS Simulator`
+or `visionOS Simulator`, then install and launch the matching `.app` as usual.
+Both support a live rectangular view, screenshots, local OCR, waits and logs.
+Switching between platforms does not copy the previous platform's app.
+
+Apple TV uses the on-screen remote or `press` with `up`, `down`, `left`, `right`,
+`select`, `back`, `menu`, `home`, or `play-pause`; arrow keys, Return, Escape and
+Space also work. `type_text auto/type` sends up to 300 US-keyboard characters; keys are also supported.
+tvOS has no simulator clipboard: paste and Unicode text are not supported.
+In the live display, two-finger trackpad motion sends a continuous native Siri
+Remote touch contact. Longer swipes can cross multiple items; tvOS handles focus
+movement from the touch trajectory. A primary click selects the focused item and
+a right-click goes back (Control-click also works on macOS). Click position does
+not select a TV screen coordinate. With macOS natural scrolling, focus follows
+finger movement; both wheel axes are inverted from document-scrolling deltas.
+The desktop wheel stream includes OS acceleration/momentum and lacks physical
+finger-up events, so its timing and feel are not identical to a hardware remote.
+Vision Pro supports clicking/holding in the live view, `tap` with screenshot
+coordinates or OCR text, keyboard input, and `press digital-crown` (or `home`).
+A tap is a single-hand spatial pinch, not an iPhone touchscreen event.
+
+No spatial dragging, camera movement or two-hand gestures yet. `gesture`,
+orientation, posture, status-bar override, touch-menu paste and `heal` remain
+iOS-only. tvOS/visionOS use OCR instead of accessibility trees/IDs. Input adapters
+were exercised with Xcode 27 and tvOS/visionOS 27; other versions are unverified.
+See [native protocol and verification notes](native/platform-support.md).
+Stable/Beta Cindy package installation and embedded-preview acceptance are pending.
+
 Screenshots fall back to a file path on older hosts or when JPEG compression still exceeds the 130 KB inline budget. Open that path with an image tool before choosing coordinates; the full-resolution file is preserved.
 
 Viewer screenshot exports to the Mac clipboard or Desktop report confirmed writes as `executed` and command failures after dispatch as `unknown`; inspect the destination before retrying. Temporary clipboard-image cleanup cannot replace the export outcome. `environment.baguette` is the detected binary version; compatibility notes do not repeat a fixed version.

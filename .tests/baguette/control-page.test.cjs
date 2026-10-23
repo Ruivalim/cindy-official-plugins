@@ -1,7 +1,7 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const vm=require('node:vm');const path=require('node:path');
 const node=path.join(__dirname,'../../baguette-simulator/node');
 const udid='00000000-0000-4000-8000-000000000001',other='00000000-0000-4000-8000-000000000002';
-const IDS='screen stage frame overlay dock chip-dot chip-name status btn-home btn-rotl btn-rotr btn-shot btn-shot-menu btn-more scroll title title-dot title-name title-sub zoom zoom-out zoom-label zoom-in tools posture device-chip confirm-title confirm-body confirm-cancel confirm-ok confirm-dialog device-dialog device-form dialog-title dialog-hint f-name-text f-model-text f-runtime-text dialog-cancel dialog-save f-model-label f-runtime-label dialog-error f-name f-model f-runtime'.split(' ');
+const IDS='screen stage frame overlay dock chip-dot chip-name status btn-home btn-rotl btn-rotr btn-shot btn-shot-menu btn-more scroll title title-dot title-name title-sub zoom zoom-out zoom-label zoom-in tools posture tv-remote device-chip confirm-title confirm-body confirm-cancel confirm-ok confirm-dialog device-dialog device-form dialog-title dialog-hint f-name-text f-model-text f-runtime-text dialog-cancel dialog-save f-model-label f-runtime-label dialog-error f-name f-model f-runtime'.split(' ');
 
 // A deliberately small DOM: enough for control.js to render and for the test to read back.
 function fakeDocument(){
@@ -153,4 +153,21 @@ test('a page that outlives its service says how to reopen, then reconnects on it
  assert.equal(dom.byId.screen.loads.at(-1),`/simulators/${udid}?handheld=0&cindyViewer=token#cindyClipboard=123.token`,'reloaded without opening a new tab');
  mode='expired';await poll();
  assert.match(dom.text(dom.byId.overlay),/这个画面已过期/);assert.equal(dom.byId.status.textContent,'画面已过期');
+});
+
+test('rectangular TV and Vision zoom uses view points, preserves actual size and reduces monotonically',async()=>{
+ for(const runtime of ['tvOS-27-0','xrOS-27-0']){
+  const f=await boot({respond:({action})=>action==='viewport'?{width:1920,height:1080}:status({device:{udid,name:'Rectangle',state:'Booted',runtime}})});
+  f.dom.byId.stage.getBoundingClientRect=()=>({width:300,height:200});
+  await f.sim.measure();assert.equal(f.sim.state.fitPct,15.625);
+  f.sim.setZoom({mode:'pct',pct:100});assert.equal(f.dom.byId.frame.style.width,'1920px');
+  f.sim.setZoom({mode:'pct',pct:75});assert.equal(f.dom.byId.frame.style.width,'1440px');
+  await f.sim.measure();assert.equal(f.sim.state.fitPct,15.625);
+  f.dom.byId.stage.getBoundingClientRect=()=>({width:600,height:400});
+  await f.sim.measure();assert.equal(f.sim.state.fitPct,31.25);assert.equal(f.dom.byId.frame.style.width,'1440px');
+  f.sim.setZoom({mode:'fit'});assert.equal(f.dom.byId.frame.style.width,'600px');
+  f.context.getComputedStyle=()=>({paddingLeft:'12px',paddingRight:'12px',paddingTop:'12px',paddingBottom:'64px'});
+  f.sim.setZoom({mode:'pct',pct:100});await f.sim.measure();
+  assert.equal(f.sim.state.fitPct,30);assert.equal(f.dom.byId.frame.style.width,'1944px','screen points exclude the fixed frame padding');
+ }
 });

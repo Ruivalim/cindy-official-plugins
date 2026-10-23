@@ -2,6 +2,28 @@
 
 本插件在独立设备集合里运行 iOS 模拟器：设备只属于本插件，不碰 Xcode 默认设备，也不碰 Cindy 内置设备。所有观察与操作都走模拟器自身的通道（截图、无障碍树、系统触摸），不依赖任何窗口，Mac 锁屏时也能用。画面实时显示在当前任务的侧栏页签，用户可以随时看着你操作或亲自接管。
 
+## Apple TV / Vision Pro
+
+在 `environment` 里按平台选运行时与机型，设备的 runtime 决定操作方式。Apple TV
+使用 `press` 遥控（up/down/left/right/select/back/menu/home/play-pause）；Vision Pro
+使用 `tap` 空间点击、长按及键盘，`press digital-crown` 返回主界面。截图与 OCR
+坐标遵循同一视图点空间，Vision Pro 点击通过单手捏合发送。
+
+Apple TV 的实时画面支持双指触控板移动，连续发送原生 Siri Remote 触点的开始、
+移动和结束事件，长滑可以跨越多个选项。单击确认当前焦点项，右键或 macOS Control
+点击返回。macOS 自然滚动下焦点跟随手指移动；点击不按电视画面坐标选取。
+桌面滚动事件包含系统加速与惯性，没有真实抬指信号，手感并非与实体遥控器完全相同。
+
+两者均支持 App 安装启动、实时画面、截图和 OCR。构建目标选择 tvOS Simulator 或
+visionOS Simulator，不能把 iOS App 装到 Apple TV；Vision Pro 兼容 iPad App 走整包
+安装，由运行时判断兼容性。跨平台切换不自动搬运 App。Vision Pro `type_text auto` 默认粘贴；
+tvOS `auto/type` 使用至多 300 字符的 US 键盘事件，需要先选择英文输入法。
+tvOS 无模拟器剪贴板，不支持粘贴及 Unicode 文本。两者均支持 `keys`。
+
+两者不提供无障碍树或 ID。`gesture`、旋转、折叠、状态栏覆盖、`heal` 仅支持 iOS；
+Vision Pro 暂不支持空间拖动、双手手势或相机移动。新增适配已验证 Xcode 27 与对应
+27 运行时，其他版本未验证。下文 iOS 手势和软键盘恢复说明不适用于 TV/Vision。
+
 ## 1. 开始
 
 1. `devices`：每行带 `tasks`（几个任务在用）与 `thisTask`。优先用 `thisTask` 为 true 的设备，其次 `tasks` 为 0 的空闲设备；需要干净环境、特定机型或与其他任务隔离时才 `device action=create`（每台约 7–12 GB），新建前用 `environment` 查可用的运行时与机型。

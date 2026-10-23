@@ -4,6 +4,7 @@ const fs=require('node:fs/promises');
 const path=require('node:path');
 const {deviceId}=require('./device-id.cjs');
 const {readJsonRecord,recordUpdate}=require('./json-record.cjs');
+const {platform}=require('./control-model.js');
 // Device changes run through the same runtime lock as Agent tools and shutdown.
 function createDeviceManager({dispatch,exclusive,assertEnabled,touch,contextFile,onSettled=async()=>{}}) {
  let job=null,apps=null;
@@ -62,7 +63,9 @@ function createDeviceManager({dispatch,exclusive,assertEnabled,touch,contextFile
    try{
     await assertEnabled();
     ({source,target}=await selection(p));
-    const bundleId=await currentApp(source.udid);entry.bundleId=bundleId;
+    // Simulator app bundles are platform-specific. Cross-platform switches
+    // open the target without copying or launching the source's app.
+    const bundleId=platform(source)===platform(target)?await currentApp(source.udid):null;entry.bundleId=bundleId;
     let appPath=null;
     if(bundleId&&source.state==='Booted'){
      // Only the application bundle is reused. No app data or credentials move.

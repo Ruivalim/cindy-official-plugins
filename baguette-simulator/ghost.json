@@ -3,16 +3,16 @@
   "minCindyVersion": "0.1.116",
   "id": "baguette-simulator",
   "name": "iOS 模拟器",
-  "description": "独立的 iOS 模拟器：每个任务在自己的侧栏页签里看到自己的设备画面，「模拟器」主视图管理所有设备。插件设置提供运行开关，默认闲置 15 分钟关闭并保留数据。需要 macOS 15.0+、Apple Silicon、完整 Xcode 和 iOS runtime。基于开源项目 Baguette（tddworks，Apache-2.0）。",
-  "whenToUse": "iOS 模拟器任务默认使用：在独立设备上安装、启动和操作已构建的 App，截图、等待、录下变化、看日志，画面实时显示在任务侧栏。先 devices，复用本任务或空闲设备（新建设备时才需要 environment）。用 tap/gesture 的真实触摸验证，不要另外下载 AXe/idb 或去点 Xcode 窗口。完整流程见手册。heal 须用户同意；不替用户重开运行开关。",
-  "version": "0.1.50",
+  "description": "独立的 iPhone、iPad、Apple TV 与 Vision Pro 模拟器。任务页实时画面、主视图设备管理；支持安装、启动、截图、遥控和空间点击。需要 Apple Silicon、macOS 15+、完整 Xcode 与对应运行时。基于 Baguette。",
+  "whenToUse": "iPhone/iPad、Apple TV、Vision Pro 模拟器任务默认使用。先 devices 复用设备，新建前查 environment。Apple TV 用 press 遥控；Vision Pro 用 tap 空间点击/长按和键盘；iOS 用 tap/gesture。heal 须用户同意，不替用户重开运行开关。详见手册。",
+  "version": "0.1.52",
   "kind": "chip",
   "entry": "main.js",
   "icon": "assets/icon.png",
   "tools": [
     {
       "name": "environment",
-      "description": "新建设备或排查环境时调用：检查 macOS 15.0+ 与 Apple Silicon，只读查看随包 Baguette、Xcode、已安装的 iOS 运行时与机型，不下载依赖。已有设备时直接用 devices。",
+      "description": "新建设备或排查环境时调用：检查 macOS 15.0+ 与 Apple Silicon，只读查看随包 Baguette、Xcode、已安装的 iOS 运行时与机型，不下载依赖。已有设备时直接用 devices。 包括 iOS、tvOS 和 visionOS（xrOS 标识）的运行时与机型。",
       "parameters": {
         "type": "object",
         "properties": {},
@@ -76,7 +76,7 @@
     },
     {
       "name": "app",
-      "description": "App 生命周期。install：安装本机已构建的模拟器 .app（appPath 绝对路径，App 由项目自己的 Xcode 流程构建）；与已装内容完全相同时跳过，只改了少量文件时增量同步，耗时长时返回 job，用 install_status 等它完成。info：已装的版本、构建号与可执行文件指纹，传 appPath 时给出 matchesLocal，确认装的就是这次构建。launch：启动（默认先结束旧进程；可传 arguments、env；screenshot=true 时等画面稳定后顺带返回截图），并在当前任务侧栏打开实时画面，检查 viewer.previewOpened（画面能力与副作用见 viewer）。terminate 结束进程；uninstall 删除 App 及其数据；open_url 打开深链，系统若弹出“是否打开”确认，截图后点击处理。 按内容校验和比较；安装登记或签名信息改变时整包安装。 附图受本次调用剩余时间限制，失败或时间不足返回 screenshot.error，已完成的操作结果保留。 安装 job 从构建比较阶段开始；mode=checking 表示仍在比较，用同一 job 继续轮询。 容器查询故障会报错，不作为未安装或自动重装的依据。 任务绑定或近期 App 记录保存失败时返回 taskBindingError/appContextError，设备结果保留；先检查记录和存储，不要重复设备操作。",
+      "description": "App 生命周期。install：安装本机已构建的模拟器 .app（appPath 绝对路径，App 由项目自己的 Xcode 流程构建）；与已装内容完全相同时跳过，只改了少量文件时增量同步，耗时长时返回 job，用 install_status 等它完成。info：已装的版本、构建号与可执行文件指纹，传 appPath 时给出 matchesLocal，确认装的就是这次构建。launch：启动（默认先结束旧进程；可传 arguments、env；screenshot=true 时等画面稳定后顺带返回截图），并在当前任务侧栏打开实时画面，检查 viewer.previewOpened（画面能力与副作用见 viewer）。terminate 结束进程；uninstall 删除 App 及其数据；open_url 打开深链，系统若弹出“是否打开”确认，截图后点击处理。 按内容校验和比较；安装登记或签名信息改变时整包安装。 附图受本次调用剩余时间限制，失败或时间不足返回 screenshot.error，已完成的操作结果保留。 安装 job 从构建比较阶段开始；mode=checking 表示仍在比较，用同一 job 继续轮询。 容器查询故障会报错，不作为未安装或自动重装的依据。 任务绑定或近期 App 记录保存失败时返回 taskBindingError/appContextError，设备结果保留；先检查记录和存储，不要重复设备操作。 安装包须匹配目标平台；Vision Pro 兼容的 iPad 模拟器包一律整包安装。跨平台切换设备不自动搬运 App。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -224,7 +224,7 @@
     },
     {
       "name": "describe_ui",
-      "description": "读取当前界面元素（无障碍树）。默认返回精简列表：角色、文字、id、frame 与 center（视图点，可直接点击），按阅读顺序排列。query/role 过滤；x、y 查询某一点下的元素；mode=full 返回完整树。游戏或自绘界面没有无障碍元素时，自动改为识别画面上的文字（source=ocr），同样带坐标；没有文字的图标用 screenshot 看。识别失败会报错，不表示画面没有文字。",
+      "description": "读取当前界面元素（无障碍树）。默认返回精简列表：角色、文字、id、frame 与 center（视图点，可直接点击），按阅读顺序排列。query/role 过滤；x、y 查询某一点下的元素；mode=full 返回完整树。游戏或自绘界面没有无障碍元素时，自动改为识别画面上的文字（source=ocr），同样带坐标；没有文字的图标用 screenshot 看。识别失败会报错，不表示画面没有文字。 tvOS/visionOS 使用 OCR 文本列表，不提供无障碍树或元素 ID。Apple TV 文字坐标仅用于观察，操作用遥控。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -267,7 +267,7 @@
     },
     {
       "name": "tap",
-      "description": "真实触摸点击：走模拟器的系统触摸通道，不依赖窗口，Mac 锁屏也能用，App 收到的就是手指触摸。按 text 或 id（可加 role、nth）点元素，游戏里 text 按画面上识别出的文字点；或按 x、y 视图点点击（屏幕转向后会要求重新看图，不会点错位置）。count=2 双击；duration≥0.5 长按。默认点击后约 0.6 秒返回新的界面元素（observe=ui），observe=screenshot 直接附上截图。验证交互要用它，不要往 App 进程里注入事件。 until=文字：点完等这段文字出现再返回（翻页、弹窗），比猜 settle 准。",
+      "description": "真实触摸点击：走模拟器的系统触摸通道，不依赖窗口，Mac 锁屏也能用，App 收到的就是手指触摸。按 text 或 id（可加 role、nth）点元素，游戏里 text 按画面上识别出的文字点；或按 x、y 视图点点击（屏幕转向后会要求重新看图，不会点错位置）。count=2 双击；duration≥0.5 长按。默认点击后约 0.6 秒返回新的界面元素（observe=ui），observe=screenshot 直接附上截图。验证交互要用它，不要往 App 进程里注入事件。 until=文字：点完等这段文字出现再返回（翻页、弹窗），比猜 settle 准。 Vision Pro：把画面坐标投射为单手捏合点击/长按；Apple TV 请用 press 遥控。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -334,7 +334,7 @@
     },
     {
       "name": "gesture",
-      "description": "滑动与多指手势，同样是真实触摸。kind：swipe（from→to，或 direction=up/down/left/right，up 表示手指上滑、内容往后翻）；drag（按住 hold 秒后拖到 to，用于拖放与排序）；pinch（双指缩放：center、from_spread→to_spread）；pan（双指平移 by）；edge（系统边缘手势：bottom 回主屏/切换 App，top 下拉通知或控制中心）；scroll_to（反复滑动直到 text 或 id 元素完整出现，到底仍没有则报告）。坐标为视图点；observe 同 tap。",
+      "description": "滑动与多指手势，同样是真实触摸。kind：swipe（from→to，或 direction=up/down/left/right，up 表示手指上滑、内容往后翻）；drag（按住 hold 秒后拖到 to，用于拖放与排序）；pinch（双指缩放：center、from_spread→to_spread）；pan（双指平移 by）；edge（系统边缘手势：bottom 回主屏/切换 App，top 下拉通知或控制中心）；scroll_to（反复滑动直到 text 或 id 元素完整出现，到底仍没有则报告）。坐标为视图点；observe 同 tap。 仅 iOS 支持；Apple TV 用 press，Vision Pro 目前仅支持 tap 点击/长按，不支持空间拖动、双手手势或相机移动。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -479,7 +479,7 @@
     },
     {
       "name": "type_text",
-      "description": "向当前聚焦的输入框输入。text 任意文字：method=auto（默认）在普通 App 里粘贴（精确，支持中文），在没有无障碍元素的游戏里逐键输入英文、数字与符号（拼音等输入法会自动切到英文）；也可指定 paste 或 type。keys 发送按键，如 Enter、Escape、Backspace、Tab、up、a、cmd+A、shift+Tab；clear=true 先全选删除。输入前确认焦点，之后观察结果。 逐键输入时屏幕键盘不会出现；游戏里 Enter 可能直接提交，只想结束编辑就点空白处。observe、until 同 tap。 按键输入期间隐藏屏幕键盘；最后输入后约 3 秒尝试清除硬件键盘记录，重新聚焦后观察是否恢复，不保证自动弹出。检查键盘遮挡用 method=touch，无需重启。 method=touch 不可与 clear=true 或 keys 同用。",
+      "description": "向当前聚焦的输入框输入。text 任意文字：method=auto（默认）在普通 App 里粘贴（精确，支持中文），在没有无障碍元素的游戏里逐键输入英文、数字与符号（拼音等输入法会自动切到英文）；也可指定 paste 或 type。keys 发送按键，如 Enter、Escape、Backspace、Tab、up、a、cmd+A、shift+Tab；clear=true 先全选删除。输入前确认焦点，之后观察结果。 逐键输入时屏幕键盘不会出现；游戏里 Enter 可能直接提交，只想结束编辑就点空白处。observe、until 同 tap。 按键输入期间隐藏屏幕键盘；最后输入后约 3 秒尝试清除硬件键盘记录，重新聚焦后观察是否恢复，不保证自动弹出。检查键盘遮挡用 method=touch，无需重启。 method=touch 不可与 clear=true 或 keys 同用。 Vision Pro 的 auto 使用粘贴；tvOS 的 auto/type 发送 US 键盘事件（每次至多 300 字符，请先切换英文输入法），不支持剪贴板粘贴或 Unicode 文本。两者均支持 keys。method=touch 与软键盘恢复仅用于 iOS。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -538,7 +538,7 @@
     },
     {
       "name": "press",
-      "description": "硬件按钮：home、lock、power、volume-up、volume-down、action、app-switcher、swipe-to-app-switcher、swipe-to-home、pull-down-to-notification-center、pull-down-to-lock-screen；duration 为按住秒数。release-input：只释放卡住的按键、停止重复输入，不重启系统也不关闭 App。",
+      "description": "硬件按钮：home、lock、power、volume-up、volume-down、action、app-switcher、swipe-to-app-switcher、swipe-to-home、pull-down-to-notification-center、pull-down-to-lock-screen；duration 为按住秒数。release-input：只释放卡住的按键、停止重复输入，不重启系统也不关闭 App。 Apple TV：up/down/left/right/select/back/menu/home/play-pause/volume-up/volume-down；Vision Pro：digital-crown（home 同义）。两者均支持 release-input。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -560,7 +560,16 @@
               "swipe-to-home",
               "pull-down-to-notification-center",
               "pull-down-to-lock-screen",
-              "release-input"
+              "release-input",
+              "up",
+              "down",
+              "left",
+              "right",
+              "select",
+              "back",
+              "menu",
+              "play-pause",
+              "digital-crown"
             ]
           },
           "duration": {
@@ -709,7 +718,7 @@
     },
     {
       "name": "set_state",
-      "description": "改变设备状态，可一次改多项：orientation 方向；posture 折叠屏姿态 closed/open/flat 或角度；appearance light/dark；contrast 增强对比度；text_size 动态字体档位；network 网络条件（profile 名、offline、clear 或 {latency, bandwidth, loss}，对之后启动的 App 生效）；location {lat, lon} 或 clear；status_bar clean（9:41、满格满电，适合截图）或 clear；privacy {action: grant/revoke/reset, service, bundleId}，提前授权可避免权限弹窗。改权限会结束该 App，请在启动前设置。所有步骤与读回共用本次调用截止时间；applied 列出已完成字段，失败或预算耗尽时停止后续步骤，stateError 含失败字段 field、code、message、execution，先核对该字段，不整批重试。方向/姿态变化后的屏幕信息仅在剩余时间内确认成功时返回；current 中 null 表示未确认。",
+      "description": "改变设备状态，可一次改多项：orientation 方向；posture 折叠屏姿态 closed/open/flat 或角度；appearance light/dark；contrast 增强对比度；text_size 动态字体档位；network 网络条件（profile 名、offline、clear 或 {latency, bandwidth, loss}，对之后启动的 App 生效）；location {lat, lon} 或 clear；status_bar clean（9:41、满格满电，适合截图）或 clear；privacy {action: grant/revoke/reset, service, bundleId}，提前授权可避免权限弹窗。改权限会结束该 App，请在启动前设置。所有步骤与读回共用本次调用截止时间；applied 列出已完成字段，失败或预算耗尽时停止后续步骤，stateError 含失败字段 field、code、message、execution，先核对该字段，不整批重试。方向/姿态变化后的屏幕信息仅在剩余时间内确认成功时返回；current 中 null 表示未确认。 orientation、posture、status_bar 仅支持 iOS；其他状态受相应运行时能力限制。",
       "parameters": {
         "type": "object",
         "properties": {

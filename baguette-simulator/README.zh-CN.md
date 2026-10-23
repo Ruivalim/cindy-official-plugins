@@ -2,6 +2,30 @@
 
 需要 macOS 15.0 或更新版本；旧系统会在启动随包二进制之前明确返回 UNSUPPORTED_OS。
 
+## Apple TV 与 Vision Pro
+
+可在管理页或任务页新建设备，选择已安装的 tvOS 或 visionOS 运行时（后者标识为
+`xrOS`）。项目构建目标分别选择 `tvOS Simulator` 或 `visionOS Simulator`，再按原流程
+安装、启动对应 `.app`。两者均支持矩形实时画面、截图、本机 OCR、等待和日志。
+跨平台切换设备不会搬运原平台的 App。
+
+Apple TV 使用画面下方遥控器，或 `press` 的 `up`、`down`、`left`、`right`、`select`、
+`back`、`menu`、`home`、`play-pause`；也可用方向键、回车、Esc 和空格。
+`type_text auto/type` 支持至多 300 字符的 US 键盘逐字输入，也支持 keys；
+tvOS 运行时不提供模拟器剪贴板，不支持粘贴及 Unicode 文本。
+在实时画面内双指移动触控板会发送连续的原生 Siri Remote 触点；长滑可以跨过多个
+选项，焦点移动由 tvOS 按触摸轨迹处理。单击确认当前焦点项，右键返回（macOS 也
+支持 Control 点击）。点击位置不会直接选中电视画面上的坐标。使用 macOS 自然滚动
+时，焦点跟随手指移动，横纵两轴均与网页滚动增量反向。桌面滚动事件包含系统加速和
+惯性，也没有真实的抬指信号，因此时序和手感仍不等同于实体遥控器。
+Vision Pro 可直接在实时画面上点击、长按，也可用 `tap` 的截图坐标或 OCR 文字，
+支持键盘及 `press digital-crown`（或 `home`）。点击通过单手空间捏合发送。
+
+暂不支持空间拖动、相机移动和双手手势。`gesture`、旋转、折叠姿态、状态栏覆盖、
+触摸菜单粘贴及 `heal` 仅用于 iOS。tvOS/visionOS 使用 OCR，不提供无障碍树和元素 ID。
+新增输入适配已验证 Xcode 27、tvOS/visionOS 27；其他版本尚未验证。
+详见[原生协议及验证记录](native/platform-support.md)。正式版/Beta Cindy 整包安装及内嵌预览验收待完成。
+
 [English](README.md)
 
 截图在旧宿主上，或 JPEG 压缩后仍超过 130 KB 内联限制时，会返回文件路径。必须用读图工具打开后再选坐标，原分辨率文件仍保留。

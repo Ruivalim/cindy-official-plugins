@@ -150,7 +150,7 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
     viewer: {open: 'open_viewer', close: 'close_viewer'},
   };
   // Reading a device never changes it, so it does not wait for (or block) input.
-  const READ_ONLY = new Set(['describe_ui', 'wait_for', 'logs', 'app_info', 'app_install_status']);
+  const READ_ONLY = new Set(['describe_ui', 'wait_for', 'logs', 'app_info', 'app_install_status', 'viewer_screen']);
   async function request(method, params = {}, deadline = now() + 110000) {
     // Normalize before routing, locks, lookups and binding writes. Do not mutate
     // the caller's object or bypass the existing device validation/ownership checks.

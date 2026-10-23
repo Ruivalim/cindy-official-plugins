@@ -5,7 +5,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const udid='00000000-0000-4000-8000-000000000001';
 
-function harness({simctlFails=false,readFails=false,stale=false,owned=true}={}) {
+function harness({simctlFails=false,readFails=false,stale=false,owned=true,runtime='runtime'}={}) {
  const calls=[];let clipboard="";
  const context={module:{exports:{}},setTimeout,clearTimeout,__dirname:path.resolve('baguette-simulator/node'),process:{platform:'darwin',arch:'arm64'},require(name){
   if(name==='./viewer.cjs')return {};
@@ -16,7 +16,7 @@ function harness({simctlFails=false,readFails=false,stale=false,owned=true}={}) 
    let output='',error=null;
    if(file==='/usr/bin/sw_vers')output='27.0';
    if(file==='/usr/bin/xcode-select')output='/Applications/Xcode.app/Contents/Developer';
-   if(args.includes('--json'))output=JSON.stringify({devices:{runtime:owned?[{udid,state:'Booted'}]:[]}});
+   if(args.includes('--json'))output=JSON.stringify({devices:{[runtime]:owned?[{udid,state:'Booted'}]:[]}});
    if(args.includes('pbcopy')&&simctlFails)error=Error('unsupported command');
    queueMicrotask(()=>{
     if(args.includes('pbcopy')&&!error&&!stale)clipboard=call.input;
@@ -135,4 +135,27 @@ test('tool and viewer keyboard input excludes only the same normalized device an
   const result=await settled;assert.equal(!!result.error,failed);
   await input({udid:a.toLowerCase(),action:'release'});
  }
+});
+
+test('tvOS auto types with the remote adapter, validates unsupported text before clearing, and never accesses the pasteboard',async()=>{
+ const h=harness({runtime:'com.apple.CoreSimulator.SimRuntime.tvOS-27-0'});
+ const r=await h.dispatch('type_text',{udid,text:'Ab 1',observe:'none'});
+ assert.equal(r.method,'type');
+ const send=h.calls.find(c=>c.file.endsWith('/native/remote')&&c.args[3]==='keys');
+ assert.deepEqual(JSON.parse(send.args[4]),[[4,2],[5,0],[44,0],[30,0]]);
+ assert.ok(!h.calls.some(c=>c.args.includes('pbcopy')));
+ for(const params of [{text:'new',method:'paste'},{text:'\u4e2d\u6587'},{text:'a'.repeat(301)}]){
+  const f=harness({runtime:'tvOS-27-0'});
+  await assert.rejects(f.dispatch('type_text',{udid,...params,clear:true,observe:'none'}),e=>['INVALID_ARGUMENT','UNSUPPORTED_INPUT'].includes(e.code)&&e.execution==='not_executed');
+  assert.ok(!f.calls.some(c=>c.file.includes('/native/')||c.args.includes('pbcopy')));
+ }
+});
+test('TV remote buttons and Vision crown are platform-specific and keep the owned set',async()=>{
+ const tv=harness({runtime:'tvOS-27-0'});await tv.dispatch('press',{udid,button:'right'});
+ const sent=tv.calls.find(c=>c.file.endsWith('/native/remote'));
+ assert.ok(sent.args[0].endsWith('/BaguetteCindy/devices'));assert.equal(sent.args[1],udid);
+ assert.deepEqual(Array.from(sent.args.slice(3)),['key','79','0','0']);
+ const vision=harness({runtime:'xrOS-27-0'});await vision.dispatch('press',{udid,button:'home'});
+ assert.ok(vision.calls.some(c=>c.args.includes('digital-crown')));
+ await assert.rejects(vision.dispatch('press',{udid,button:'swipe-to-home'}),e=>e.code==='INVALID_ARGUMENT');
 });
