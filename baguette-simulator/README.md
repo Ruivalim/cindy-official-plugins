@@ -2,9 +2,9 @@
 
 [简体中文](README.zh-CN.md)
 
-0.2.19 integrates Android with upstream main e13abcd (#199), retaining Apple TV/Vision Pro input and keeping Android on the handheld screen/rotation path. The 0.2.14 Beta acceptance is historical; this rebased package needs fresh packaged-client acceptance.
+0.2.20 integrates Android with upstream main e13abcd (#199), retaining Apple TV/Vision Pro input and keeping Android on the handheld screen/rotation path. The 0.2.14 Beta acceptance is historical; this rebased package needs fresh packaged-client acceptance.
 
-0.2.19 removes the installer's speculative sent flag. The install job preserves ADB endpoint/identity preflight not_executed, while command uncertainty and post-install verification failures remain unknown. Polling never starts a second install. No new recovery or retry mechanism.
+0.2.20 unifies touch, text and hardware/sensor RPC dispatch evidence at one per-operation boundary. Synchronous first-request budget/validation rejection stays not_executed without cleanup writes. Started requests retain unknown on later failures; touch release, long-key release and shake restoration run only after dispatch. Existing ADB installation evidence and all platform behavior remain intact. No new queue, retry, lock or recovery mechanism.
 
 One plugin (`baguette-simulator`), one device manager and one task-sidebar controller for both platforms. Devices belong to this plugin; Android Studio and Xcode default devices remain separate. The run switch, task bindings, idle shutdown, live screen, touch input, keyboard, screenshots and device switching share the same workflow. Requires Cindy 0.1.116 or later with the declared task-view capability.
 

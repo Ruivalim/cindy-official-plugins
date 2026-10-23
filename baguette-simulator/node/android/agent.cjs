@@ -14,6 +14,12 @@ const keyNames={Enter:'Enter',Return:'Enter',Escape:'Escape',Tab:'Tab',Backspace
 function createAgent({root,devices,run}){
   const seen=new Map(),saved=new Set();
   const call=(d,m,v,p={})=>rpc(d.endpoint,m,v,{deadline:p._deadline});
+  // One per-operation owner for every RPC input: synchronous preflight errors
+  // precede dispatch; a returned Promise means the request may have executed.
+  function inputFor(d,p){
+    let sent=false;
+    return {get sent(){return sent;},send(method,value,options=p){const pending=call(d,method,value,options);sent=true;return pending;}};
+  }
   async function frame(d,p={}){
     const rotation=await displayRotation(devices,d,p);
     const image=await call(d,'getScreenshot',{format:0},p);
@@ -85,8 +91,8 @@ function createAgent({root,devices,run}){
     }catch(e){result.observationError={code:e.code,message:e.message};}
     return result;
   }
-  async function touches(d,touches,p){return call(d,'sendTouch',{touches},p);}
-  async function release(d){return touches(d,Array.from({length:10},(_,identifier)=>({identifier,pressure:0})),{_deadline:Date.now()+3000});}
+  const releasedTouches=()=>Array.from({length:10},(_,identifier)=>({identifier,pressure:0}));
+  async function release(d){return call(d,'sendTouch',{touches:releasedTouches()},{_deadline:Date.now()+3000});}
   async function gesture(d,p){
     if(p.kind==='scroll_to'){
       const maximum=number(p.max_swipes,'max_swipes',1,30,10);let performed=0;
@@ -120,16 +126,15 @@ function createAgent({root,devices,run}){
     }
     for(const pair of paths)for(const at of pair){number(at[0],'x',0,screen.width);number(at[1],'y',0,screen.height);}
     const at=t=>paths.map(([a,b],identifier)=>({identifier,...require('./geometry.cjs').toNative(d.model,screen.rotation,(a[0]+(b[0]-a[0])*t)*screen.ratio,(a[1]+(b[1]-a[1])*t)*screen.ratio),pressure:1024}));
-    let sent=false;
+    const input=inputFor(d,p);
     try{for(let repeat=0;repeat<(p.kind==='tap'?count:1);repeat++){
-      sent=true;await touches(d,at(0),p);if(p.kind==='drag')await sleep(hold*1000,p._deadline);
+      await input.send('sendTouch',{touches:at(0)});if(p.kind==='drag')await sleep(hold*1000,p._deadline);
       const steps=p.kind==='tap'?1:Math.max(2,Math.ceil(duration*30));
-      for(let i=1;i<=steps;i++){await sleep(duration*1000/steps,p._deadline);if(p.kind!=='tap')await touches(d,at(i/steps),p);}
-      await touches(d,at(1).map(t=>({...t,pressure:0})),p);if(repeat+1<count)await sleep(90,p._deadline);
-    }}catch(e){if(sent)e.execution='unknown';throw e;}finally{if(sent)await release(d).catch(()=>{});}
+      for(let i=1;i<=steps;i++){await sleep(duration*1000/steps,p._deadline);if(p.kind!=='tap')await input.send('sendTouch',{touches:at(i/steps)});}
+      await input.send('sendTouch',{touches:at(1).map(t=>({...t,pressure:0}))});if(repeat+1<count)await sleep(90,p._deadline);
+    }}catch(e){if(input.sent)e.execution='unknown';throw e;}finally{if(input.sent)await release(d).catch(()=>{});}
     return after(d,p,{udid:d.udid,execution:'executed'});
   }
-  async function key(d,key,p){return call(d,'sendKey',{key,eventType:2},p);}
   async function typeText(d,p){
     const raw=p.keys===undefined?[]:Array.isArray(p.keys)?p.keys:[p.keys];if(raw.length>40||raw.some(k=>typeof k!=='string'))throw fail('INVALID_ARGUMENT','At most 40 key names are allowed.');
     if(p.text!==undefined&&(typeof p.text!=='string'||!p.text.length||p.text.length>8000||p.text.includes('\0')))throw fail('INVALID_ARGUMENT','Text must contain 1–8000 characters.');
@@ -143,15 +148,11 @@ function createAgent({root,devices,run}){
       if(method==='touch'&&!focused)throw fail('FIELD_NOT_FOCUSED','Touch paste needs a focused Android text field. Tap it first.');
       if(method==='auto')method=!ui?.elements.some(e=>e.role==='field')&&/^[\x20-\x7e\n\t]{1,300}$/.test(p.text||'')?'type':'paste';
     }
-    let sent=false;
-    // rpc rejects expired budgets/invalid values synchronously, before it can
-    // start a request. All text mutations share that one dispatch boundary.
-    const input=(method,value)=>{const pending=call(d,method,value,p);sent=true;return pending;};
-    const inputKey=key=>input('sendKey',{key,eventType:2});
+    const input=inputFor(d,p),inputKey=key=>input.send('sendKey',{key,eventType:2});
     try{
-      if(p.clear){await input('sendKey',{key:'Control',eventType:0});await inputKey('a');await input('sendKey',{key:'Control',eventType:1});await inputKey('Backspace');}
+      if(p.clear){await input.send('sendKey',{key:'Control',eventType:0});await inputKey('a');await input.send('sendKey',{key:'Control',eventType:1});await inputKey('Backspace');}
       if(p.text!==undefined){if(method==='type')for(const char of p.text)await inputKey(char==='\n'?'Enter':char==='\t'?'Tab':char);else{
-        await input('setClipboard',{text:p.text});const actual=await call(d,'getClipboard',{},p);if(actual.text!==p.text)throw fail('CLIPBOARD_UNVERIFIED','Android clipboard did not match the input. Paste was not sent.','unknown');
+        await input.send('setClipboard',{text:p.text});const actual=await call(d,'getClipboard',{},p);if(actual.text!==p.text)throw fail('CLIPBOARD_UNVERIFIED','Android clipboard did not match the input. Paste was not sent.','unknown');
         if(method==='touch'){
           await gesture(d,{_deadline:p._deadline,kind:'tap',x:focused.center[0],y:focused.center[1],duration:0.7,observe:'none'});await sleep(300,p._deadline);
           const menu=await describe(d,p),paste=menu.elements.find(e=>/^(paste|粘贴|貼り付け|붙여넣기)$/i.test(e.label||''));
@@ -159,9 +160,9 @@ function createAgent({root,devices,run}){
           await gesture(d,{_deadline:p._deadline,kind:'tap',x:paste.center[0],y:paste.center[1],observe:'none'});
         }else await devices.adb(d,['shell','input','keyevent','279'],{deadline:p._deadline,mutation:true});
       }}
-      for(const k of parsed){const pressed=[];try{for(const m of k.modifiers){const pending=input('sendKey',{key:m,eventType:0});pressed.push(m);await pending;}await inputKey(k.key);}finally{for(const m of pressed.reverse())await call(d,'sendKey',{key:m,eventType:1},{_deadline:Date.now()+3000}).catch(()=>{});}}
-    }catch(e){if(sent)e.execution='unknown';throw e;}finally{if(sent&&method!=='touch')await call(d,'sendKey',{key:'Control',eventType:1},{_deadline:Date.now()+3000}).catch(()=>{});}
-    return after(d,{...p,observe:p.observe??'none'},{udid:d.udid,method,execution:sent?'executed':'not_executed'});
+      for(const k of parsed){const pressed=[];try{for(const m of k.modifiers){const pending=input.send('sendKey',{key:m,eventType:0});pressed.push(m);await pending;}await inputKey(k.key);}finally{for(const m of pressed.reverse())await call(d,'sendKey',{key:m,eventType:1},{_deadline:Date.now()+3000}).catch(()=>{});}}
+    }catch(e){if(input.sent)e.execution='unknown';throw e;}finally{if(input.sent&&method!=='touch')await call(d,'sendKey',{key:'Control',eventType:1},{_deadline:Date.now()+3000}).catch(()=>{});}
+    return after(d,{...p,observe:p.observe??'none'},{udid:d.udid,method,execution:input.sent?'executed':'not_executed'});
   }
   async function press(d,p){
     const keys={home:'GoHome',back:'GoBack',lock:'Power',power:'Power','volume-up':'AudioVolumeUp','volume-down':'AudioVolumeDown','app-switcher':'AppSwitch','swipe-to-app-switcher':'AppSwitch','swipe-to-home':'GoHome'};
@@ -174,20 +175,23 @@ function createAgent({root,devices,run}){
       pose=await call(d,'getPhysicalModel',{target:1},p);gravity=await call(d,'getSensor',{target:0},p);
       if(pose.status!==0||gravity.status!==0||pose.value?.data?.length!==3||gravity.value?.data?.length!==3)throw fail('SENSOR_UNAVAILABLE','Cannot confirm Android orientation before shaking.');
     }
+    const input=inputFor(d,p);
     try{
     if(p.button==='shake'){
-      try{for(let i=0;i<6;i++){const data=[...gravity.value.data];data[0]+=i%2?18:-18;await call(d,'setSensor',{target:0,value:{data}},p);await sleep(60,p._deadline);}}
+      try{for(let i=0;i<6;i++){const data=[...gravity.value.data];data[0]+=i%2?18:-18;await input.send('setSensor',{target:0,value:{data}});await sleep(60,p._deadline);}}
       finally{
+        if(input.sent){
         try{await call(d,'setSensor',{target:0,value:gravity.value},{_deadline:Date.now()+3000});}
         finally{await call(d,'setPhysicalModel',{target:1,value:pose.value,interpolation:1},{_deadline:Date.now()+3000});}
+        }
       }
     }
-    else if(p.button==='release-input'){await release(d);for(const key of ['Control','Shift','Alt','Meta'])await call(d,'sendKey',{key,eventType:1},p);}
+    else if(p.button==='release-input'){await input.send('sendTouch',{touches:releasedTouches()});for(const key of ['Control','Shift','Alt','Meta'])await input.send('sendKey',{key,eventType:1});}
     else if(p.button==='pull-down-to-notification-center')await devices.adb(d,['shell','cmd','statusbar','expand-notifications'],{deadline:p._deadline,mutation:true});
-    else if(keys[p.button]){const duration=number(p.duration,'duration',0,10,0);if(duration){try{await call(d,'sendKey',{key:keys[p.button],eventType:0},p);await sleep(duration*1000,p._deadline);}finally{await call(d,'sendKey',{key:keys[p.button],eventType:1},{_deadline:Date.now()+3000});}}else await key(d,keys[p.button],p);}
+    else if(keys[p.button]){const duration=number(p.duration,'duration',0,10,0);if(duration){try{await input.send('sendKey',{key:keys[p.button],eventType:0});await sleep(duration*1000,p._deadline);}finally{if(input.sent)await call(d,'sendKey',{key:keys[p.button],eventType:1},{_deadline:Date.now()+3000});}}else await input.send('sendKey',{key:keys[p.button],eventType:2});}
     else throw fail('INVALID_ARGUMENT','This Android device has no such hardware button.');
     return {udid:d.udid,execution:'executed'};
-    }catch(e){e.execution='unknown';throw e;}
+    }catch(e){if(input.sent)e.execution='unknown';throw e;}
   }
   async function waitFor(d,p){
     const end=Math.min(p._deadline||Infinity,Date.now()+number(p.timeout,'timeout',0.1,90,15)*1000),stable=number(p.stable,'stable',0.1,30,undefined);let previous=null,since=Date.now(),matched=false;

@@ -459,6 +459,63 @@ test('capture rechecks the display after its first stream frame before executing
   assert.equal(result.captureError.code,'SCREEN_CHANGED');assert.equal(result.execution,'not_executed');assert.equal(actions,0);
 });
 
+test('every Android gesture shares the RPC dispatch boundary and skips cleanup before its first request',async t=>{
+  const source=await fs.readFile(path.join(A,'agent.cjs'),'utf8'),budget=require('../../baguette-simulator/node/budget.cjs').commandBudget;
+  for(const p of [{kind:'tap',x:30,y:30},{kind:'tap',x:30,y:30,count:2},{kind:'swipe',from:[20,20],to:[40,40]},{kind:'drag',from:[20,20],to:[40,40]},{kind:'edge'},{kind:'pinch',center:[50,50],from_spread:10,to_spread:20},{kind:'pan',from:[40,40],by:[10,10]}])for(const phase of ['preflight','first-send','connection','after-send','success'])await t.test(JSON.stringify(p)+' '+phase,async t=>{
+    let clock=100,reads=0;const deadline=10000,events=[];t.mock.method(Date,'now',()=>clock);
+    const rpc=(_d,method,value,options)=>{
+      budget(1000,options.deadline,()=>clock);
+      if(method==='getScreenshot')return Promise.resolve({format:{width:108,height:240,rotation:{rotation:0}},image:image()});
+      assert.equal(method,'sendTouch');events.push(value.touches);
+      if(events.length===1&&phase==='connection')return Promise.reject(Object.assign(Error('connection failed'),{code:'ANDROID_GRPC_FAILED',execution:'unknown'}));
+      if(events.length===1&&phase==='after-send')clock=deadline;
+      return Promise.resolve({});
+    };
+    const context={module:{exports:{}},Buffer,Date,setTimeout:(fn,ms)=>{clock+=ms;queueMicrotask(fn);},require:n=>n==='./grpc.cjs'?{rpc}:require(n.startsWith('.')?path.resolve(A,n):n)};
+    require('node:vm').runInNewContext(source,context);
+    const agent=context.module.exports.createAgent({devices:{adb:async()=>{
+      if(phase==='preflight')throw Object.assign(Error('read budget exhausted'),{code:'TIME_BUDGET_EXHAUSTED',execution:'not_executed'});
+      if(++reads===2&&phase==='first-send')clock=deadline;
+      return {stdout:'Viewport INTERNAL: displayId=0, orientation=0'};
+    }}});
+    const action=agent.gesture({udid:id,endpoint:{},model:{width:108,height:240,density:160}},{...p,duration:.01,hold:.01,_deadline:deadline,observe:'none'});
+    if(phase==='success')assert.equal((await action).execution,'executed');
+    else await assert.rejects(action,e=>e.code===(phase==='connection'?'ANDROID_GRPC_FAILED':'TIME_BUDGET_EXHAUSTED')&&e.execution===(['preflight','first-send'].includes(phase)?'not_executed':'unknown'));
+    if(['preflight','first-send'].includes(phase))assert.deepEqual(events,[],'no touch and no release when first RPC never started');
+    else {assert.ok(events.length>=2);assert.equal(events.at(-1).length,10);assert.ok(events.at(-1).every(t=>t.pressure===0),'existing cleanup remains after a started touch');}
+  });
+});
+test('Android hardware, release and shake distinguish preflight rejection from a started mutation',async t=>{
+  const source=await fs.readFile(path.join(A,'agent.cjs'),'utf8'),budget=require('../../baguette-simulator/node/budget.cjs').commandBudget;
+  for(const p of [{button:'home'},{button:'home',duration:.01},{button:'release-input'},{button:'shake'},{button:'pull-down-to-notification-center'}])for(const phase of ['preflight','first-send','connection','after-send','success'].filter(v=>v!=='after-send'||p.button!=='home'||p.duration))await t.test(JSON.stringify(p)+' '+phase,async t=>{
+    let clock=100;const deadline=10000,events=[];t.mock.method(Date,'now',()=>clock);
+    const rpc=(_d,method,value,options)=>{
+      budget(1000,options.deadline,()=>clock);
+      if(method==='getPhysicalModel'||method==='getSensor'){
+        if(phase==='preflight')throw Object.assign(Error('read failed'),{code:'TIME_BUDGET_EXHAUSTED',execution:'not_executed'});
+        if(method==='getSensor'&&phase==='first-send')clock=deadline;
+        return Promise.resolve({status:0,value:{data:method==='getSensor'?[0,9.81,0]:[0,0,0]}});
+      }
+      events.push({method,value});
+      if(events.length===1&&phase==='connection')return Promise.reject(Object.assign(Error('connection failed'),{code:'ANDROID_GRPC_FAILED',execution:'unknown'}));
+      if(events.length===1&&phase==='after-send')clock=deadline;
+      return Promise.resolve({});
+    };
+    const context={module:{exports:{}},Buffer,Date,setTimeout:(fn,ms)=>{clock+=ms;queueMicrotask(fn);},require:n=>n==='./grpc.cjs'?{rpc}:require(n.startsWith('.')?path.resolve(A,n):n)};
+    require('node:vm').runInNewContext(source,context);const agent=context.module.exports.createAgent({devices:{adb:async()=>{
+      if(['preflight','first-send'].includes(phase))throw Object.assign(Error('ADB preflight'),{code:'TIME_BUDGET_EXHAUSTED',execution:'not_executed'});
+      events.push({method:'adb'});if(phase!=='success')throw Object.assign(Error('ADB unknown'),{code:'ANDROID_GRPC_FAILED',execution:'unknown'});return {};
+    }}});
+    if(p.button!=='shake'&&['preflight','first-send'].includes(phase))clock=deadline;
+    const action=agent.press({endpoint:{}},{...p,_deadline:deadline});
+    if(phase==='success')assert.equal((await action).execution,'executed');
+    else await assert.rejects(action,e=>e.code===((phase==='connection'||p.button==='pull-down-to-notification-center'&&phase==='after-send')?'ANDROID_GRPC_FAILED':'TIME_BUDGET_EXHAUSTED')&&e.execution===(['preflight','first-send'].includes(phase)?'not_executed':'unknown'));
+    if(['preflight','first-send'].includes(phase))assert.deepEqual(events,[],'no cleanup write after rejected first mutation');
+    else if(p.duration){assert.equal(events.at(-1).value.eventType,1);assert.equal(events.at(-1).value.key,'GoHome');}
+    else if(p.button==='shake'){assert.equal(events.at(-2).method,'setSensor');assert.equal(events.at(-1).method,'setPhysicalModel');}
+    else assert.ok(events.length);
+  });
+});
 test('Android text input owns dispatch evidence across preflight, first-send and later failures',async t=>{
   const source=await fs.readFile(path.join(A,'agent.cjs'),'utf8'),budget=require('../../baguette-simulator/node/budget.cjs').commandBudget;
   for(const request of [{text:'AB'},{method:'touch',text:'AB'},{method:'type',text:'AB'},{method:'paste',text:'你好'},{method:'type',clear:true},{method:'type',keys:['ctrl+shift+x']}])for(const phase of ['preflight','first-send','after-send','connection',...(request.method==='touch'?[]:['success'])])await t.test(JSON.stringify(request)+' '+phase,async t=>{
