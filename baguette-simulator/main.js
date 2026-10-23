@@ -74,6 +74,11 @@ cindy.onHostMessage(async function (msg) {
       if (shown.location) viewer.location = shown.location;
       if (shown.previewError) viewer.previewError = shown.previewError;
     }
+    if (result.ok && viewer?.previewOpened === false) {
+      result.outcome = 'partial';
+      result.nextAction = 'Retry viewer action=open for this device. Do not repeat an App launch that already succeeded.';
+    }
+    if (typeof result.met === 'boolean') result.goalMet = result.met;
     // Images go next to `result` (hosts without the field ignore them; the path stays in `result`).
     const images = Array.isArray(result._modelImages) ? result._modelImages : null;
     delete result._modelImages;
@@ -124,7 +129,8 @@ async function openInTask(udid, locale) {
 }
 
 // Task page and management view. Each action maps to one fixed worker method
-// with sanitized parameters; the task id only ever names the page's own task.
+// with sanitized parameters. Cross-task navigation resolves the target from
+// the device's saved binding in the worker, never from a page-supplied task id.
 const PAGE_ACTIONS = {
   task_state: (m, l) => SESSION.test(m.sessionId) && worker('task_state', {_task:m.sessionId, _locale:l}),
   task_bind: (m, l) => SESSION.test(m.sessionId) && str(m.udid) && worker('task_bind', {_task:m.sessionId, udid:m.udid, _locale:l}),
@@ -145,6 +151,9 @@ const PAGE_ACTIONS = {
     return worker('manage_state', front?.ok && SESSION.test(front.sessionId) ? {_task:front.sessionId} : {});
   },
   catalog: () => worker('viewer_catalog', {}),
+  android_plan: () => worker('android_setup_plan', {}),
+  android_status: () => worker('android_setup_status', {}),
+  android_install: (m) => str(m.planId) && m.acceptLicenses === true && worker('android_setup_install', {planId:m.planId, acceptLicenses:true}),
   boot: (m) => str(m.udid) && worker('settings_boot', {udid:m.udid}),
   shutdown: (m) => str(m.udid) && worker('settings_shutdown', {udid:m.udid}),
   rename: (m) => str(m.udid) && str(m.name, 64) && worker('rename_device', {udid:m.udid, name:m.name}),
@@ -154,8 +163,20 @@ const PAGE_ACTIONS = {
   viewer_url: (m, l) => str(m.udid) && worker('settings_viewer', {udid:m.udid, _locale:l}),
   create: (m) => worker('create_device', {name:str(m.name, 64), deviceType:str(m.deviceType), runtime:str(m.runtime)}),
   open_in_task: (m, l) => str(m.udid) && openInTask(m.udid, l),
+  go_to_task: async (m) => {
+    if (!str(m.udid)) return false;
+    if (!hasTaskView()) return {ok:false, errorCode:'HOST_UPDATE_REQUIRED'};
+    const target = await worker('task_target', {udid:m.udid});
+    if (!target.ok) return target;
+    if (!SESSION.test(target.sessionId)) return {ok:false, errorCode:'TASK_NOT_BOUND'};
+    const opened = await cindy.taskView({sessionId:target.sessionId, focus:true});
+    if (!opened?.ok) return {ok:false, errorCode:opened?.errorCode || 'PREVIEW_FAILED'};
+    // Older hosts accept unknown fields but only open the tab in the background.
+    if (opened.focusRequested !== true) return {ok:false, errorCode:'HOST_UPDATE_REQUIRED'};
+    return opened;
+  },
 };
-const KEEPS_RUNNING = new Set(['task_state', 'task_bind', 'task_boot', 'task_create', 'boot', 'open_in_task', 'viewer_url']);
+const KEEPS_RUNNING = new Set(['task_state', 'task_bind', 'task_boot', 'task_create', 'boot', 'open_in_task', 'viewer_url', 'android_install']);
 if (pages) pages.onmessage = async ({data: msg}) => {
   if (msg?.type === 'ping' && typeof msg.id === 'string') { pages.postMessage({type:'ready', id:msg.id}); return; }
   if (msg?.type !== 'request' || typeof msg.id !== 'string' || !Object.hasOwn(PAGE_ACTIONS, msg.action)) return;

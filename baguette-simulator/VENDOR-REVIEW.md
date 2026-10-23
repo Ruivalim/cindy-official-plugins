@@ -148,3 +148,27 @@ The host release binary is built with whole-program LTO (`--experimental-lto-mod
 Live `screen_quad.litPanel` changes now notify the page input mapper, synchronizing primary/portrait and secondary/landscape-left before subsequent taps or drags. Duplicate metadata preserves manual rotation; obsolete stream callbacks are rejected. The callback survives model/retry attachment. A production-stream/page-mapper regression covers opening, closing, manual rotation, invalid panel names and stale streams.
 
 Panel-switch synchronization also updates `Sim3DPanel.interfaceOrientation` through its existing setter, so subsequent camera messages and the page rotation cycle agree. The regression exercises actual camera serialization after manual rotation and folding, including a later camera update that must not restore the old orientation.
+
+
+## Android backend 0.2.0 (2026-10-23)
+
+`native/android-deps-lock.json` pins npm artifact versions and integrity hashes. `native/build-android.cjs` bundles only required code and emits `vendor/android/packages.json` and full notices. `vendor-inventory.json` records the resulting files, WASM and English/Simplified Chinese models. Rebuild in a separate directory: copy the package and lock files to package.json/package-lock.json, run `npm ci --ignore-scripts`, then `node native/build-android.cjs <directory>`.
+
+The new first-party SDK installer has a single autonomous HTTPS target: `dl.google.com/android/repository/`, including redirects. It reads stable catalogs, requires explicit plan ID and license acceptance, verifies length/checksum, rejects archive traversal and external symlinks, and renames into its own SDK directory without overwriting existing SDK components. Google emulator executables and images are downloaded only after consent and are not part of this `.cindy`.
+
+The new first-party gRPC schema is a wire-compatible subset of official Emulator 37.1.11's `emulator_controller.proto`. It connects only to the discovered loopback endpoint of a private AVD, authenticating with that emulator's token. The token never enters tool results. The HTTP viewer checks Host, Origin and random capability; guest data travels only within that loopback view unless the task requests an image attachment. ADB verifies the exact AVD name each call. Host execution uses fixed command arrays, and remote shell arguments are individually quoted.
+
+OCR uses pinned Tesseract WASM with bundled models only; the adapter refuses network fetch/cache writes, fixes Emscripten's C locale, terminates each worker and bounds recognition time. Upstream Tesseract/Emscripten contains its generic WebAssembly loader and runtime code generation; protobufjs generates codecs from the plugin's fixed schema. These are reviewed runtime behavior, not arbitrary downloaded code evaluation. The image supplied to OCR cannot choose a script, worker path, language download URL or executable. The Node worker has no managed service credentials.
+
+Actual Android smoke ran on Apple Silicon/API 36. Windows/Linux SDK path selection is covered by tests, not physical-host acceptance. At that historical 0.2.0 check, Forge rejected locale.taskView. The 0.2.7 Forge package now validates and installs in isolated Cindy Dev; production/Beta installation remains unverified.
+
+
+## Android interaction parity 0.2.7 (2026-10-24)
+
+No third-party dependency version changed after the Android baseline above. Wheel and pinch reuse authenticated emulator touch RPCs; clipboard access is explicitly initiated by paste/copy or the viewer menu. Clipboard contents are not logged or persisted by the adapter.
+
+File upload uses the existing exact loopback Host/Origin/capability boundary and an already-open private device. It accepts only documented extensions, streams at most 128 MiB into owner-only random temporary files, invokes the same APK job/media-import path as Agent tools, and retains an asynchronous APK upload until its job settles. Media uses generated guest filenames, verifies byte size after ADB push, and preserves the destination and partial execution details if scanning fails. Abandoned temporary uploads use the existing one-day artifact cleanup.
+
+Continuous recording is browser-local canvas/MediaRecorder work; it adds no host execution, network destination or audio permission. The viewer limits recording to five minutes/128 MiB, stops capture tracks/timers after recording, and exports a local WebM. Rotation keeps a fixed recording canvas with letterboxing. Leaving a recording viewer requires saving first; no persistent recovery mechanism is introduced.
+
+Agent parity reuses shared per-device locks, busy/job results, viewer readiness, foreground activity ownership, and partial/unknown execution vocabulary. A failed installed-APK fingerprint comparison is never treated as an absent or stale app: automatic installation stops and asks the Agent to inspect; explicit full install remains available. Device switching only changes selection and never starts, stops or transfers apps implicitly.

@@ -5,19 +5,19 @@ const a='00000000-0000-4000-8000-00000000000A',b='00000000-0000-4000-8000-000000
 async function fixture(t){
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'baguette-switch-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
  const devices=[{udid:a,name:'Duo',state:'Booted',isAvailable:true},{udid:b,name:'Phone',state:'Shutdown',isAvailable:true}],calls=[];
- let failAt,hold,unconfirmed=false;
+ let failAt,hold,bindStarted,clock=0,using=false;
  const bindings=new Map();
- const opts={settingsFile:path.join(dir,'settings.json'),tasks:{bind:async(s,id)=>bindings.set(s,id),forgetDevice:async id=>{for(const [s,device] of bindings)if(device===id)bindings.delete(s);}},dispatch:async(method,p={})=>{
+ const opts={settingsFile:path.join(dir,'settings.json'),now:()=>clock,inUse:async()=>using,tasks:{bind:async(s,id)=>{if(hold){bindStarted?.();await hold;}bindings.set(s,id);},forgetDevice:async id=>{for(const [s,device] of bindings)if(device===id)bindings.delete(s);}},dispatch:async(method,p={})=>{
   calls.push({method,...p});if(method==='devices')return {devices:devices.map(d=>({...d}))};
   if(method===failAt)throw Object.assign(Error('Fixture failure'),{code:'FIXTURE_ERROR',execution:'unknown'});
-  if(method==='shutdown'){if(hold)await hold;if(!unconfirmed)devices.find(d=>d.udid===p.udid).state='Shutdown';}
-  if(method==='boot'){assert.ok(devices.filter(d=>d.udid!==p.udid).every(d=>d.state==='Shutdown'),'old device must be off first');devices.find(d=>d.udid===p.udid).state='Booted';}
+  if(method==='shutdown')devices.find(d=>d.udid===p.udid).state='Shutdown';
+  if(method==='boot'){if(hold)await hold;devices.find(d=>d.udid===p.udid).state='Booted';}
   if(method==='app_bundle')return {appPath:'/private-fixture/Test.app'};
   if(method==='open_viewer')return {url:'http://127.0.0.1:1/control?udid='+p.udid};
   return {ok:true};
  }};
  const runtime=createRuntime(opts);
- return {runtime,devices,calls,bindings,file:opts.settingsFile+'.apps.json',restart:()=>createRuntime(opts),fail:m=>failAt=m,hold:p=>hold=p,unconfirmed:()=>unconfirmed=true};
+ return {runtime,devices,calls,bindings,file:opts.settingsFile+'.apps.json',restart:()=>createRuntime(opts),fail:m=>failAt=m,hold:p=>{hold=p;return new Promise(resolve=>bindStarted=resolve);},advance:ms=>clock+=ms,inUse:value=>using=value};
 }
 async function finish(f){for(let i=0;i<100;i++){const job=(await f.runtime.status()).deviceJob;if(job.state!=='running')return job;await new Promise(r=>setTimeout(r,2));}assert.fail('switch did not finish');}
 test('recent App read failures never become empty records or allow a switch to mutate devices',async t=>{
@@ -31,7 +31,7 @@ test('recent App read failures never become empty records or allow a switch to m
   await assert.rejects(f.runtime.currentApp(a),e=>e.code==='APP_CONTEXT_UNREADABLE');
   f.calls.length=0;
   await f.runtime.request('viewer_switch',{udid:a,targetUdid:b});
-  const job=await finish(f);assert.equal(job.state,'failed');assert.equal(job.errorCode,'APP_CONTEXT_UNREADABLE');assert.equal(job.execution,'not_executed');
+  const job=await finish(f);assert.equal(job.state,'done');assert.equal(job.activeUdid,b);
   assert.ok(f.calls.every(c=>c.method==='devices'),'no app lookup, shutdown, boot, install, launch or viewer start');
   for(const method of ['app_uninstall','erase_device','delete_device']){
    const result=await f.runtime.request(method,{udid:a,bundleId:'test.example.original'});
@@ -80,19 +80,20 @@ test('successful uninstall, erase and delete clear only the affected recent app;
   }
  }
 });
-test('switch preserves app context across runtime restart, shuts down before boot, and installs only app bundle',async t=>{
+test('switch preserves each device and app context without starting, stopping or copying apps',async t=>{
  const f=await fixture(t);await f.runtime.request('launch_app',{udid:a,bundleId:'test.example.app'});f.runtime=f.restart();
+ f.calls.length=0;
  await f.runtime.request('viewer_switch',{udid:a,targetUdid:b});const job=await finish(f);assert.equal(job.state,'done');assert.equal(job.activeUdid,b);
- const mutations=f.calls.filter(c=>!['devices','launch_app'].includes(c.method));assert.deepEqual(mutations.map(c=>c.method),['app_bundle','shutdown','boot','install_app','open_viewer']);
- assert.deepEqual(mutations.find(c=>c.method==='install_app'),{method:'install_app',udid:b,appPath:'/private-fixture/Test.app'});
- assert.equal(await f.restart().currentApp(b),'test.example.app');assert.equal(f.devices[0].state,'Shutdown');
+ assert.ok(f.calls.every(c=>c.method==='devices'));
+ assert.equal(await f.restart().currentApp(b),null);assert.equal(await f.restart().currentApp(a),'test.example.app');
+ assert.deepEqual(f.devices.map(d=>d.state),['Booted','Shutdown']);
 });
 test('switch source and target use the same identity as task binding and recent apps',async t=>{
  const f=await fixture(t);
  await f.runtime.request('launch_app',{udid:a.toLowerCase(),bundleId:'test.example.app',session_context:{session_id:'case-task'}});
  await f.runtime.request('viewer_switch',{udid:a.toLowerCase(),targetUdid:b.toLowerCase(),task:'case-task'});
  const job=await finish(f);assert.equal(job.state,'done');assert.equal(job.activeUdid,b);
- assert.equal(f.bindings.get('case-task'),b);assert.equal(await f.restart().currentApp(b.toLowerCase()),'test.example.app');
+ assert.equal(f.bindings.get('case-task'),b);assert.equal(await f.restart().currentApp(b.toLowerCase()),null);
  assert.ok(f.calls.filter(c=>c.udid).every(c=>[a,b].includes(c.udid)));
 });
 
@@ -103,36 +104,24 @@ test('foreign/unavailable targets and paused runtime never start a switch',async
  await f.runtime.request('settings_save',{enabled:false,idleMinutes:15});f.calls.length=0;
  await assert.rejects(f.runtime.request('viewer_switch',{udid:a,targetUdid:b}),e=>e.code==='RUNTIME_DISABLED');assert.equal(f.calls.length,0);
 });
-test('unconfirmed shutdown never boots target, and reports actual source still running',async t=>{
- const f=await fixture(t);f.unconfirmed();await f.runtime.request('viewer_switch',{udid:a,targetUdid:b});const job=await finish(f);
- assert.equal(job.state,'failed');assert.equal(job.execution,'unknown');assert.equal(job.errorCode,'STOP_UNCONFIRMED');assert.equal(job.activeUdid,a);assert.ok(!f.calls.some(c=>c.method==='boot'));
+test('switching among three devices and back to a running device never shuts another device down',async t=>{
+ const f=await fixture(t),c='00000000-0000-4000-8000-00000000000C';
+ f.devices.push({udid:c,name:'Tablet',state:'Booted',isAvailable:true});
+ for(const [source,target] of [[a,b],[b,c],[c,a]]){
+  await f.runtime.request('viewer_switch',{udid:source,targetUdid:target});
+  assert.equal((await finish(f)).state,'done');assert.deepEqual(f.devices.map(d=>d.state),['Booted','Shutdown','Booted']);
+ }
+ assert.ok(!f.calls.some(c=>c.method==='shutdown'));
 });
-test('app installation failure reports target running, never claims successful switch or copies data',async t=>{
- const f=await fixture(t);await f.runtime.request('launch_app',{udid:a,bundleId:'test.example.app'});f.fail('install_app');
- await f.runtime.request('viewer_switch',{udid:a,targetUdid:b});const job=await finish(f);assert.equal(job.state,'failed');assert.equal(job.activeUdid,b);assert.equal(job.execution,'unknown');assert.equal(f.calls.filter(c=>c.method==='launch_app').length,1);
-});
-test('two concurrent switches cannot interleave; idle shutdown cannot interrupt the reserved operation',async t=>{
- const f=await fixture(t);let release;f.hold(new Promise(r=>release=r));
- const results=await Promise.allSettled([f.runtime.request('viewer_switch',{udid:a,targetUdid:b}),f.runtime.request('viewer_switch',{udid:a,targetUdid:b})]);
- assert.equal(results.filter(r=>r.status==='fulfilled').length,1);assert.equal(results.find(r=>r.status==='rejected').reason.code,'BUSY');
- await f.runtime.checkIdle();assert.equal(f.devices[0].state,'Booted');await assert.rejects(f.runtime.request('rename_device',{udid:a,name:'Name'}),e=>e.code==='BUSY');
- release();assert.equal((await finish(f)).state,'done');assert.equal(f.calls.filter(c=>c.method==='boot').length,1);
-});
-test('a failed boot preserves devices and reports no running target',async t=>{
- const f=await fixture(t);f.fail('boot');await f.runtime.request('viewer_switch',{udid:a,targetUdid:b});const job=await finish(f);
- assert.equal(job.state,'failed');assert.equal(job.activeUdid,null);assert.ok(f.devices.every(d=>d.state==='Shutdown'));assert.equal(f.devices.length,2);
-});
-
-test('task binding follows the settled actual device, including failure before and after shutdown',async t=>{
- for(const failAt of [null,'shutdown','install_app']) {
-  const f=await fixture(t);let release;f.hold(new Promise(r=>release=r));
-  await f.runtime.request('launch_app',{udid:a,bundleId:'test.example.app',session_context:{session_id:'task-1'}});
-  if(failAt)f.fail(failAt);
-  await f.runtime.request('viewer_switch',{udid:a,targetUdid:b,task:'task-1'});
-  assert.equal(f.bindings.get('task-1'),a,'starting a switch never changes binding speculatively');
-  release();const job=await finish(f);
-  assert.equal(f.bindings.get('task-1'),job.activeUdid);
-  assert.equal(job.activeUdid,failAt==='shutdown'?a:b);
+test('switching preserves the shared idle timeout, active-use protection and manual-only setting',async t=>{
+ for(const manual of [false,true]){
+  const f=await fixture(t);
+  f.devices[1].state='Booted';
+  if(manual)await f.runtime.request('settings_save',{enabled:true,idleMinutes:0});
+  await f.runtime.request('viewer_switch',{udid:a,targetUdid:b});assert.equal((await finish(f)).state,'done');
+  f.inUse(true);f.advance(16*60000);await f.runtime.checkIdle();assert.ok(f.devices.every(d=>d.state==='Booted'));
+  f.inUse(false);f.advance(14*60000);await f.runtime.checkIdle();assert.ok(f.devices.every(d=>d.state==='Booted'));
+  f.advance(2*60000);await f.runtime.checkIdle();assert.ok(f.devices.every(d=>d.state===(manual?'Booted':'Shutdown')));
  }
 });
 
@@ -145,4 +134,64 @@ test('cross-platform switches never copy or launch the source app bundle',async 
   assert.ok(!f.calls.some(c=>['app_bundle','install_app','launch_app'].includes(c.method)));
   assert.equal(await f.runtime.currentApp(a),'test.example.phone');assert.equal(await f.runtime.currentApp(b),null);
  }
+});
+test('a selected stopped device starts only on the explicit boot action',async t=>{
+ const f=await fixture(t);
+ await f.runtime.request('viewer_switch',{udid:a,targetUdid:b});assert.equal((await finish(f)).state,'done');
+ assert.equal(f.devices[1].state,'Shutdown');assert.ok(!f.calls.some(c=>c.method==='boot'));
+ await f.runtime.request('settings_boot',{udid:b});assert.ok(f.devices.every(d=>d.state==='Booted'));
+ assert.equal(f.calls.filter(c=>c.method==='boot').length,1);
+});
+test('each switch request waits for its final binding result and retains it after another selection',async t=>{
+ const f=await fixture(t);let release,answered=false;
+ const entered=f.hold(new Promise(r=>release=r));
+ const pending=f.runtime.request('viewer_switch',{udid:a,targetUdid:b,task:'task-1'}).then(result=>{answered=true;return result;});
+ await entered;
+ assert.equal(answered,false,'a running shared snapshot is not the completed request result');
+ release();const first=await pending;
+ assert.equal(first.state,'done');assert.equal(first.activeUdid,b);assert.equal(f.bindings.get('task-1'),b);
+ const next=await f.runtime.request('viewer_switch',{udid:b,targetUdid:a,task:'task-2'});
+ assert.equal(next.state,'done');assert.equal(next.activeUdid,a);
+ assert.notEqual(first.id,next.id);
+ assert.equal(first.activeUdid,b,'later selections cannot replace an earlier response');
+ assert.equal(f.bindings.get('task-1'),b);assert.equal(f.bindings.get('task-2'),a);
+ assert.deepEqual(f.devices.map(d=>d.state),['Booted','Shutdown']);
+});
+
+test('two concurrent switches cannot interleave; idle shutdown cannot interrupt the reserved operation',async t=>{
+ const f=await fixture(t);let release;const entered=f.hold(new Promise(r=>release=r));
+ const first=f.runtime.request('viewer_switch',{udid:a,targetUdid:b,task:'task-1'});
+ await entered;
+ await assert.rejects(f.runtime.request('viewer_switch',{udid:a,targetUdid:b,task:'task-1'}),e=>e.code==='BUSY');
+ await f.runtime.checkIdle();assert.equal(f.devices[0].state,'Booted');await assert.rejects(f.runtime.request('rename_device',{udid:a,name:'Name'}),e=>e.code==='BUSY');
+ release();assert.equal((await first).state,'done');assert.equal(f.calls.filter(c=>c.method==='boot').length,0);
+});
+test('a switch blocked by another operation keeps the source selected',async t=>{
+ const f=await fixture(t);let release;
+ const occupied=f.runtime.exclusive(()=>new Promise(r=>release=r));
+ await f.runtime.request('viewer_switch',{udid:a,targetUdid:b});
+ const job=await finish(f);
+ assert.equal(job.state,'failed');assert.equal(job.activeUdid,a);assert.equal(job.execution,'not_executed');
+ assert.equal(job.errorCode,'BUSY');release();await occupied;
+ assert.deepEqual(f.devices.map(d=>d.state),['Booted','Shutdown']);
+});
+
+test('task binding follows the selected device without changing its power state',async t=>{
+ for(const targetState of ['Shutdown','Booted']) {
+  const f=await fixture(t);f.devices[1].state=targetState;let release;
+  await f.runtime.request('launch_app',{udid:a,bundleId:'test.example.app',session_context:{session_id:'task-1'}});
+  const entered=f.hold(new Promise(r=>release=r));
+  const pending=f.runtime.request('viewer_switch',{udid:a,targetUdid:b,task:'task-1'});
+  await entered;
+  assert.equal(f.bindings.get('task-1'),a,'starting a switch never changes binding speculatively');
+  release();const job=await pending;
+  assert.equal(f.bindings.get('task-1'),job.activeUdid);
+  assert.equal(job.activeUdid,b);assert.equal(f.devices[1].state,targetState);
+ }
+});
+test('switching between iOS and Android only selects without moving or starting apps',async t=>{
+ const f=await fixture(t);f.devices[0].platform='ios';f.devices[1].platform='android';
+ await f.runtime.request('launch_app',{udid:a,bundleId:'test.ios.app'});await f.runtime.request('launch_app',{udid:b,bundleId:'test.android.app'});f.calls.length=0;
+ await f.runtime.request('viewer_switch',{udid:a,targetUdid:b});assert.equal((await finish(f)).state,'done');
+ assert.ok(!f.calls.some(c=>['app_bundle','install_app'].includes(c.method)));assert.ok(!f.calls.some(c=>['launch_app','boot','shutdown'].includes(c.method)));
 });

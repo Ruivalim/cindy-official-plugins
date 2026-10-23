@@ -6430,3 +6430,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+Android backend (0.2.0)
+=======================
+Bundled JavaScript, Tesseract WASM and local OCR models are listed in vendor/android/packages.json. Full third-party notices are reproduced in vendor/android/LICENSES.txt, included in this package. Exact npm artifact integrities are pinned in native/android-deps-lock.json; build instructions are in native/build-android.cjs. Tesseract model data is Apache-2.0 (https://github.com/naptha/tessdata/blob/gh-pages/LICENSE); npm wrapper metadata lists MIT. The Apache-2.0 license text above applies to the model data.
+Android Emulator and SDK/system images are not redistributed in the plugin; setup fetches official Google packages only after user license acceptance. The gRPC subset follows emulator_controller.proto (Android Open Source Project, Apache-2.0).
