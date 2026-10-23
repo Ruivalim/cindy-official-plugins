@@ -18,8 +18,8 @@ function forgetSession(deviceSet){try{fs.rmSync(sessionFile(deviceSet),{force:tr
 function hasSession(deviceSet){const value=readSession(deviceSet);return typeof value.token==='string'&&/^[0-9a-f]{64}$/.test(value.token)&&Number.isInteger(value.port)&&value.port>1023&&value.port<=65535;}
 let active=null;
 let controls=null;
-// A window counts as open while its live stream is connected, plus a short
-// grace after opening (before the stream attaches) and after it disconnects.
+// An open page's authenticated status polls count even without a live stream.
+// Keep a short grace after opening, polling or stream disconnection.
 const VIEWER_GRACE_MS=60000;
 let lastViewerSeen=0;
 function viewing(now=Date.now()){
@@ -141,6 +141,8 @@ async function initializeBridge(server,deviceSet,clipboardAction){
  server.clipboard=await createClipboard(server.base,clipboardAction,{
   port:server.port,
   status:async p=>{
+   // The page is still open even if its stream or device status is unavailable.
+   lastViewerSeen=Date.now();
    const state=controls?await controls.status():null;
    let currentApp=null,currentAppError;
    try{currentApp=await controls?.currentApp?.(p.udid)??null;}
