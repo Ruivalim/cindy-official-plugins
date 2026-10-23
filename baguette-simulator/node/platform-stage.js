@@ -76,7 +76,10 @@
     clearTimeout(panTimer);panTimer=null;
     const current=pan;
     for(const contact of discard?pans:current?[current]:[]){
-      contact.ending=true;if(discard)contact.pending=null;pumpPan(contact);
+      // Normal release drains accepted input; cancellation alone discards it.
+      // An already cancelled contact must never become normally ending again.
+      contact.ending=discard?'cancel':contact.ending||'finish';
+      if(discard)contact.pending=null;pumpPan(contact);
     }
     return current?.done||Promise.resolve();
   }
@@ -85,10 +88,10 @@
     // A relative desktop gesture has no absolute touchdown point. Leave room
     // in its initial direction, as a thumb starting near the opposite edge.
     const start={x:dx===0?.5:dx<0?.15:.85,y:dy===0?.5:dy<0?.15:.85};
-    const contact={id:crypto.randomUUID(),...start,pending:null,ready:false,busy:false,ending:false,finished:false,lastAt:Date.now()};
+    const contact={id:crypto.randomUUID(),...start,pending:null,ready:false,busy:false,ending:null,finished:false};
     contact.done=new Promise(resolve=>{contact.resolve=resolve;});pans.add(contact);pan=contact;
     (previous?.done||Promise.resolve()).then(async()=>{
-      if(stopped||contact.ending||document.hidden||Date.now()-contact.lastAt>250){finishPan(contact);return;}
+      if(stopped||contact.ending==='cancel'||document.hidden){finishPan(contact);return;}
       try{await parent.cindySim.api('trackpad',{gesture:contact.id,phase:'began',...start});contact.ready=true;pumpPan(contact);}
       catch{failPan(contact);}
     });
@@ -107,7 +110,7 @@
     // Natural-scroll deltas are opposite physical finger motion. A 300 CSS-px
     // displacement spans the touch surface, independent of TV stream resolution.
     contact.x=Math.max(0,Math.min(1,contact.x-dx/300));
-    contact.y=Math.max(0,Math.min(1,contact.y-dy/300));contact.lastAt=now;
+    contact.y=Math.max(0,Math.min(1,contact.y-dy/300));
     contact.pending={x:contact.x,y:contact.y};pumpPan(contact);
     clearTimeout(panTimer);panTimer=setTimeout(endPan,100);
   },{passive:false});

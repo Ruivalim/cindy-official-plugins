@@ -102,6 +102,24 @@ test('TV coalesces in-flight positions without losing displacement or queueing s
  assert.equal(s.calls.length,3);assert.equal(s.calls[2].y,1);assert.equal(s.calls[2].phase,'changed');
  release();await tick();assert.equal(s.calls.length,4);assert.equal(s.calls[3].phase,'ended');
 });
+test('TV normally finished queued short swipes survive slow acknowledgements before discrete input',async()=>{
+ for(const phase of ['began','changed','ended'])for(const delay of [101,1001]){
+  let ack,blocked=false;const s=stage('tvOS',async(_action,p)=>{if(p.phase===phase&&!blocked){blocked=true;await new Promise(resolve=>ack=resolve);}});
+  s.emit('wheel',{deltaY:-10});await tick();s.elapse(101);await tick();
+  for(let i=0;i<2;i++){s.emit('wheel',{deltaY:-20});s.elapse(101);}
+  s.elapse(delay);s.emit('contextmenu');await tick();
+  ack();await tick();
+  const groups=new Map();
+  for(const p of s.calls.filter(p=>p.action==='trackpad')){if(!groups.has(p.gesture))groups.set(p.gesture,[]);groups.get(p.gesture).push(p);}
+  assert.equal(groups.size,3,`every accepted short swipe is delivered after delayed ${phase}`);
+  let i=0;for(const packets of groups.values()){
+   assert.deepEqual(packets.map(p=>p.phase),['began','changed','ended']);
+   assert.ok(Math.abs(packets[1].y-packets[0].y-(i++?20:10)/300)<1e-9);assert.equal(packets[2].y,packets[1].y);
+  }
+  assert.deepEqual(s.calls.at(-1),{action:'press',button:'back'});
+  const ids=[...groups.keys()];assert.deepEqual(s.calls.filter(p=>p.action==='trackpad').map(p=>p.gesture),ids.flatMap(id=>[id,id,id]));
+ }
+});
 test('TV cancellation discards motion and starts across all unfinished wheel gestures',async()=>{
  for(const phase of ['began','changed','ended'])for(const stop of [s=>s.windowEvent('blur'),s=>s.hide(),s=>s.disconnect(),s=>s.windowEvent('pagehide'),s=>s.emit('pointercancel')]){
   let ack;const s=stage('tvOS',async(_action,p)=>{if(p.phase===phase)await new Promise(resolve=>ack=resolve);});
