@@ -13,6 +13,9 @@ const STATIC_ASSETS=new Map([
  ['/control.css',{file:'control.css',type:'text/css; charset=utf-8'}],
  ['/viewer-auth.js',{file:'viewer-auth.js',type:JS}],
  ['/viewer-stage.js',{file:'viewer-stage.js',type:JS}],
+ ['/platform-stage.js',{file:'platform-stage.js',type:JS}],
+ ['/vision-stage.js',{file:'vision-stage.js',type:JS}],
+ ['/platform-stage.html',{file:'platform-stage.html',type:'text/html; charset=utf-8'}],
 ]);
 async function createClipboard(origin,perform,control,preferred={}){
  const token=/^[0-9a-f]{64}$/.test(preferred.token||'')?preferred.token:randomBytes(32).toString('hex'),devices=new Set(),busy=new Set();const sockets=new Set(),clients=new Set();
@@ -66,7 +69,7 @@ async function createClipboard(origin,perform,control,preferred={}){
    p.udid=deviceId(p.udid);
    if(req.url==='/control-api'){
     res.setHeader('Set-Cookie',`cindy_viewer_${server.address().port}=${token}; HttpOnly; SameSite=Strict; Path=/`);
-    if(!['status','restart','release','shutdown','boot','screenshot','activity','catalog','create','rename','switch','reveal'].includes(p.action))return reply(400,{error:'Invalid action'});
+    if(!['status','restart','release','shutdown','boot','screenshot','activity','catalog','create','rename','switch','reveal','press','tap','trackpad','spatial','viewport'].includes(p.action))return reply(400,{error:'Invalid action'});
     try{const result=await control[p.action](p);return reply(result?.ok===false?409:200,result);}
     catch(error){return reply(503,{errorCode:error.code||'CONTROL_FAILED',error:'Operation not confirmed. Refresh the device status in Baguette settings.',execution:error.execution||'unknown'});}
    }

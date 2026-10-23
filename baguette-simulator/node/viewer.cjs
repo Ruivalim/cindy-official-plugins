@@ -154,6 +154,7 @@ async function initializeBridge(server,deviceSet,clipboardAction){
     currentApp,...(currentAppError?{currentAppError}:{}),settings:state?.settings,idleDeadline:state?.idleDeadline};
   },
   catalog:()=>controls.request('viewer_catalog'),
+  viewport:p=>controls.request('viewer_screen',{udid:p.udid}),
   create:async p=>{const created=await controls.request('create_device',{name:p.name,deviceType:p.deviceType,runtime:p.runtime});return {ok:true,created,devices:(await controls.status()).devices};},
   rename:async p=>{await controls.request('rename_device',{udid:p.targetUdid,name:p.name});return {ok:true,devices:(await controls.status()).devices};},
   switch:async p=>{const job=await controls.request('viewer_switch',{udid:p.udid,targetUdid:p.targetUdid,_locale:p.locale,task:p.task});server.clipboard.devices.add(job.targetUdid);return {ok:true,job};},
@@ -162,6 +163,10 @@ async function initializeBridge(server,deviceSet,clipboardAction){
   shutdown:p=>controls.request('settings_shutdown',{udid:p.udid}),
   // Both run under the runtime lock and the user's run switch, like Agent tools.
   boot:p=>controls.request('settings_boot',{udid:p.udid}),
+  press:p=>controls.request('press',{udid:p.udid,button:p.button}),
+  tap:p=>controls.request('viewer_tap',{udid:p.udid,x:p.x,y:p.y,duration:p.duration}),
+  trackpad:p=>controls.request('viewer_trackpad',{udid:p.udid,gesture:p.gesture,phase:p.phase,x:p.x,y:p.y}),
+  spatial:p=>controls.request('viewer_spatial',{udid:p.udid,gesture:p.gesture,phase:p.phase,mode:p.mode,x:p.x,y:p.y,z:p.z,aspect:p.aspect,spread:p.spread,angle:p.angle,yaw:p.yaw,pitch:p.pitch}),
   screenshot:p=>controls.request('screenshot',{udid:p.udid,destination:p.to==='clipboard'?'clipboard':'desktop'}),
   reveal:p=>controls.request('reveal_screenshot',{path:p.path}),
   activity:async()=>{await controls?.assertEnabled();controls?.touch();return {ok:true};},

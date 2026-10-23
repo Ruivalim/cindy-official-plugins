@@ -7,17 +7,30 @@ const crypto = require('node:crypto');
 const readline = require('node:readline');
 const {commandBudget} = require('./budget.cjs');
 const {deviceId} = require('./device-id.cjs');
+const {platform} = require('./control-model.js');
 const {openViewer,stopViewer,configureControls}=require('./viewer.cjs');
 const BINARY = path.join(__dirname, '../vendor/baguette/Baguette');
 const ROOT = path.join(os.homedir(), 'Library/Application Support/BaguetteCindy');
 const DEVICE_SET = path.join(ROOT, 'devices');
 const children = new Set();
-const methods = new Set(['environment','devices','create_device','rename_device','app_bundle','boot','shutdown','describe_ui','tap','swipe','gesture','type_text','press','screenshot','install_app','launch_app','heal','open_viewer','close_viewer','delete_device','erase_device','reveal_screenshot',
+const methods = new Set(['environment','devices','create_device','rename_device','app_bundle','boot','shutdown','describe_ui','tap','viewer_screen','viewer_tap','viewer_trackpad','viewer_spatial','swipe','gesture','type_text','press','screenshot','install_app','launch_app','heal','open_viewer','close_viewer','delete_device','erase_device','reveal_screenshot',
   'wait_for','capture','set_state','logs','app_install','app_install_status','app_info','app_terminate','app_uninstall','open_url']);
 // Agent operations that only read the device; they never change what is on screen.
-const READ_ONLY = new Set(['describe_ui','screenshot','wait_for','logs','app_info','app_install_status']);
+const READ_ONLY = new Set(['describe_ui','screenshot','wait_for','logs','app_info','app_install_status','viewer_screen']);
 class Failure extends Error {
   constructor(code, message, execution = 'not_executed') { super(message); this.code=code; this.execution=execution; }
+}
+let trackpadImpl;
+let spatialImpl;
+function spatial(){return spatialImpl||(spatialImpl=require('./spatial.cjs').createSpatial({binary:path.join(__dirname,'../native/spatial'),deviceSet:DEVICE_SET,children,Failure}));}
+function trackpad(){return trackpadImpl||(trackpadImpl=require('./trackpad.cjs').createTrackpad({binary:path.join(__dirname,'../native/trackpad'),deviceSet:DEVICE_SET,children,Failure}));}
+async function deviceViewer(device,locale){
+ if(['tvOS','visionOS'].includes(platform(device))) {
+  // Viewing still works if this Xcode lacks remote input. A later gesture
+  // reports the input failure through the normal guarded API.
+  try{const dev=(await run('/usr/bin/xcode-select',['-p'],{timeout:5000})).stdout;await (platform(device)==='tvOS'?trackpad():spatial()).prepare(device.udid,dev);}catch{}
+ }
+ return openViewer(BINARY,DEVICE_SET,children,device.udid,clipboardAction,locale);
 }
 function string(value,name,max=256) {
   if(typeof value!=='string'||!value.length||value.length>max||value.includes('\0')) throw new Failure('INVALID_ARGUMENT',`Invalid ${name}`);
@@ -34,7 +47,10 @@ function number(value,name,min,max) {
 }
 function run(file,args,{timeout=30000,mutation=false,input,env,trimOutput=true,encoding='utf8',maxBuffer=4*1024*1024}={}) {
   return new Promise((resolve,reject)=>{
-    const child=execFile(file,args,{timeout,maxBuffer,encoding,killSignal:'SIGKILL',shell:false,env},(err,stdout,stderr)=>{
+    // These bounded native adapters handle TERM by releasing their held input.
+    // Other commands retain the existing hard timeout behavior.
+    const releasesInput = ['remote','spatial'].some(name=>file===path.join(__dirname,'../native',name));
+    const child=execFile(file,args,{timeout,maxBuffer,encoding,killSignal:releasesInput?'SIGTERM':'SIGKILL',shell:false,env},(err,stdout,stderr)=>{
       children.delete(child);
       stderr=String(stderr||'');
       if(err) return reject(new Failure('COMMAND_FAILED',`${path.basename(file)}: ${(stderr||err.message).slice(-5000)}`,mutation?'unknown':'not_executed'));
@@ -77,7 +93,12 @@ async function desktopFile(deviceLabel){
   throw new Failure('SCREENSHOT_NAME','Could not name the screenshot');
 }
 let agentImpl=null,appsImpl=null;
-function agent(){return agentImpl||(agentImpl=require('./agent.cjs').createAgent({binary:BINARY,deviceSet:DEVICE_SET,root:ROOT,run,sim,Failure}));}
+async function spatialAction(device,p,screen,deadline){
+ const S=require('./spatial.cjs'),samples=S.plan(p,screen,Failure);
+ const dev=(await run('/usr/bin/xcode-select',['-p'],commandBudget(5000,deadline))).stdout;
+ await S.perform(spatial(),device.udid,samples,dev,deadline);
+}
+function agent(){return agentImpl||(agentImpl=require('./agent.cjs').createAgent({binary:BINARY,deviceSet:DEVICE_SET,root:ROOT,run,sim,Failure,spatialAction}));}
 function apps(){return appsImpl||(appsImpl=require('./apps.cjs').createApps({sim,run,Failure}));}
 const BUNDLE_ID=/^[A-Za-z0-9][A-Za-z0-9.-]+$/;
 function bundleId(value){const id=string(value,'bundleId');if(!BUNDLE_ID.test(id))throw new Failure('INVALID_ARGUMENT','Invalid bundle identifier');return id;}
@@ -101,13 +122,17 @@ const keyboardBusy=new Set();
 // (iOS records it about 2 s late; clearing sooner would be overwritten).
 const softTimers=new Map();
 function softKeyboardBack(device){
+  if(platform(device)!=='iOS')return;
   clearTimeout(softTimers.get(device.udid));
   const timer=setTimeout(()=>{softTimers.delete(device.udid);sim(['spawn',device.udid,'defaults','write','com.apple.keyboard.preferences','HardwareKeyboardLastSeen','-bool','false'],{timeout:10000}).catch(()=>{});},3000);
   timer.unref?.();softTimers.set(device.udid,timer);
 }
 async function nativeKey(device,code,modifiers=[],deadline) {
+ await trackpadImpl?.cancel(device.udid);
+ await spatialImpl?.cancel(device.udid);
  const [key,mask]=code?require('./keys.cjs').chord(code,modifiers):[0,0];
  const dev=(await run('/usr/bin/xcode-select',['-p'],commandBudget(5000,deadline))).stdout;
+ if(platform(device)==='tvOS')return run(path.join(__dirname,'../native/remote'),[DEVICE_SET,device.udid,dev,'key',String(key),String(mask),'0'],{mutation:true,...commandBudget(15000,deadline)});
  return run(path.join(__dirname,'../native/keyboard'),[DEVICE_SET,device.udid,dev,String(key),String(mask)],{mutation:true,...commandBudget(15000,deadline)});
 }
 async function clipboardAction(p) {
@@ -120,6 +145,7 @@ async function clipboardAction(p) {
   if(p.action==='release')return await nativeKey(device,null,[],p._deadline);
   if(p.action==='key')return await nativeKey(device,p.code,p.modifiers,p._deadline);
   if(p.action==='paste') {
+    if(platform(device)==='tvOS')throw new Failure('UNSUPPORTED_INPUT','tvOS has no simulator pasteboard. Use type_text method=type for up to 300 US-keyboard characters, or keys.');
     const text=string(p.text,'text',8000);
     // First release any existing repeat before replacing its clipboard payload
     // (not for a touch paste: any key event hides the on-screen keyboard).
@@ -158,22 +184,29 @@ async function dispatch(method,p={},deadline=Date.now()+110000) {
   const jsonCommand=async(file,args)=>{const {stdout}=await runCommand(file,args);try{return JSON.parse(stdout);}catch{throw new Failure('INVALID_OUTPUT','Command did not return JSON');}};
   if(!methods.has(method)) throw new Failure('UNKNOWN_TOOL','Unknown Baguette operation');
   if(process.platform!=='darwin'||process.arch!=='arm64') throw new Failure('UNSUPPORTED_PLATFORM','This package requires an Apple Silicon Mac');
+  // The native connection was bound to an owned, booted tvOS device on opening.
+  // Further samples must match its live gesture; rediscovering the device with
+  // simctl per sample destroys the continuous input cadence.
+  if(method==='viewer_trackpad')p.udid=deviceId(p.udid);
+  if(method==='viewer_trackpad'&&(p.phase!=='began'||trackpadImpl?.has(p.udid)))return trackpad().send(p.udid,p);
+  if(method==='viewer_spatial')p.udid=deviceId(p.udid);
+  if(method==='viewer_spatial'&&(p.phase!=='began'||spatialImpl?.has(p.udid)))return spatial().send(p.udid,p);
   const macOS=(await runCommand('/usr/bin/sw_vers',['-productVersion'],{timeout:3000})).stdout;
   if(!/^\d+\.\d+(?:\.\d+)?$/.test(macOS)||Number(macOS.split('.')[0])<15)throw new Failure('UNSUPPORTED_OS',`Requires macOS 15.0 or newer; detected ${macOS || 'unknown'}. Upgrade macOS before using this plugin.`);
   if(method==='environment') {
     const [version,xcode,runtimes,types]=await Promise.all([
       runCommand(BINARY,['--version']),runCommand('/usr/bin/xcodebuild',['-version']),
       jsonCommand('/usr/bin/xcrun',['simctl','list','runtimes','--json']),jsonCommand('/usr/bin/xcrun',['simctl','list','devicetypes','--json'])]);
-    return {macOS,baguette:version.stdout,xcode:xcode.stdout,deviceSet:DEVICE_SET,runtimes:runtimes.runtimes.filter(x=>x.isAvailable&&x.identifier.includes('.iOS-')).map(x=>({name:x.name,identifier:x.identifier,version:x.version,...(Array.isArray(x.supportedDeviceTypes)?{supportedDeviceTypes:x.supportedDeviceTypes.map(d=>d.identifier)}:{})})),deviceTypes:types.devicetypes.filter(x=>x.productFamily==='iPhone'||x.productFamily==='iPad').map(x=>({name:x.name,identifier:x.identifier,minRuntimeVersion:x.minRuntimeVersionString,maxRuntimeVersion:x.maxRuntimeVersionString})),note:'Xcode 26/27 are supported; iPhone Duo requires Xcode 27.1 and iOS 27.1. Use dedicated devices, observe UI before acting, and verify actions afterwards.'};
+    return {macOS,baguette:version.stdout,xcode:xcode.stdout,deviceSet:DEVICE_SET,runtimes:runtimes.runtimes.filter(x=>x.isAvailable&&/\.SimRuntime\.(?:iOS|tvOS|xrOS)-/.test(x.identifier)).map(x=>({name:x.name,identifier:x.identifier,version:x.version,...(Array.isArray(x.supportedDeviceTypes)?{supportedDeviceTypes:x.supportedDeviceTypes.map(d=>d.identifier)}:{})})),deviceTypes:types.devicetypes.filter(x=>['iPhone','iPad','Apple TV','Apple Vision'].includes(x.productFamily)).map(x=>({name:x.name,identifier:x.identifier,productFamily:x.productFamily,minRuntimeVersion:x.minRuntimeVersionString,maxRuntimeVersion:x.maxRuntimeVersionString})),note:'Xcode 26/27 are supported; iPhone Duo requires Xcode 27.1 and iOS 27.1. Use dedicated devices, observe UI before acting, and verify actions afterwards.'};
   }
-  if(method==='close_viewer') return {...await stopViewer(),execution:'executed',note:'Viewer server stopped; simulator and App remain running.'};
+  if(method==='close_viewer') {await trackpadImpl?.stop();await spatialImpl?.stop();return {...await stopViewer(),execution:'executed',note:'Viewer server stopped; simulator and App remain running.'};}
   if(method==='devices') return {deviceSet:DEVICE_SET,devices:await listDevices(deadline)};
   if(method==='create_device') {
     const name=deviceName(p.name), runtime=string(p.runtime,'runtime'), deviceType=string(p.deviceType,'deviceType');
-    if(!/^com\.apple\.CoreSimulator\.SimRuntime\.iOS-[0-9-]+$/.test(runtime)||!/^com\.apple\.CoreSimulator\.SimDeviceType\.[A-Za-z0-9-]+$/.test(deviceType)) throw new Failure('INVALID_ARGUMENT','Use runtime and deviceType identifiers from environment');
+    if(!/^com\.apple\.CoreSimulator\.SimRuntime\.(?:iOS|tvOS|xrOS)-[0-9-]+$/.test(runtime)||!/^com\.apple\.CoreSimulator\.SimDeviceType\.[A-Za-z0-9-]+$/.test(deviceType)) throw new Failure('INVALID_ARGUMENT','Use runtime and deviceType identifiers from environment');
     const installed=(await jsonCommand('/usr/bin/xcrun',['simctl','list','runtimes','--json'])).runtimes.find(r=>r.identifier===runtime&&r.isAvailable);
-    if(!installed)throw new Failure('RUNTIME_UNAVAILABLE','Select an available installed iOS runtime.');
-    if(Array.isArray(installed.supportedDeviceTypes)&&!installed.supportedDeviceTypes.some(d=>d.identifier===deviceType))throw new Failure('DEVICE_RUNTIME_MISMATCH','This runtime does not support the selected model. Refresh the model and iOS options.');
+    if(!installed)throw new Failure('RUNTIME_UNAVAILABLE','Select an available installed iOS, tvOS or visionOS runtime.');
+    if(Array.isArray(installed.supportedDeviceTypes)&&!installed.supportedDeviceTypes.some(d=>d.identifier===deviceType))throw new Failure('DEVICE_RUNTIME_MISMATCH','This runtime does not support the selected model. Refresh the model and OS options.');
     await fs.mkdir(DEVICE_SET,{recursive:true,mode:0o700});
     const unique=uniqueName(name,(await listDevices(deadline)).map(d=>d.name));
     const result=await simCommand(['create',unique,deviceType,runtime],{mutation:true});
@@ -188,6 +221,20 @@ async function dispatch(method,p={},deadline=Date.now()+110000) {
     return {execution:'executed'};
   }
   const device=await target(p,!['boot','shutdown','rename_device','delete_device','erase_device'].includes(method));
+  if(['shutdown','erase_device','delete_device'].includes(method))await trackpadImpl?.stop(device.udid);
+  if(['press','type_text','launch_app'].includes(method))await trackpadImpl?.cancel(device.udid);
+  if(['shutdown','erase_device','delete_device'].includes(method))await spatialImpl?.stop(device.udid);
+  if(['press','type_text','launch_app','tap','gesture'].includes(method))await spatialImpl?.cancel(device.udid);
+  if(method==='viewer_spatial') {
+    if(platform(device)!=='visionOS')throw new Failure('UNSUPPORTED_INPUT','Spatial input requires Vision Pro.');
+    const dev=(await runCommand('/usr/bin/xcode-select',['-p'],{timeout:5000})).stdout;
+    return spatial().send(device.udid,p,dev);
+  }
+  if(method==='viewer_trackpad') {
+    if(platform(device)!=='tvOS')throw new Failure('UNSUPPORTED_INPUT','Remote trackpad is only available on Apple TV.');
+    const dev=p.phase==='began'?(await runCommand('/usr/bin/xcode-select',['-p'],{timeout:5000})).stdout:null;
+    return trackpad().send(device.udid,p,dev);
+  }
   if(method==='delete_device'||method==='erase_device') {
     // simctl refuses to erase a booted device; delete would stop it mid-write.
     const action=method==='delete_device'?'delete':'erase';
@@ -221,7 +268,7 @@ async function dispatch(method,p={},deadline=Date.now()+110000) {
     if(!real.startsWith(root+path.sep))return {bundleId,appPath:null};
     return {bundleId,appPath:real};
   }
-  if(method==='open_viewer') return {udid:device.udid,...await openViewer(BINARY,DEVICE_SET,children,device.udid,clipboardAction,p._locale),execution:'executed'};
+  if(method==='open_viewer')return {udid:device.udid,...await deviceViewer(device,p._locale),execution:'executed'};
   if(method==='boot') {
     // Upstream 0.1.98's automatic heal omits --set in its internal simctl calls.
     // Wait for this exact custom-set device ourselves; do not silently restart apps.
@@ -230,7 +277,7 @@ async function dispatch(method,p={},deadline=Date.now()+110000) {
     // Baguette always warns about Simulator.app's lifetime setting; it does not apply to these headless devices.
     const warnings=(started?.warnings||ready.warnings||'').split('\n').filter(l=>l.trim()&&!/lifetime|^\[baguette\] Booted /.test(l)).join('\n');
     // A fresh device shows the slide-to-type introduction over the keyboard the first time it appears; it is not part of any App.
-    if(started){try{await simCommand(['spawn',device.udid,'defaults','write','com.apple.keyboard.preferences','DidShowContinuousPathIntroduction','-bool','true'],{timeout:10000,mutation:true});}catch{}}
+    if(started&&platform(device)==='iOS'){try{await simCommand(['spawn',device.udid,'defaults','write','com.apple.keyboard.preferences','DidShowContinuousPathIntroduction','-bool','true'],{timeout:10000,mutation:true});}catch{}}
     return settledShot(device,p,{udid:device.udid,state:'Booted',execution:started?'executed':'not_executed',...(warnings?{warnings}:{}),note:'Boot completed. If Device Hub has shadowed input, explicitly use heal (terminates running apps).'});
   }
   if(method==='shutdown') {
@@ -238,7 +285,14 @@ async function dispatch(method,p={},deadline=Date.now()+110000) {
     return bagCommand('shutdown',device,[],{timeout:60000,mutation:true});
   }
   if(method==='describe_ui') return agent().describe(device,p);
+  if(method==='viewer_screen') { const {screen}=await agent().geometry(device,{maxAge:0,deadline}); return {width:screen.width,height:screen.height}; }
   if(method==='tap') return agent().tap(device,p);
+  if(method==='viewer_tap') {
+    if(platform(device)!=='visionOS')throw new Failure('UNSUPPORTED_INPUT','Spatial selection is only available on Vision Pro.');
+    const x=number(p.x,'x',0,1),y=number(p.y,'y',0,1);
+    const {screen}=await agent().geometry(device,{maxAge:0,deadline});
+    return agent().tap(device,{x:x*screen.width,y:y*screen.height,duration:p.duration,observe:'none',_deadline:deadline});
+  }
   if(method==='gesture') return agent().gesture(device,p);
   if(method==='swipe') return agent().gesture(device,{kind:'swipe',from:[p.startX,p.startY],to:[p.endX,p.endY],duration:p.duration,observe:'none',_deadline:deadline});
   if(method==='wait_for') return agent().waitFor(device,p);
@@ -258,7 +312,10 @@ async function dispatch(method,p={},deadline=Date.now()+110000) {
   if(method==='type_text') {
     if(p.text===undefined&&p.keys===undefined&&p.clear!==true)throw new Failure('INVALID_ARGUMENT','Pass text, keys or clear');
     const how=p.method??'auto';
+    const tv=platform(device)==='tvOS';
+    if(tv&&how==='paste')throw new Failure('UNSUPPORTED_INPUT','tvOS has no simulator pasteboard. Use auto/type with US-keyboard text, or keys.');
     if(!['auto','paste','type','touch'].includes(how))throw new Failure('INVALID_ARGUMENT','method must be auto, paste, type or touch');
+    if(how==='touch'&&platform(device)!=='iOS')throw new Failure('UNSUPPORTED_INPUT','Touch edit-menu paste is only supported on iOS. Use method=paste or keys.');
     if(how==='touch'&&(p.clear===true||p.keys!==undefined))throw new Failure('INVALID_ARGUMENT','method=touch preserves the on-screen keyboard; omit clear and keys.');
     const {parseKey,typeable}=require('./keys.cjs');
     // Every key is checked before anything is sent.
@@ -266,6 +323,7 @@ async function dispatch(method,p={},deadline=Date.now()+110000) {
     if(rawKeys.length>40)throw new Failure('INVALID_ARGUMENT','At most 40 keys per call','not_executed');
     const keys=rawKeys.map(k=>{try{return parseKey(k);}catch(error){throw new Failure('INVALID_ARGUMENT',error.message);}});
     const text=p.text===undefined?undefined:string(p.text,'text (1–8000 characters)',8000);
+    if(tv&&text!==undefined&&(!typeable(text)||text.length>300))throw new Failure('INVALID_ARGUMENT','tvOS supports at most 300 US-keyboard characters per call; Unicode paste is not supported. Use remote keys to interact with the on-screen input method.');
     if(how==='type'&&text!==undefined&&!typeable(text))throw new Failure('INVALID_ARGUMENT','method=type types US-keyboard characters only (letters, digits, punctuation, space, newline). Use paste for other text such as Chinese.');
     if(how==='type'&&text!==undefined&&text.length>300)throw new Failure('INVALID_ARGUMENT','method=type is limited to 300 characters per call (about 0.1 s each); split the text or use paste.');
     let inputStarted=false;
@@ -275,8 +333,13 @@ async function dispatch(method,p={},deadline=Date.now()+110000) {
     let used=null,typed=null;
     if(text!==undefined){
       // Paste is exact and works with any input method; games often ignore it, so they get keystrokes.
-      used=how==='auto'?(typeable(text)&&text.length<=300&&!(await agent().hasAccessibility(device,p._deadline))?'type':'paste'):how;
-      if(used==='type'){typed=await agent().typeText(device,text,p._deadline);inputStarted=true;}
+      used=how==='auto'?(tv?'type':platform(device)==='visionOS'?'paste':typeable(text)&&text.length<=300&&!(await agent().hasAccessibility(device,p._deadline))?'type':'paste'):how;
+      if(used==='type'&&platform(device)==='tvOS'){
+        const chords=Array.from(text,c=>{const k=parseKey(c==='\n'?'Enter':c==='\t'?'Tab':c===' '?'Space':c);return require('./keys.cjs').chord(k.code,k.modifiers);});
+        const dev=(await runCommand('/usr/bin/xcode-select',['-p'],{timeout:5000})).stdout;
+        await runCommand(path.join(__dirname,'../native/remote'),[DEVICE_SET,device.udid,dev,'keys',JSON.stringify(chords),'0','0'],{mutation:true,timeout:40000});
+        inputStarted=true;typed={typed:text.length,inputSource:'US keyboard events sent; verify the focused field and input language.'};
+      }else if(used==='type'){typed=await agent().typeText(device,text,p._deadline);inputStarted=true;}
       else if(used==='touch'){await inputAction({action:'paste',text,touch:true});typed=await agent().pasteByTouch(device,p._deadline);}
       else await inputAction({action:'paste',text});
     }
@@ -288,7 +351,7 @@ async function dispatch(method,p={},deadline=Date.now()+110000) {
     if(used==='paste')notes.push('Text was pasted (Cmd+V). If the field stayed empty (some games ignore paste), retry with method=type.');
     if(used==='type')notes.push('Text was typed key by key; text fields may auto-capitalise or autocorrect it, as with a real keyboard.');
     if(used==='touch')notes.push('Pasted through the edit menu by touch; the on-screen keyboard stays as it was.');
-    if(keyEvents)notes.push('Key events act like a hardware keyboard and hide the on-screen keyboard during input. About 3 seconds after the last input, the plugin attempts to clear that hardware-keyboard record; tap outside and refocus the field to check whether the keyboard returns. To check keyboard overlap without sending keys, use method=touch. Enter may submit a form or confirm a game screen; to only end editing, tap an empty area.');
+    if(keyEvents&&platform(device)==='iOS')notes.push('Key events act like a hardware keyboard and hide the on-screen keyboard during input. About 3 seconds after the last input, the plugin attempts to clear that hardware-keyboard record; tap outside and refocus the field to check whether the keyboard returns. To check keyboard overlap without sending keys, use method=touch. Enter may submit a form or confirm a game screen; to only end editing, tap an empty area.');
     const typedResult={udid:device.udid,execution:'executed',...(used?{method:used}:{}),...(typed?.inputSource?{inputSource:typed.inputSource}:{}),...(keys.length?{keys:keys.map(k=>[...k.modifiers,k.code].join('+'))}:{}),note:notes.join(' ')};
     // Like tap: optionally wait for text and/or look at the result in the same call.
     return p.observe===undefined&&p.until===undefined?typedResult:await agent().after(device,{observe:p.observe??(p.until?undefined:'none'),settle:p.settle,until:p.until,_inline:p._inline,_deadline:p._deadline},typedResult);
@@ -298,8 +361,19 @@ async function dispatch(method,p={},deadline=Date.now()+110000) {
     await clipboardAction({udid:device.udid,action:'release',_deadline:p._deadline});
     return {udid:device.udid,execution:'executed',note:'Stuck keys released; nothing restarted.'};
   }
+  if(method==='press'&&platform(device)==='tvOS') {
+    const remote={up:82,down:81,left:80,right:79,select:40,back:41,menu:41};
+    const buttons={home:64,'play-pause':205,'volume-up':233,'volume-down':234};
+    const kind=Object.hasOwn(remote,p.button)?'key':Object.hasOwn(buttons,p.button)?'button':null;
+    if(!kind)throw new Failure('INVALID_ARGUMENT','Apple TV buttons: up, down, left, right, select, back, menu, home, play-pause, volume-up, volume-down, release-input');
+    const duration=p.duration===undefined?0:number(p.duration,'duration',0,10);
+    const dev=(await runCommand('/usr/bin/xcode-select',['-p'],{timeout:5000})).stdout;
+    await runCommand(path.join(__dirname,'../native/remote'),[DEVICE_SET,device.udid,dev,kind,String((kind==='key'?remote:buttons)[p.button]),'0',String(duration)],{mutation:true,timeout:20000});
+    return {udid:device.udid,execution:'executed'};
+  }
   if(method==='press') {
-    const allowed=['home','lock','power','volume-up','volume-down','action','app-switcher','swipe-to-app-switcher','swipe-to-home','pull-down-to-notification-center','pull-down-to-lock-screen'];
+    if(platform(device)==='visionOS'&&p.button==='home')p={...p,button:'digital-crown'};
+    const allowed=platform(device)==='visionOS'?['digital-crown']:['home','lock','power','volume-up','volume-down','action','app-switcher','swipe-to-app-switcher','swipe-to-home','pull-down-to-notification-center','pull-down-to-lock-screen'];
     if(!allowed.includes(p.button)) throw new Failure('INVALID_ARGUMENT',`button must be one of ${allowed.join(', ')} or release-input`);
     const args=['--button',p.button];
     if(p.duration!==undefined)args.push('--duration',String(number(p.duration,'duration',0,10)));
@@ -368,11 +442,12 @@ async function dispatch(method,p={},deadline=Date.now()+110000) {
     const launched={udid:device.udid,bundleId:id,...await simCommand(args,{mutation:true,env}),execution:'executed'};
     if(p.showViewer===false)return settledShot(device,p,launched);
     let viewer;
-    try{viewer={viewer:await openViewer(BINARY,DEVICE_SET,children,device.udid,clipboardAction,p._locale)};}
+    try{viewer={viewer:await deviceViewer(device,p._locale)};}
     catch(error){viewer={viewer:{previewOpened:false,error:error.message},note:'App launched, but viewer failed. Retry viewer action=open, not launch.'};}
     return settledShot(device,p,{...launched,...viewer});
   }
   if(method==='heal') {
+    if(platform(device)!=='iOS')throw new Failure('UNSUPPORTED_INPUT','heal is only supported on iOS. Try press release-input for stuck keys.');
     // Baguette's documented repair sequence, scoped to our private device set.
     const jobs=await simCommand(['spawn',device.udid,'launchctl','list']);
     const pid=text=>text.split('\n').find(l=>l.trim().endsWith('com.apple.SpringBoard'))?.trim().split(/\s+/)[0];
@@ -416,6 +491,8 @@ function startWorker() {
   let stopping=false;
   const stop=async()=>{
     if(stopping)return;stopping=true;clearInterval(timer);clearInterval(recycle);
+    await trackpadImpl?.stop();
+    await spatialImpl?.stop();
     // Host may force termination before this completes. User-facing stop
     // controls await and verify shutdown instead of relying on process exit.
     require('./viewer.cjs').abandonViewer();

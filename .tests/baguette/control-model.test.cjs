@@ -83,3 +83,20 @@ test('zoom steps from any percentage to the next Simulator-style step, and stays
  assert.equal(M.zoomFactor({mode:'pct',pct:300},10),6);assert.equal(M.zoomFactor({mode:'pct',pct:25},200),0.2);
  assert.equal(M.zoomPct({mode:'fit'},57.4),57);assert.equal(M.zoomPct({mode:'pct',pct:150},57),150);assert.equal(M.zoomPct({mode:'fit'},0),100);
 });
+
+test('TV and Vision keep their platform, rectangular frame and compatible runtimes',()=>{
+ const tv={identifier:'com.apple.CoreSimulator.SimDeviceType.Apple-TV-4K',name:'Living Room',productFamily:'Apple TV'};
+ const vision={identifier:'com.apple.CoreSimulator.SimDeviceType.Apple-Vision-Pro-4K',name:'Spatial',productFamily:'Apple Vision'};
+ const phone={identifier:'t.iPhone',name:'iPhone 17'};
+ const runtimes=[{identifier:'r.iOS-27-0',version:'27.0'},{identifier:'r.tvOS-27-0',version:'27.0'},{identifier:'r.xrOS-27-0',version:'27.0'}];
+ const catalog={deviceTypes:[tv,vision,phone],runtimes};
+ for(const [d,kind,label,index] of [[tv,'tv','tvOS',1],[vision,'vision','visionOS',2]]){
+  assert.equal(M.family(d),kind);assert.equal(M.platform(d),label);
+  assert.equal(M.screenRadius(d,1920),0);
+  assert.deepEqual(M.runtimesFor(catalog,d.identifier),[runtimes[index]],'same version does not imply same platform');
+  assert.equal(M.runtimeLabel(runtimes[index].identifier),label+' 27.0');
+ }
+ assert.equal(M.defaultChoice(catalog).deviceType,phone.identifier,'adding TV and Vision must not change the default phone');
+ assert.equal(M.defaultChoice({...catalog,deviceTypes:[tv]}).runtime,runtimes[1].identifier);
+ assert.deepEqual(M.runtimesFor({...catalog,runtimes:[{...runtimes[1],supportedDeviceTypes:[]}]},tv.identifier),[]);
+});

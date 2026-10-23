@@ -5,7 +5,7 @@
 // that task does not use yet can be opened in it.
 const TEXT = {
   en: {
-    title: 'Simulators', search: 'Search', add: 'New device', newIphone: 'iPhone…', newIpad: 'iPad…',
+    title: 'Simulators', search: 'Search', add: 'New device', newIphone: 'iPhone…', newIpad: 'iPad…', newTv: 'Apple TV…', newVision: 'Vision Pro…',
     running: 'Running', off: 'Off', none: 'No matches',
     start: 'Start', starting: 'Starting…', stop: 'Shut Down', stopping: 'Shutting down…', open: 'Open in Current Task', rename: 'Rename',
     erase: 'Erase All Content and Settings…', remove: 'Delete…', more: 'More',
@@ -23,7 +23,7 @@ const TEXT = {
     readFailed: 'Could not read the devices.', stateFailed: 'Task binding was saved, but its status or screen could not be read. Refresh the task; do not repeat the binding.', recordFailed: 'Device operation completed, but its task or App record was not saved. Check storage before assigning or switching devices; do not repeat the operation.',
   },
   'zh-CN': {
-    title: '模拟器', search: '搜索', add: '新建设备', newIphone: 'iPhone…', newIpad: 'iPad…',
+    title: '模拟器', search: '搜索', add: '新建设备', newIphone: 'iPhone…', newIpad: 'iPad…', newTv: 'Apple TV…', newVision: 'Vision Pro…',
     running: '运行中', off: '已关闭', none: '没有匹配的设备',
     start: '启动', starting: '正在启动…', stop: '关闭', stopping: '正在关闭…', open: '在当前任务中打开', rename: '改名',
     erase: '抹掉所有内容和设置…', remove: '删除…', more: '更多',
@@ -55,7 +55,7 @@ const glyphFor = (d) => {
     : /Vision|xrOS|RealityDevice/i.test(kind) ? GLYPH.vision : /Watch/i.test(kind) ? GLYPH.watch : GLYPH.iphone;
 };
 const modelName = (d) => models.get(d.deviceType) || String(d.deviceType || '').replace(/^.*SimDeviceType\./, '').replace(/-/g, ' ');
-const osVersion = (d) => M.runtimeLabel(d.runtime).replace(/^iOS /, '');
+const osVersion = (d) => M.runtimeLabel(d.runtime);
 const usage = (d) => d.thisTask ? T.thisTask : d.tasks ? T.tasks(d.tasks) : T.idle;
 const enabled = () => state?.settings?.enabled !== false;
 let messageTimer = null;
@@ -175,7 +175,7 @@ function hero(d, note) {
   else {
     const working = busy[d.udid], running = d.state !== 'Shutdown' && enabled();
     children = [big(glyphFor(d)), h('h2', { text: d.state === 'Shutdown' ? T.offTitle(d.name) : d.name }),
-      h('p', { class: 'hero-meta', text: `${modelName(d)} · iOS ${osVersion(d)} · ${usage(d)}` }),
+      h('p', { class: 'hero-meta', text: `${modelName(d)} · ${osVersion(d)} · ${usage(d)}` }),
       h('p', { text: !enabled() ? T.pausedBody : running ? T.screenLost : T.offBody }),
       h('div', { class: 'hero-actions' }, working ? [h('span', { class: 'spinner' }), h('span', { class: 'hero-working', text: working })] : [
         running ? h('button', { class: 'btn cta', text: T.retry, onclick: () => showScreen(d) })
@@ -239,7 +239,7 @@ async function newDevice(family) {
   $('add').innerHTML = GLYPH.plus; $('add').title = T.add; $('add').setAttribute('aria-label', T.add);
   $('search-glyph').innerHTML = GLYPH.search; $('search').placeholder = T.search;
   $('search').addEventListener('input', (e) => { query = e.target.value.trim().toLowerCase(); renderList(); });
-  $('add').addEventListener('click', () => showMenu($('add'), [item(T.newIphone, () => newDevice('iphone'), { disabled: !enabled() }), item(T.newIpad, () => newDevice('ipad'), { disabled: !enabled() })]));
+  $('add').addEventListener('click', () => showMenu($('add'), [item(T.newIphone, () => newDevice('iphone'), { disabled: !enabled() }), item(T.newIpad, () => newDevice('ipad'), { disabled: !enabled() }), item(T.newTv, () => newDevice('tv'), { disabled: !enabled() }), item(T.newVision, () => newDevice('vision'), { disabled: !enabled() })]));
   render(); await refresh();
   catalog().then((c) => { for (const t of c.deviceTypes || []) models.set(t.identifier, t.name); render(); }).catch(() => {});
   setInterval(() => { if (!document.hidden && !openMenu && !renaming && !Object.keys(busy).length && !document.querySelector('dialog[open]')) refresh(); }, 4000);

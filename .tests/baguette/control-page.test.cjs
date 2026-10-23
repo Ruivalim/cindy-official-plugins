@@ -1,7 +1,7 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const vm=require('node:vm');const path=require('node:path');
 const node=path.join(__dirname,'../../baguette-simulator/node');
 const udid='00000000-0000-4000-8000-000000000001',other='00000000-0000-4000-8000-000000000002';
-const IDS='screen stage frame overlay dock chip-dot chip-name status btn-home btn-rotl btn-rotr btn-shot btn-shot-menu btn-more scroll title title-dot title-name title-sub zoom zoom-out zoom-label zoom-in tools posture device-chip confirm-title confirm-body confirm-cancel confirm-ok confirm-dialog device-dialog device-form dialog-title dialog-hint f-name-text f-model-text f-runtime-text dialog-cancel dialog-save f-model-label f-runtime-label dialog-error f-name f-model f-runtime'.split(' ');
+const IDS='screen stage frame overlay dock chip-dot chip-name status btn-home btn-rotl btn-rotr btn-shot btn-shot-menu btn-more scroll title title-dot title-name title-sub zoom zoom-out zoom-label zoom-in tools posture tv-remote device-chip confirm-title confirm-body confirm-cancel confirm-ok confirm-dialog device-dialog device-form dialog-title dialog-hint f-name-text f-model-text f-runtime-text dialog-cancel dialog-save f-model-label f-runtime-label dialog-error f-name f-model f-runtime'.split(' ');
 
 // A deliberately small DOM: enough for control.js to render and for the test to read back.
 function fakeDocument(){
@@ -71,6 +71,44 @@ test('a newly opened task view connects while its first status request is pendin
    assert.match(dom.text(dom.byId.overlay),/画面已断开/);
    assert.equal(dom.byId.overlay.querySelector('button').textContent,'恢复画面');
   }
+ }
+});
+
+test('camera buttons distinguish clicks from captured drags, cancel cleanly and keep keyboard activation',async()=>{
+ const {dom}=await boot({respond:()=>status()}),calls=[];
+ dom.byId.screen.contentWindow.cindyVision={choose:m=>calls.push(['choose',m]),cameraDrag:m=>{calls.push(['begin',m]);return {move:(x,y)=>calls.push(['move',x,y]),end:cancel=>calls.push(['end',cancel])};}};
+ const b=dom.byId.tools.querySelectorAll('button').find(b=>b.attrs['data-vision']==='pan');
+ let capture=false;b.setPointerCapture=()=>capture=true;b.hasPointerCapture=()=>capture;b.releasePointerCapture=()=>capture=false;
+ const emit=(type,over={})=>b.dispatch(type,{button:0,pointerId:1,clientX:100,clientY:100,detail:1,preventDefault(){},...over});
+ emit('pointerdown');emit('pointermove',{clientX:102});emit('pointerup');emit('click');assert.deepEqual(calls,[['choose','pan']]);
+ calls.length=0;emit('pointerdown');emit('pointermove',{clientX:150,clientY:80});emit('pointerup');emit('click');
+ assert.deepEqual(calls,[['begin','pan'],['move',50,-20],['end',false]]);assert.equal(capture,false);assert.equal(b.dataset.dragging,undefined);
+ calls.length=0;emit('pointerdown');emit('pointermove',{clientX:130});emit('pointercancel');emit('pointermove',{clientX:160});emit('pointerup');emit('click');
+ assert.deepEqual(calls,[['begin','pan'],['move',30,0],['end',true]]);
+ emit('click',{detail:0});assert.deepEqual(calls.at(-1),['choose','pan']);
+ assert.match(b.attrs.title,/保留当前指针模式/);
+});
+
+test('shared help follows the device, opens without device input and action buttons are not toggles',async()=>{
+ for(const [name,runtime,expected] of [['iPhone','iOS-27','旋转'],['iPad','iOS-27','旋转'],['Apple TV','tvOS-27','当前焦点'],['Apple Vision Pro','xrOS-27','临时调整视角']]){
+  const {dom,calls}=await boot({respond:()=>status({device:{udid,name,runtime,state:'Booted'}})});
+  const buttons=dom.byId.tools.querySelectorAll('button'),help=buttons.find(b=>b.attrs.id==='btn-controls-help');
+  assert.ok(help);assert.equal(help.attrs['aria-pressed'],undefined);
+  assert.equal(buttons.find(b=>b.attrs['data-vision']==='reset').attrs['aria-pressed'],undefined);
+  const before=calls.length;help.dispatch('click');
+  const dialog=dom.body.children.find(b=>b.attrs.id==='controls-help');
+  assert.equal(dialog.open,true);assert.match(dom.text(dialog),new RegExp(expected));assert.match(dom.text(dialog),/高亮/);assert.equal(calls.length,before);
+  dialog.querySelector('button').dispatch('click');assert.equal(dialog.open,false);
+ }
+});
+
+test('status refresh keeps an in-flight screenshot disabled on every platform',async()=>{
+ for(const runtime of ['iOS-27','tvOS-27','xrOS-27']){
+  let finish;
+  const {dom,poll,calls}=await boot({respond:({action})=>action==='screenshot'?new Promise(resolve=>finish=resolve):status({device:{udid,name:'Fixture',runtime,state:'Booted'}})});
+  const shot=dom.byId['btn-shot'],pending=shot.listeners.click[0]();await poll();
+  assert.equal(shot.disabled,true);await shot.listeners.click[0]();assert.equal(calls.filter(c=>c.action==='screenshot').length,1);
+  finish({ok:true,path:'/fixture/shot.png'});await pending;assert.equal(shot.disabled,false);
  }
 });
 
@@ -177,4 +215,21 @@ test('a page that outlives its service says how to reopen, then reconnects on it
  assert.equal(dom.byId.screen.loads.at(-1),`/simulators/${udid}?handheld=0&cindyViewer=token#cindyClipboard=123.token`,'reloaded without opening a new tab');
  mode='expired';await poll();
  assert.match(dom.text(dom.byId.overlay),/这个画面已过期/);assert.equal(dom.byId.status.textContent,'画面已过期');
+});
+
+test('rectangular TV and Vision zoom uses view points, preserves actual size and reduces monotonically',async()=>{
+ for(const runtime of ['tvOS-27-0','xrOS-27-0']){
+  const f=await boot({respond:({action})=>action==='viewport'?{width:1920,height:1080}:status({device:{udid,name:'Rectangle',state:'Booted',runtime}})});
+  f.dom.byId.stage.getBoundingClientRect=()=>({width:300,height:200});
+  await f.sim.measure();assert.equal(f.sim.state.fitPct,15.625);
+  f.sim.setZoom({mode:'pct',pct:100});assert.equal(f.dom.byId.frame.style.width,'1920px');
+  f.sim.setZoom({mode:'pct',pct:75});assert.equal(f.dom.byId.frame.style.width,'1440px');
+  await f.sim.measure();assert.equal(f.sim.state.fitPct,15.625);
+  f.dom.byId.stage.getBoundingClientRect=()=>({width:600,height:400});
+  await f.sim.measure();assert.equal(f.sim.state.fitPct,31.25);assert.equal(f.dom.byId.frame.style.width,'1440px');
+  f.sim.setZoom({mode:'fit'});assert.equal(f.dom.byId.frame.style.width,'600px');
+  f.context.getComputedStyle=()=>({paddingLeft:'12px',paddingRight:'12px',paddingTop:'12px',paddingBottom:'64px'});
+  f.sim.setZoom({mode:'pct',pct:100});await f.sim.measure();
+  assert.equal(f.sim.state.fitPct,30);assert.equal(f.dom.byId.frame.style.width,'1944px','screen points exclude the fixed frame padding');
+ }
 });

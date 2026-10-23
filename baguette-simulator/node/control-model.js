@@ -20,9 +20,9 @@
       confirmShutdownTitle: (name) => `关闭 ${name}？`, confirmShutdownBody: 'App 会退出，设备数据和登录状态保留。', cancel: '取消', confirmShutdown: '关闭',
       stopped: '设备已关闭', released: '按键已释放', shotSaved: '截图已保存', shotFailed: '截图失败', actionFailed: '操作没有完成，请核对设备状态',
       switching: { preparing: '正在准备…', stopping: (n) => `正在关闭 ${n}…`, booting: (n) => `正在启动 ${n}…`, installing: '正在安装 App…', launching: '正在打开 App…', opening: '正在连接画面…', done: '已切换', failed: '切换没有完成', recordFailed: '任务绑定或 App 记录未保存，请检查存储，不要重复设备操作' },
-      dialogAdd: '添加设备', dialogRename: '重命名', name: '名称', model: '机型', runtime: 'iOS 版本', create: '创建', save: '保存',
+      dialogAdd: '添加设备', dialogRename: '重命名', name: '名称', model: '机型', runtime: '系统版本', create: '创建', save: '保存',
       addHint: '新设备创建后保持关闭，切换到它时才会启动。', renameHint: '改名不影响 App 和数据。',
-      noRuntime: '没有可用的 iOS 版本。请先在 Xcode 中安装。', loading: '正在读取机型…', created: '已创建', saved: '已保存',
+      noRuntime: '没有与机型兼容的系统版本。请先在 Xcode 中安装。', loading: '正在读取机型…', created: '已创建', saved: '已保存',
       runningMeta: '运行中', offMeta: '已关闭', busyMeta: '处理中',
       rotateLeft: '向左旋转', rotateRight: '向右旋转', zoomIn: '放大', zoomOut: '缩小', zoomActual: '实际大小', zoomFitShort: '适合',
       pose: { shut: '合上', open: '半展开', flat: '展开' }, posture: '姿态',
@@ -45,9 +45,9 @@
       confirmShutdownTitle: (name) => `Shut down ${name}?`, confirmShutdownBody: 'Apps quit. Device data and sign-ins are kept.', cancel: 'Cancel', confirmShutdown: 'Shut down',
       stopped: 'Device shut down', released: 'Keys released', shotSaved: 'Screenshot saved', shotFailed: 'Screenshot failed', actionFailed: 'Not completed. Check the device state.',
       switching: { preparing: 'Preparing…', stopping: (n) => `Shutting down ${n}…`, booting: (n) => `Starting ${n}…`, installing: 'Installing app…', launching: 'Opening app…', opening: 'Connecting view…', done: 'Switched', failed: 'Switch did not finish', recordFailed: 'Task or App record was not saved. Check storage; do not repeat the device operation' },
-      dialogAdd: 'Add device', dialogRename: 'Rename', name: 'Name', model: 'Model', runtime: 'iOS version', create: 'Create', save: 'Save',
+      dialogAdd: 'Add device', dialogRename: 'Rename', name: 'Name', model: 'Model', runtime: 'OS version', create: 'Create', save: 'Save',
       addHint: 'New devices stay off until you switch to them.', renameHint: 'Renaming keeps apps and data.',
-      noRuntime: 'No iOS runtime available. Install one in Xcode first.', loading: 'Loading models…', created: 'Created', saved: 'Saved',
+      noRuntime: 'No compatible OS runtime available. Install one in Xcode first.', loading: 'Loading models…', created: 'Created', saved: 'Saved',
       runningMeta: 'Running', offMeta: 'Off', busyMeta: 'Busy',
       rotateLeft: 'Rotate Left', rotateRight: 'Rotate Right', zoomIn: 'Zoom In', zoomOut: 'Zoom Out', zoomActual: 'Actual Size', zoomFitShort: 'Fit',
       pose: { shut: 'Closed', open: 'Half open', flat: 'Flat' }, posture: 'Posture',
@@ -57,19 +57,67 @@
 
   const strings = (lang) => STRINGS[lang] || STRINGS.en;
 
+  // One interaction vocabulary for every device, with platform-specific input.
+  function controlHelp(lang, device) {
+    const zh = lang === 'zh-CN', kind = platform(device);
+    const common = zh ? [
+      '单击动作按钮执行一次；模式或开关高亮表示当前已选中或已开启。',
+      '悬停查看按钮说明和快捷键；键盘 Tab 聚焦，Enter 或空格激活。触屏可点此入口查看操作说明。',
+      '主屏幕：⇧⌘H；截图：⌘S。截图旁的箭头选择保存位置。顶部缩放只改变查看大小。',
+    ] : [
+      'Click an action button once to execute it. Highlighted modes and toggles remain selected or enabled.',
+      'Hover for instructions and shortcuts; Tab focuses a button, and Enter or Space activates it. On touch screens, open this guide.',
+      'Home: ⇧⌘H. Screenshot: ⌘S; its arrow chooses the destination. Top-bar zoom changes only the viewing size.',
+    ];
+    const specific = kind === 'visionOS' ? (zh ? [
+      '画面中点击或长按对应捏合，按住拖动移动物体；Shift 拖动调整远近，Option 拖动双手缩放或旋转，Control 拖动转向。',
+      '转向、平移、环绕、前后移动：单击选择画面拖动模式；直接拖动按钮临时调整视角，松手保持原模式。复位恢复初始视角。',
+      'WASD / 方向键移动，Q/E 下降/上升；触控板双指滚动平移、捏合前后移动。键盘输入开关开启后，按键交给设备。Esc 退出键盘或指针捕获。',
+      '录屏按钮单击开始，再次单击停止并保存。主屏幕按钮模拟数码旋钮。',
+    ] : [
+      'Click or hold to pinch; drag to move objects. Shift-drag changes depth, Option-drag scales or rotates with two hands, and Control-drag turns the camera.',
+      'Tilt, pan, orbit and dolly: click to select the canvas mode, or drag the button for temporary camera movement without changing mode. Reset restores the starting view.',
+      'WASD / arrows move, Q/E lower/raise. Two-finger scrolling pans; trackpad pinch moves forward/back. Keyboard capture sends keys to the device. Esc releases keyboard or pointer capture.',
+      'Click Record to start, then again to stop and save. Home simulates the Digital Crown.',
+    ]) : kind === 'tvOS' ? (zh ? [
+      '遥控方向按钮或键盘方向键移动焦点；确认按钮或 Enter 选择；返回按钮或 Esc 返回；空格播放/暂停。',
+      '点击画面任意位置确认当前焦点；右键返回。触控板双指滚动模拟 Siri Remote 滑动，点击位置不代表要选择的电视元素。',
+    ] : [
+      'Remote arrows or keyboard arrows move focus. Select or Enter confirms; Back or Esc returns; Space plays/pauses.',
+      'Click anywhere in the view to confirm the focused item; right-click goes back. Two-finger scrolling simulates Siri Remote swipes. Click position does not select a TV element.',
+    ]) : (zh ? [
+      '在画面中点击、长按和拖动，操作对应位置的 App 内容。',
+      '旋转按钮每次转动 90°（⌘← / ⌘→）。折叠设备的姿态按钮选择合上、半展开或展开，高亮表示当前姿态。',
+    ] : [
+      'Click, hold and drag in the view to interact with app content at that position.',
+      'Rotation buttons turn the device 90° (⌘← / ⌘→). Foldable posture buttons select closed, half-open or flat; the current posture is highlighted.',
+    ]);
+    return {title:zh?'操作说明':'Controls help',close:zh?'关闭':'Close',common,specific};
+  }
+
   /** "iOS 27.1" from a CoreSimulator runtime identifier or name. */
   function runtimeLabel(runtime) {
     if (!runtime) return '';
-    const m = /iOS[-\s]?([0-9]+)(?:[-.]([0-9]+))?/.exec(runtime);
-    return m ? `iOS ${m[1]}${m[2] !== undefined ? '.' + m[2] : ''}` : runtime;
+    const m = /(iOS|tvOS|xrOS|visionOS)[-\s]?([0-9]+)(?:[-.]([0-9]+))?/.exec(runtime);
+    return m ? `${m[1] === 'xrOS' ? 'visionOS' : m[1]} ${m[2]}${m[3] !== undefined ? '.' + m[3] : ''}` : runtime;
   }
 
-  const family = (device) => /iPad/i.test(device?.deviceType || device?.name || '') ? 'ipad' : 'iphone';
+  function family(device) {
+    const type = device?.productFamily || device?.deviceType || device?.identifier || device?.name || '';
+    return /Apple[- ]?TV/i.test(type) ? 'tv' : /Apple[- ]?Vision/i.test(type) ? 'vision' : /iPad/i.test(type) ? 'ipad' : 'iphone';
+  }
+  function platform(device) {
+    const runtime = device?.runtime || device?.identifier || device?.name || '';
+    if (/tvOS/.test(runtime)) return 'tvOS';
+    if (/xrOS|visionOS/.test(runtime)) return 'visionOS';
+    const kind = family(device);
+    return kind === 'tv' ? 'tvOS' : kind === 'vision' ? 'visionOS' : 'iOS';
+  }
 
   /** Corner radius of the live screen, in CSS px, for a portrait screen box of `width` px. */
   function screenRadius(device, width) {
     if (!width || width <= 0) return 0;
-    return Math.round(width * (family(device) === 'ipad' ? 0.035 : 0.13));
+    return Math.round(width * ({iphone: 0.13, ipad: 0.035, tv: 0, vision: 0}[family(device)]));
   }
 
   /** Status dot + label from a status response and page flags. */
@@ -137,6 +185,7 @@
     const chosen = catalog?.deviceTypes?.find((d) => d.identifier === deviceTypeId);
     return (catalog?.runtimes || []).filter((r) => {
       if (!chosen) return true;
+      if (platform(r) !== platform(chosen)) return false;
       if (Array.isArray(r.supportedDeviceTypes) && !r.supportedDeviceTypes.includes(chosen.identifier)) return false;
       return version(r.version) >= version(chosen.minRuntimeVersion) && version(r.version) <= version(chosen.maxRuntimeVersion || '65535.255.255');
     }).sort((a, b) => version(a.version) - version(b.version));
@@ -151,9 +200,10 @@
     const variant = (name) => (/^iPhone \d+ Pro$/.test(name) ? 0 : /^iPhone \d+$/.test(name) ? 1 : 2);
     const numbered = types.filter((d) => generation(d.name) > 0)
       .sort((a, b) => generation(b.name) - generation(a.name) || variant(a.name) - variant(b.name));
-    const phones = types.filter((d) => !numbered.includes(d) && !/iPad/i.test(d.name));
-    const pads = types.filter((d) => /iPad/i.test(d.name));
-    for (const d of [...numbered, ...phones, ...pads]) {
+    const phones = types.filter((d) => !numbered.includes(d) && family(d) === 'iphone');
+    const pads = types.filter((d) => family(d) === 'ipad');
+    const others = types.filter((d) => ['tv', 'vision'].includes(family(d)));
+    for (const d of [...numbered, ...phones, ...pads, ...others]) {
       const runtimes = runtimesFor(catalog, d.identifier);
       if (runtimes.length) return { deviceType: d.identifier, runtime: runtimes[runtimes.length - 1].identifier, name: d.name };
     }
@@ -175,7 +225,7 @@
   /** The percentage the zoom state shows, given the fitted percentage. */
   const zoomPct = (zoom, fitPct) => Math.round(zoom?.mode === 'pct' ? zoom.pct : (fitPct > 0 ? fitPct : 100));
 
-  const api = { STRINGS, strings, runtimeLabel, family, screenRadius, presence, overlay, idleLeft, clock, deviceRows, runtimesFor, defaultChoice, ZOOM_STEPS, zoomStep, zoomFactor, zoomPct };
+  const api = { STRINGS, strings, controlHelp, runtimeLabel, family, platform, screenRadius, presence, overlay, idleLeft, clock, deviceRows, runtimesFor, defaultChoice, ZOOM_STEPS, zoomStep, zoomFactor, zoomPct };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.CindySimModel = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

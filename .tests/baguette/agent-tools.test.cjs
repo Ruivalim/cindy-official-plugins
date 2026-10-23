@@ -73,10 +73,10 @@ test('a rejected touch releases the finger and reports whether anything was deli
  assert.deepEqual(sent.slice(0,3),['touch1-down','touch1-move','touch1-up']);
 });
 
-function fakeApps({installed,changed=0}){
+function fakeApps({installed,changed=0,platforms=['iPhoneSimulator']}){
  const calls=[];
- const plists={'/build/Game.app':{CFBundleIdentifier:'com.example.game',CFBundleExecutable:'Game',CFBundleShortVersionString:'1.0',CFBundleVersion:'7'},
-  '/sim/Game.app':installed&&{CFBundleIdentifier:'com.example.game',CFBundleExecutable:'Game',CFBundleShortVersionString:'1.0',CFBundleVersion:installed.build||'7'}};
+ const plists={'/build/Game.app':{CFBundleSupportedPlatforms:platforms,CFBundleIdentifier:'com.example.game',CFBundleExecutable:'Game',CFBundleShortVersionString:'1.0',CFBundleVersion:'7'},
+  '/sim/Game.app':installed&&{CFBundleSupportedPlatforms:platforms,CFBundleIdentifier:'com.example.game',CFBundleExecutable:'Game',CFBundleShortVersionString:'1.0',CFBundleVersion:installed.build||'7'}};
  const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'apps-'));
  for(const [dir,content] of [['build','new'],['sim',installed?.same?'new':'old']]){fs.mkdirSync(path.join(tmp,dir,'Game.app'),{recursive:true});fs.writeFileSync(path.join(tmp,dir,'Game.app','Game'),content);}
  const real=p=>p.replace(/^\/(build|sim)/,m=>path.join(tmp,m.slice(1)));
@@ -267,4 +267,12 @@ test('logs returns the app lines, without colour codes, and match sees subsystem
  assert.equal(all.total,2);assert.equal(all.process,'Cindy');
  assert.ok(!all.lines[0].includes('\u001b'));assert.match(all.lines[0],/\[error\] com\.facebook\.react\.log\/native: Unable to resolve module x/);
  assert.equal((await agent.logs(device,{bundleId:'com.xd.cindy',crashes:false,match:'react\\.log'})).total,1);
+});
+
+test('install rejects a wrong simulator platform before mutation and fully installs compatible iPad apps on Vision Pro',async()=>{
+ const f=fakeApps({installed:null});
+ await assert.rejects(f.apps.install({udid:'test-device',runtime:'tvOS-27-0'},{appPath:f.app},{terminate:async()=>{throw Error('must not terminate');}}),e=>e.code==='APP_PLATFORM_MISMATCH');
+ assert.ok(!f.calls.some(c=>c[0]==='simctl'&&c[1]==='install'));
+ const compatible=fakeApps({installed:{same:true}});
+ assert.equal((await compatible.apps.install({udid:'test-device',runtime:'xrOS-27-0'},{appPath:compatible.app},{terminate:async()=>{}})).mode,'full');
 });
