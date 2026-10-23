@@ -258,3 +258,24 @@ test('erase and delete share preflight and shutdown time, never start a late mut
   if(remove)assert.equal(remove.timeout,deviceState==='Booted'?47000:102000);
  }
 });
+
+test('remote trackpad rejects iOS and unowned devices before native input',async()=>{
+ for(const [id,code] of [[udid,'UNSUPPORTED_INPUT'],['00000000-0000-4000-8000-000000000002','DEVICE_NOT_OWNED']]){
+  const c=core('');await assert.rejects(c.dispatch('viewer_trackpad',{udid:id,phase:'began',x:.5,y:.5,gesture:udid}),e=>e.code===code);assert.equal(c.mutations(),0);
+ }
+});
+
+test('native hold timeouts request release and retain unknown outcome, without changing unrelated command termination',async()=>{
+ const calls=[];
+ const context={module:{exports:{}},__dirname:dir,require(name){
+  if(name==='./viewer.cjs')return {};
+  if(name==='node:child_process')return {execFile(file,args,options,cb){calls.push({file,options});queueMicrotask(()=>cb(Error('timed out'),'',''));return {stdin:{on(){},end(){}}};}};
+  return require(name.startsWith('./')?path.join(dir,name):name);
+ }};
+ vm.createContext(context);vm.runInContext(fs.readFileSync(path.join(dir,'core.cjs'),'utf8'),context);
+ const run=vm.runInContext('run',context);
+ for(const [file,signal] of [[path.join(dir,'../native/remote'),'SIGTERM'],[path.join(dir,'../native/spatial'),'SIGTERM'],['/usr/bin/xcrun','SIGKILL']]){
+  await assert.rejects(run(file,[],{timeout:500,mutation:true}),e=>e.execution==='unknown');
+  assert.equal(calls.at(-1).options.killSignal,signal);assert.equal(calls.at(-1).options.timeout,500);
+ }
+});

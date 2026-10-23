@@ -11,6 +11,8 @@ const input = require('./input.cjs');
 const pixels = require('./pixels.cjs');
 const {commandBudget} = require('./budget.cjs');
 const {appContainer} = require('./app-container.cjs');
+const {platform} = require('./control-model.js');
+const {fixedScreen} = require('./platform-screen.cjs');
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const SCREEN_TTL_MS = 8000;
@@ -22,7 +24,7 @@ const inlineImage = (bytes, enabled) => enabled && bytes?.length > 0 && bytes.le
   ? [{data: bytes.toString('base64')}] : null;
 const sameScreen = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
-function createAgent({binary, deviceSet, root, run, sim, Failure, spawnImpl = spawn, now = Date.now}) {
+function createAgent({binary, deviceSet, root, run, sim, Failure, spatialAction, spawnImpl = spawn, now = Date.now}) {
   const screens = new Map(); // udid → {screen, at (screen confirmed), tree, treeAt}
   const seen = new Map(); // udid → the screen the model last looked at (orientation and size)
   const noAx = new Map(); // udid → when the screen last had no accessibility elements
@@ -53,6 +55,11 @@ function createAgent({binary, deviceSet, root, run, sim, Failure, spawnImpl = sp
   }
   /** Current screen geometry (and tree). Cached briefly so taps stay fast. */
   async function observe(device, {fresh = false, deadline} = {}) {
+    if (platform(device) !== 'iOS') {
+      const entry = await geometry(device, {maxAge: fresh ? 0 : SCREEN_TTL_MS, deadline});
+      noAx.set(device.udid, now());
+      return {...entry, tree: {screen: entry.screen, children: []}};
+    }
     const cached = screens.get(device.udid);
     if (!fresh && cached?.tree && now() - cached.treeAt < SCREEN_TTL_MS) return cached;
     let tree;
@@ -90,6 +97,12 @@ function createAgent({binary, deviceSet, root, run, sim, Failure, spawnImpl = sp
   async function geometry(device, {maxAge = SCREEN_TTL_MS, deadline} = {}) {
     const cached = screens.get(device.udid);
     if (cached && now() - cached.at < maxAge) return cached;
+    if (platform(device) !== 'iOS') {
+      const screen = fixedScreen((await sim(['io', device.udid, 'enumerate'], budget(10000, deadline))).stdout);
+      const entry = {screen, tree: null, at: now(), treeAt: 0};
+      screens.set(device.udid, entry);
+      return entry;
+    }
     if (cached && await confirm(device, cached.screen, deadline)) { cached.at = now(); return cached; }
     let probe;
     try { probe = await readTree(device, ['--x', '1', '--y', '1'], deadline); }
@@ -118,6 +131,7 @@ function createAgent({binary, deviceSet, root, run, sim, Failure, spawnImpl = sp
   const viewInfo = screen => ({...G.viewSize(screen), orientation: screen.orientation, ...(screen.target?.litPanel && screen.target.litPanel !== 'primary' ? {panel: screen.target.litPanel} : {})});
 
   async function cornerRadius(device, screen, deadline) {
+    if (platform(device) !== 'iOS') return 0;
     const panel = screen.target?.litPanel || 'primary', key = `${device.udid}|${panel}`;
     if (corners.has(key)) return corners.get(key);
     let radius = 0;
@@ -131,7 +145,27 @@ function createAgent({binary, deviceSet, root, run, sim, Failure, spawnImpl = sp
     return radius;
   }
 
+  async function describeText(device, p) {
+    const limit = number(p.limit, 'limit', 1, 600, 250), atPoint = p.x !== undefined || p.y !== undefined;
+    if (atPoint && (p.x === undefined || p.y === undefined)) throw failure('INVALID_ARGUMENT', 'Provide both x and y to query a screen point.');
+    const read = await readText(device, {deadline: p._deadline});
+    look(device, read.screen);
+    const q = typeof p.query === 'string' ? p.query.trim().toLowerCase() : '';
+    let elements = read.elements.filter(e => (!q || e.label.toLowerCase().includes(q)) && (p.role === undefined || p.role === e.role));
+    let at;
+    if (atPoint) {
+      const view = G.viewSize(read.screen);
+      at = [number(p.x, 'x', 0, view.width), number(p.y, 'y', 0, view.height)];
+      elements = elements.filter(e => at[0] >= e.frame[0] && at[0] <= e.frame[0] + e.frame[2] && at[1] >= e.frame[1] && at[1] <= e.frame[1] + e.frame[3])
+        .sort((a, b) => a.frame[2] * a.frame[3] - b.frame[2] * b.frame[3]);
+    }
+    const count = atPoint ? Math.min(limit, 8) : limit;
+    return {udid: device.udid, screen: viewInfo(read.screen), source: 'ocr', ...(at ? {at} : {}), elements: elements.slice(0, count), total: elements.length, truncated: elements.length > count,
+      note: platform(device) === 'tvOS' ? 'Text read from the screen image (OCR), without accessibility trees or element IDs. Use press up/down/left/right/select/back to move focus and select; Apple TV has no touchscreen.' : 'Text read from the screen image (OCR), without accessibility trees or element IDs. tap text=… and wait_for text=… work on text; use screenshot for icons.'};
+  }
+
   async function describe(device, p = {}) {
+    if (platform(device) !== 'iOS') return describeText(device, p);
     if (p.x !== undefined || p.y !== undefined) {
       // What is under a point: the elements whose frame contains it, innermost first.
       // (Baguette's hit test can answer with a whole container, i.e. the page.)
@@ -157,11 +191,7 @@ function createAgent({binary, deviceSet, root, run, sim, Failure, spawnImpl = sp
     const result = G.compactTree(tree, screen, {query: p.query, role: p.role, limit});
     // No accessibility at all (a game, an engine-drawn UI): read the text off the pixels instead.
     if (!result.total && (p.role === undefined || p.role === 'text') && noAx.has(device.udid)) {
-      const read = await readText(device, {deadline: p._deadline});
-      const q = typeof p.query === 'string' ? p.query.trim().toLowerCase() : '';
-      const elements = q ? read.elements.filter(e => e.label.toLowerCase().includes(q)) : read.elements;
-      return {udid: device.udid, screen: viewInfo(read.screen), source: 'ocr', elements: elements.slice(0, limit), total: elements.length, truncated: elements.length > limit,
-        note: 'No accessibility elements (a game or custom-drawn UI). These are text lines read from the screen image (OCR); tap text=… and wait_for text=… work on them. Icons and art without text are not listed: use screenshot for those.'};
+      return describeText(device, p);
     }
     return {udid: device.udid, screen: viewInfo(screen), ...result,
       ...(!result.total && !p.query && !p.role ? {note: 'No accessibility elements: a game or custom-drawn UI. Use screenshot (grid on) and tap by coordinates.'} : {})};
@@ -250,7 +280,7 @@ function createAgent({binary, deviceSet, root, run, sim, Failure, spawnImpl = sp
       }
       return {udid: device.udid, path: file, mimeType: p.format === 'png' ? 'image/png' : 'image/jpeg', pixels: size, scale, screen: viewInfo(screen),
         ...(inline ? {_modelImages: inline} : {}),
-        ...(region ? {region} : {}), note: `${inline ? 'The screenshot is attached to this result and the user sees it in this tool step; do not import or re-embed it (the file at path is the same image).' : 'Open the file at path with your image tool.'} ${scale === 1 ? 'Image pixels are view points' : `Divide pixels by ${scale} for view points`}${region ? ` and add the region origin (${region.x}, ${region.y})` : ''}; pass view points to tap and gesture.`};
+        ...(region ? {region} : {}), note: `${inline ? 'The screenshot is attached to this result and the user sees it in this tool step; do not import or re-embed it (the file at path is the same image).' : 'Open the file at path with your image tool.'} ${scale === 1 ? 'Image pixels are view points' : `Divide pixels by ${scale} for view points`}${region ? ` and add the region origin (${region.x}, ${region.y})` : ''}; ${platform(device) === 'tvOS' ? 'use press to navigate and select' : platform(device) === 'visionOS' ? 'pass view points to tap (spatial pinch)' : 'pass view points to tap and gesture'}.`};
     } finally { await fs.rm(raw, {force: true}); }
   }
 
@@ -290,6 +320,21 @@ function createAgent({binary, deviceSet, root, run, sim, Failure, spawnImpl = sp
   }
 
   async function act(device, screen, gesture, deadline) {
+    if (platform(device) === 'tvOS') throw failure('UNSUPPORTED_INPUT', 'Apple TV uses press up/down/left/right/select/back, not touchscreen gestures.');
+    if (platform(device) === 'visionOS') {
+      if (!['tap','swipe','drag','pinch','pan'].includes(gesture.kind)) throw failure('UNSUPPORTED_INPUT', 'Vision Pro supports spatial drag, swipe, pinch and pan; edge gestures are iOS-only.');
+      const current = await geometry(device, {maxAge: 0, deadline});
+      if (!sameScreen(current.screen, screen)) throw failure('SCREEN_CHANGED', 'The Vision Pro display changed. Take a new screenshot.');
+      if(gesture.kind!=='tap'){
+        const g=gesture;
+        return spatialAction(device,g.kind==='pinch'?{action:'pinch',center:g.center,scale:g.to/g.from,duration:g.duration}:g.kind==='pan'?{action:'pinch',center:g.from,scale:1,to:[g.from[0]+g.by[0],g.from[1]+g.by[1]],duration:g.duration}:
+          {action:'drag',from:g.from,to:g.kind==='pan'?[g.from[0]+g.by[0],g.from[1]+g.by[1]]:g.to,hold:g.hold,duration:g.duration},screen,deadline);
+      }
+      const dev = (await run('/usr/bin/xcode-select', ['-p'], budget(5000, deadline))).stdout.trim();
+      await run(path.join(__dirname, '../native/spatial'), [deviceSet, device.udid, dev, String(gesture.x / screen.width), String(gesture.y / screen.height),
+        String(screen.width / screen.height), String(gesture.duration ?? 0.1), String(gesture.count ?? 1)], {...budget(45000, deadline), mutation: true});
+      return;
+    }
     const steps = input.plan(screen, gesture);
     // Pinned to the screen the points were planned on: Baguette refuses if it turned meanwhile.
     budget(10000, deadline);
@@ -338,6 +383,7 @@ function createAgent({binary, deviceSet, root, run, sim, Failure, spawnImpl = sp
   async function tap(device, p) {
     const target = await resolveTarget(device, p);
     const count = number(p.count, 'count', 1, 3, 1), duration = number(p.duration, 'duration', 0.02, 10, undefined);
+    if (!Number.isInteger(count)) throw failure('INVALID_ARGUMENT', 'count must be an integer');
     const hint = target.element ? null : overlap(device, target.screen, target.x, target.y);
     await act(device, target.screen, {kind: 'tap', x: target.x, y: target.y, count, duration}, p._deadline);
     return after(device, p, {udid: device.udid, execution: 'executed', tapped: [round(target.x), round(target.y)], ...(target.element ? {element: target.element, matches: target.matches} : {}),
@@ -354,9 +400,17 @@ function createAgent({binary, deviceSet, root, run, sim, Failure, spawnImpl = sp
 
   async function gesture(device, p) {
     const kind = p.kind;
-    if (kind === 'scroll_to') return scrollTo(device, p);
+    if (kind === 'scroll_to') {
+      if(platform(device)!=='iOS')throw failure('UNSUPPORTED_INPUT','scroll_to requires an iOS accessibility tree. Use spatial dragging on Vision Pro or remote buttons on Apple TV.');
+      return scrollTo(device, p);
+    }
     const {screen} = await geometry(device, {deadline: p._deadline});
     if (p.from || p.to || p.center || kind === 'pan') sameAsSeen(device, screen);
+    if(kind==='spatial'){
+      if(platform(device)!=='visionOS')throw failure('UNSUPPORTED_INPUT','Spatial gestures require Vision Pro.');
+      await spatialAction(device,p,screen,p._deadline);
+      return after(device,p,{udid:device.udid,execution:'executed',kind,action:p.action});
+    }
     const view = G.viewSize(screen);
     const g = {kind, duration: number(p.duration, 'duration', 0.05, 10, undefined)};
     if (kind === 'swipe' || kind === 'drag') {
@@ -374,7 +428,7 @@ function createAgent({binary, deviceSet, root, run, sim, Failure, spawnImpl = sp
       g.edge = ['bottom', 'top', 'left', 'right'].includes(p.edge) ? p.edge : 'bottom'; g.view = view;
       if (p.to) g.to = point(p.to, 'to');
       if (p.from) g.x = point(p.from, 'from')[0];
-    } else throw failure('INVALID_ARGUMENT', 'kind must be swipe, drag, pinch, pan, edge or scroll_to');
+    } else throw failure('INVALID_ARGUMENT', 'kind must be swipe, drag, pinch, pan, edge, scroll_to or spatial');
     await act(device, screen, g, p._deadline);
     return after(device, p, {udid: device.udid, execution: 'executed', kind});
   }
@@ -761,6 +815,7 @@ function createAgent({binary, deviceSet, root, run, sim, Failure, spawnImpl = sp
 
   // ---- device state ----
   async function setState(device, p) {
+    if(platform(device)!=='iOS'&&['orientation','posture','status_bar'].some(key=>p[key]!==undefined))throw failure('UNSUPPORTED_INPUT','orientation, posture and status_bar are iOS-only; no state changes were applied.');
     const applied = [], operations = [];
     const add = (name, words, args, options = {}) => operations.push({name, run: () => bag(words, device, args, {mutation: true, ...options, ...budget(options.timeout ?? 30000, p._deadline)})});
     const requiredNumber = (value, name, min, max) => {

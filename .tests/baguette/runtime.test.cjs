@@ -51,6 +51,8 @@ test('off stops exact devices, persists across restart, and rejects tool boot; e
   assert.equal((await f.runtime.request('settings_save',{enabled:false,idleMinutes:15})).ok,true);
   assert.equal(f.state(),'Shutdown');assert.equal(JSON.parse(await fs.readFile(f.file)).enabled,false);
   const restored=f.restart();await assert.rejects(restored.request('boot',{udid}),e=>e.code==='RUNTIME_DISABLED');
+  for(const phase of ['began','changed','ended'])await assert.rejects(restored.request('viewer_trackpad',{udid,phase,gesture:udid,x:.5,y:.5}),e=>e.code==='RUNTIME_DISABLED');
+  assert.equal(f.calls.some(c=>c.method==='viewer_trackpad'),false);
   await restored.request('settings_save',{enabled:true,idleMinutes:15});assert.equal(f.state(),'Shutdown');
   assert.equal(f.calls.filter(c=>c.method==='boot').length,0);
 });

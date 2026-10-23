@@ -74,14 +74,13 @@
   // Name · OS Version · Model, like Simulator's: models follow the OS chosen,
   // and the name follows the model until edited.
   const SHEET = {
-    en: { iphone: 'New iPhone', ipad: 'New iPad', name: 'Name', os: 'OS Version', model: 'Model', create: 'Create', cancel: 'Cancel', creating: 'Creating…',
-      loading: 'Loading models…', none: 'No iOS runtime installed. Install one in Xcode first.', failed: 'Not created. Check Xcode and try again.' },
-    'zh-CN': { iphone: '新建 iPhone', ipad: '新建 iPad', name: '名称', os: '系统版本', model: '机型', create: '创建', cancel: '取消', creating: '正在创建…',
-      loading: '正在读取机型…', none: '没有可用的 iOS 运行时，请先在 Xcode 中安装。', failed: '没有创建成功，请检查 Xcode 后重试。' },
+    en: { any: 'New device', iphone: 'New iPhone', ipad: 'New iPad', tv: 'New Apple TV', vision: 'New Vision Pro', name: 'Name', os: 'OS Version', model: 'Model', create: 'Create', cancel: 'Cancel', creating: 'Creating…',
+      loading: 'Loading models…', none: 'No compatible runtime installed. Install one in Xcode first.', failed: 'Not created. Check Xcode and try again.' },
+    'zh-CN': { any: '新建设备', iphone: '新建 iPhone', ipad: '新建 iPad', tv: '新建 Apple TV', vision: '新建 Vision Pro', name: '名称', os: '系统版本', model: '机型', create: '创建', cancel: '取消', creating: '正在创建…',
+      loading: '正在读取机型…', none: '没有与此设备兼容的运行时，请先在 Xcode 中安装。', failed: '没有创建成功，请检查 Xcode 后重试。' },
   };
   let catalogCache = null;
   async function catalog() { if (!catalogCache) { const c = await rpc('catalog', {}); if (!c?.ok) throw c; catalogCache = c; } return catalogCache; }
-  const isPad = (name) => /iPad/i.test(name);
   function createDevice({ family = 'iphone', lang = 'en' } = {}) {
     const T = SHEET[lang] || SHEET.en, M = root.CindySimModel;
     return new Promise((resolve) => {
@@ -102,10 +101,10 @@
       cancel.addEventListener('click', () => finish(null));
       dialog.addEventListener('cancel', (e) => { e.preventDefault(); finish(null); });
       nameInput.addEventListener('input', () => { edited = true; });
-      const models = () => (cat?.deviceTypes || []).filter((d) => (family === 'ipad') === isPad(d.name));
+      const models = () => (cat?.deviceTypes || []).filter((d) => family === 'any' || M.family(d) === family);
       function fillModels(keep) {
         const runtime = cat.runtimes.find((r) => r.identifier === osSelect.value);
-        const usable = models().filter((d) => !runtime?.supportedDeviceTypes || runtime.supportedDeviceTypes.includes(d.identifier));
+        const usable = models().filter((d) => runtime && M.runtimesFor(cat, d.identifier).some((r) => r.identifier === runtime.identifier));
         const best = M.defaultChoice({ deviceTypes: usable, runtimes: runtime ? [runtime] : [] });
         modelSelect.replaceChildren(...usable.map((d) => h('option', { value: d.identifier, text: d.name })));
         modelSelect.value = usable.some((d) => d.identifier === keep) ? keep : (best?.deviceType || usable[0]?.identifier || '');
@@ -117,7 +116,7 @@
       error.textContent = T.loading;
       catalog().then((c) => {
         cat = c;
-        const runtimes = c.runtimes.filter((r) => models().some((d) => !r.supportedDeviceTypes || r.supportedDeviceTypes.includes(d.identifier)))
+        const runtimes = c.runtimes.filter((r) => models().some((d) => M.runtimesFor(c, d.identifier).some((v) => v.identifier === r.identifier)))
           .sort((a, b) => String(b.version).localeCompare(String(a.version), undefined, { numeric: true }));
         if (!runtimes.length) { error.textContent = T.none; return; }
         error.textContent = '';

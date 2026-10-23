@@ -1,7 +1,7 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const vm=require('node:vm');const path=require('node:path');
 const node=path.join(__dirname,'../../baguette-simulator/node');
 const udid='00000000-0000-4000-8000-000000000001',other='00000000-0000-4000-8000-000000000002';
-const IDS='screen stage frame overlay dock chip-dot chip-name status btn-home btn-rotl btn-rotr btn-shot btn-shot-menu btn-more scroll title title-dot title-name title-sub zoom zoom-out zoom-label zoom-in tools posture device-chip confirm-title confirm-body confirm-cancel confirm-ok confirm-dialog device-dialog device-form dialog-title dialog-hint f-name-text f-model-text f-runtime-text dialog-cancel dialog-save f-model-label f-runtime-label dialog-error f-name f-model f-runtime'.split(' ');
+const IDS='screen stage frame overlay dock chip-dot chip-name status btn-home btn-rotl btn-rotr btn-shot btn-shot-menu btn-more scroll title title-dot title-name title-sub zoom zoom-out zoom-label zoom-in tools posture tv-remote device-chip confirm-title confirm-body confirm-cancel confirm-ok confirm-dialog device-dialog device-form dialog-title dialog-hint f-name-text f-model-text f-runtime-text dialog-cancel dialog-save f-model-label f-runtime-label dialog-error f-name f-model f-runtime'.split(' ');
 
 // A deliberately small DOM: enough for control.js to render and for the test to read back.
 function fakeDocument(){
@@ -26,9 +26,9 @@ function fakeDocument(){
  for(const id of IDS){byId[id]=el(id.startsWith('btn')||id.includes('cancel')||id.includes('ok')||id.includes('save')||id==='device-chip'?'button':'div');byId[id].id=id;}
  const screen=byId.screen;let src='about:blank';screen.loads=[];
  Object.defineProperty(screen,'src',{get:()=>src,set:v=>{src=v;screen.loads.push(v);}});
- screen.contentDocument={querySelector:()=>null,addEventListener(){},documentElement:null};screen.contentWindow={};
+ screen.contentDocument={querySelector:()=>null,getElementById:()=>null,addEventListener(){},documentElement:null};screen.contentWindow={};
  const body=el('body');
- const document={documentElement:{lang:'zh-CN',clientWidth:400,style:{}},body,hidden:false,getElementById:id=>byId[id]||null,createElement:el,addEventListener(){},listeners:{}};
+ const document={documentElement:{lang:'zh-CN',clientWidth:400,style:{}},body,hidden:false,getElementById:id=>byId[id]||null,querySelector:sel=>sel==='dialog[open]'?body.children.find(n=>n.tag==='dialog'&&n.open)||null:null,createElement:el,addEventListener(name,fn){(this.listeners[name]??=[]).push(fn);},listeners:{}};
  return {document,byId,body,text:n=>[n.textContent,...all(n).map(c=>c.textContent)].join(' ')};
 }
 
@@ -49,6 +49,79 @@ async function boot({respond,abortSignal=AbortSignal,query=''}){
  return {dom,calls,context,poll:()=>intervals[0](),tick:()=>intervals[1](),sim:context.cindySim};
 }
 const status=(over={})=>({ready:true,parked:false,generation:1,device:{udid,name:'iPhone 17 Pro',state:'Booted',runtime:'com.apple.CoreSimulator.SimRuntime.iOS-27-1',deviceType:'x.iPhone-17-Pro'},devices:[{udid,name:'iPhone 17 Pro',state:'Booted',runtime:'iOS 27.1',deviceType:'x.iPhone-17-Pro'},{udid:other,name:'iPad',state:'Shutdown',runtime:'iOS 27.0',deviceType:'x.iPad'}],settings:{enabled:true,idleMinutes:15},idleDeadline:Date.now()+15*60000,...over});
+
+// Run the real parent capture listener before the real device canvas handler.
+// Unit tests of either page alone cannot detect a parent bypassing its child.
+function attachPlatform(f,platform){
+ const events={},windows={},docs={},timers=new Map();let timer=0;
+ const listen=(map,name,fn)=>(map[name]??=[]).push(fn),fire=(map,name,e)=>{for(const fn of map[name]||[])fn(e);};
+ const doc={hidden:false,hasFocus:()=>true,getElementById:id=>id==='display'?canvas:{},addEventListener:(name,fn)=>listen(docs,name,fn)};
+ const canvas={width:1920,height:1080,style:{},tagName:'CANVAS',ownerDocument:doc,focus(){doc.activeElement=canvas;},setPointerCapture(){},getBoundingClientRect:()=>({left:0,top:0,width:1920,height:1080}),addEventListener:(name,fn)=>listen(events,name,fn)};
+ doc.activeElement=canvas;
+ const child={document:doc,parent:f.context,crypto:require('node:crypto'),Date,Math,Promise,URL,URLSearchParams,location:{search:`?platform=${platform}&udid=${udid}&cindyViewer=token`},fetch:f.context.fetch,
+  addEventListener:(name,fn)=>listen(windows,name,fn),setTimeout:(fn,ms)=>{timers.set(++timer,{fn,ms});return timer;},clearTimeout:id=>timers.delete(id),
+  StreamSession:class{static buildWSUrl(){return 'ws://127.0.0.1/stream';}start(){}stop(){}},
+ };
+ child.globalThis=child;doc.defaultView=child;f.dom.byId.screen.contentWindow=child;f.dom.byId.screen.contentDocument=doc;
+ if(platform==='visionOS')vm.runInNewContext(fs.readFileSync(path.join(node,'vision-stage.js'),'utf8'),child);
+ vm.runInNewContext(fs.readFileSync(path.join(node,'platform-stage.js'),'utf8'),child);
+ f.dom.byId.screen.dispatch('load');
+ return {child,canvas,
+  emit:(name,props={})=>{const e={type:name,target:canvas,currentTarget:child,button:0,buttons:1,pointerId:1,clientX:960,clientY:540,deltaX:0,deltaY:0,deltaMode:0,preventDefault(){this.prevented=true;},stopImmediatePropagation(){this.stopped=true;},...props};if(name==='keydown')fire(windows,name,e);if(!e.stopped)fire(events,name,e);return e;},
+  parentKey:props=>{const e={target:{tagName:'DIV',ownerDocument:f.dom.document},preventDefault(){this.prevented=true;},stopImmediatePropagation(){this.stopped=true;},...props};f.dom.document.listeners.keydown[0](e);return e;},
+  endWheel:()=>{for(const [id,t] of timers)if(t.ms===100){timers.delete(id);t.fn();}},blur:()=>fire(windows,'blur'),
+ };
+}
+test('TV parent/frame shortcuts and toolbar remote share the device gesture queue',async()=>{
+ const tick=()=>new Promise(resolve=>setImmediate(resolve));
+ const keys={ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right',Enter:'select',Escape:'back',' ':'play-pause'};
+ for(const phase of ['began','changed','ended'])for(const entry of ['frame','parent','toolbar','home'])for(const [key,button] of Object.entries(entry==='home'?{Home:'home'}:keys)){
+  let ack,blocked=false;
+  const f=await boot({respond:p=>{if(p.action==='status')return status({device:{udid,runtime:'tvOS-27',state:'Booted'}});if(p.phase===phase&&!blocked){blocked=true;return new Promise(resolve=>ack=resolve);}return {};}}),s=attachPlatform(f,'tvOS');
+  s.emit('wheel',{deltaY:-10});await tick();s.emit('wheel',{deltaY:-20});
+  if(phase==='ended'){s.endWheel();await tick();s.emit('wheel',{deltaY:-10});}
+  if(entry==='toolbar'||entry==='home'){
+   const node=f.dom.byId[entry==='home'?'btn-home':'tv-remote'],down={button:0,preventDefault(){this.prevented=true;}};
+   node.dispatch('pointerdown',down);assert.equal(down.prevented,true,'remote mouse press preserves device focus');
+   node.dispatch('click',{target:{closest:()=>({dataset:{remote:button}})}});
+  }
+  else if(entry==='frame')s.emit('keydown',{key});else s.parentKey({key});
+  await tick();assert.equal(f.calls.filter(p=>p.action==='press').length,0,`${entry}/${key} waits for ${phase}`);
+  ack({});await tick();
+  const input=f.calls.filter(p=>['trackpad','press'].includes(p.action));assert.equal(input.at(-1).action,'press');assert.equal(input.at(-1).button,button);
+  assert.equal(input.filter(p=>p.action==='press').length,1);assert.equal(input.at(-2).phase,'ended');
+  assert.ok(input.some(p=>p.phase==='changed'&&Math.abs(p.y-.25)<1e-9),'all accepted motion drains before the press');
+ }
+});
+test('parent remote input never bypasses cancellation, failed swipes or an unready device page',async()=>{
+ const tick=()=>new Promise(resolve=>setImmediate(resolve));
+ for(const phase of ['began','changed','ended'])for(const outcome of ['cancel','fail']){
+  let ack,reject,blocked=false;
+  const f=await boot({respond:p=>{if(p.action==='status')return status({device:{udid,runtime:'tvOS-27',state:'Booted'}});if(p.phase===phase&&!blocked){blocked=true;return new Promise((resolve,r)=>{ack=resolve;reject=r;});}return {};}}),s=attachPlatform(f,'tvOS');
+  s.emit('wheel',{deltaY:-10});await tick();s.emit('wheel',{deltaY:-20});if(phase==='ended'){s.endWheel();await tick();s.emit('wheel',{deltaY:-10});}
+  s.parentKey({key:'Enter'});f.dom.byId['tv-remote'].dispatch('click',{target:{closest:()=>({dataset:{remote:'back'}})}});await tick();
+  if(outcome==='cancel'){s.blur();ack({});}else reject(Error('unknown delivery'));
+  await tick();assert.equal(f.calls.filter(p=>p.action==='press').length,0);
+ }
+ const f=await boot({respond:()=>status({device:{udid,runtime:'tvOS-27',state:'Booted'}})});
+ f.dom.byId['btn-home'].dispatch('click');await tick();assert.equal(f.calls.filter(p=>p.action==='press').length,0);assert.match(f.dom.text(f.dom.byId.dock),/INPUT_NOT_READY/);
+});
+test('Vision capture owns device shortcuts while viewer shortcuts remain available outside the frame',async()=>{
+ const tick=()=>new Promise(resolve=>setImmediate(resolve));
+ const cases=[['s','KeyS',false],['H','KeyH',true],['=','Equal',false],['+','Equal',true],['-','Minus',false],['0','Digit0',false],['1','Digit1',false]];
+ for(const enabled of [false,true])for(const modifier of ['metaKey','ctrlKey']){
+  const f=await boot({respond:p=>p.action==='status'?status({device:{udid,runtime:'xrOS-27',state:'Booted'}}):{}}),s=attachPlatform(f,'visionOS');if(enabled)s.child.cindyVision.choose('keyboard');
+  for(const [key,code,shiftKey] of cases){
+   f.calls.length=0;f.sim.state.fitPct=50;f.sim.state.zoom={mode:'pct',pct:100};
+   const e=s.emit('keydown',{key,code,shiftKey,[modifier]:true});await tick();
+   const actions=f.calls.filter(p=>['key','press','screenshot'].includes(p.action));
+   if(enabled){assert.equal(e.stopped,undefined);assert.equal(actions.length,1);assert.equal(actions[0].action,'key');assert.equal(actions[0].code,code);assert.ok(actions[0].modifiers.includes(modifier==='metaKey'?'command':'control'));assert.equal(f.sim.state.zoom.pct,100);}
+   else{assert.equal(e.stopped,true);assert.equal(actions.some(p=>p.action==='key'),false);}
+  }
+  f.calls.length=0;s.parentKey({key:'s',[modifier]:true});await tick();assert.equal(f.calls.filter(p=>p.action==='screenshot').length,1);
+  if(enabled){s.emit('keydown',{key:'Escape',code:'Escape'});assert.equal(s.child.cindyVision.acceptsKeyboard(),false);}
+ }
+});
 
 test('a newly opened task view connects while its first status request is pending',async()=>{
  for(const firstResponse of [status(),{ok:false,errorCode:'CONTROL_FAILED'}]){
@@ -71,6 +144,57 @@ test('a newly opened task view connects while its first status request is pendin
    assert.match(dom.text(dom.byId.overlay),/画面已断开/);
    assert.equal(dom.byId.overlay.querySelector('button').textContent,'恢复画面');
   }
+ }
+});
+
+test('modified arrows rotate only iOS and remain available to TV and Vision device input',async()=>{
+ for(const runtime of ['iOS-27','tvOS-27','xrOS-27']){
+  const {dom}=await boot({respond:()=>status({device:{udid,runtime,state:'Booted'}})}),rotations=[];
+  dom.byId.screen.contentWindow.__nativeRotateBy=step=>rotations.push(step);
+  const shortcut=dom.document.listeners.keydown[0];
+  for(const modifier of ['metaKey','ctrlKey'])for(const key of ['ArrowLeft','ArrowRight'])for(const shiftKey of [false,true]){
+   const event={key,[modifier]:true,shiftKey,target:{tagName:'CANVAS'},preventDefault(){this.prevented=true;},stopImmediatePropagation(){this.stopped=true;}};
+   shortcut(event);assert.equal(!!event.prevented,runtime==='iOS-27');assert.equal(!!event.stopped,runtime==='iOS-27');
+  }
+  assert.deepEqual(rotations,runtime==='iOS-27'?[-1,-1,1,1,-1,-1,1,1]:[]);
+ }
+});
+
+test('camera buttons distinguish clicks from captured drags, cancel cleanly and keep keyboard activation',async()=>{
+ const {dom}=await boot({respond:()=>status()}),calls=[];
+ dom.byId.screen.contentWindow.cindyVision={choose:m=>calls.push(['choose',m]),cameraDrag:m=>{calls.push(['begin',m]);return {move:(x,y)=>calls.push(['move',x,y]),end:cancel=>calls.push(['end',cancel])};}};
+ const b=dom.byId.tools.querySelectorAll('button').find(b=>b.attrs['data-vision']==='pan');
+ let capture=false;b.setPointerCapture=()=>capture=true;b.hasPointerCapture=()=>capture;b.releasePointerCapture=()=>capture=false;
+ const emit=(type,over={})=>b.dispatch(type,{button:0,pointerId:1,clientX:100,clientY:100,detail:1,preventDefault(){},...over});
+ emit('pointerdown');emit('pointermove',{clientX:102});emit('pointerup');emit('click');assert.deepEqual(calls,[['choose','pan']]);
+ calls.length=0;emit('pointerdown');emit('pointermove',{clientX:150,clientY:80});emit('pointerup');emit('click');
+ assert.deepEqual(calls,[['begin','pan'],['move',50,-20],['end',false]]);assert.equal(capture,false);assert.equal(b.dataset.dragging,undefined);
+ calls.length=0;emit('pointerdown');emit('pointermove',{clientX:130});emit('pointercancel');emit('pointermove',{clientX:160});emit('pointerup');emit('click');
+ assert.deepEqual(calls,[['begin','pan'],['move',30,0],['end',true]]);
+ emit('click',{detail:0});assert.deepEqual(calls.at(-1),['choose','pan']);
+ assert.match(b.attrs.title,/保留当前指针模式/);
+});
+
+test('shared help follows the device, opens without device input and action buttons are not toggles',async()=>{
+ for(const [name,runtime,expected] of [['iPhone','iOS-27','旋转'],['iPad','iOS-27','旋转'],['Apple TV','tvOS-27','当前焦点'],['Apple Vision Pro','xrOS-27','临时调整视角']]){
+  const {dom,calls}=await boot({respond:()=>status({device:{udid,name,runtime,state:'Booted'}})});
+  const buttons=dom.byId.tools.querySelectorAll('button'),help=buttons.find(b=>b.attrs.id==='btn-controls-help');
+  assert.ok(help);assert.equal(help.attrs['aria-pressed'],undefined);
+  assert.equal(buttons.find(b=>b.attrs['data-vision']==='reset').attrs['aria-pressed'],undefined);
+  const before=calls.length;help.dispatch('click');
+  const dialog=dom.body.children.find(b=>b.attrs.id==='controls-help');
+  assert.equal(dialog.open,true);assert.match(dom.text(dialog),new RegExp(expected));assert.match(dom.text(dialog),/高亮/);assert.equal(calls.length,before);
+  dialog.querySelector('button').dispatch('click');assert.equal(dialog.open,false);
+ }
+});
+
+test('status refresh keeps an in-flight screenshot disabled on every platform',async()=>{
+ for(const runtime of ['iOS-27','tvOS-27','xrOS-27']){
+  let finish;
+  const {dom,poll,calls}=await boot({respond:({action})=>action==='screenshot'?new Promise(resolve=>finish=resolve):status({device:{udid,name:'Fixture',runtime,state:'Booted'}})});
+  const shot=dom.byId['btn-shot'],pending=shot.listeners.click[0]();await poll();
+  assert.equal(shot.disabled,true);await shot.listeners.click[0]();assert.equal(calls.filter(c=>c.action==='screenshot').length,1);
+  finish({ok:true,path:'/fixture/shot.png'});await pending;assert.equal(shot.disabled,false);
  }
 });
 
@@ -221,11 +345,12 @@ test('a completed switch response survives a late status read and replacement of
 });
 
 test('selecting a stopped device never loads its stream or boots until Open is clicked',async()=>{
+ for(const [runtime,platform] of [['iOS 27.0','iOS'],['tvOS 27.0','tvOS'],['xrOS 27.0','visionOS']]){
  let job=null,targetState='Shutdown';
  const {dom,poll,calls}=await boot({respond:({action,targetUdid,udid:id})=>{
   if(action==='switch'){job={id:'select-off',sourceUdid:udid,targetUdid,state:'done',phase:'done',activeUdid:targetUdid};return {ok:true,job};}
   if(action==='boot'){assert.equal(id,other);targetState='Booted';return {ok:true};}
-  const s=status();s.devices[1].state=targetState;
+  const s=status();s.devices[1].state=targetState;s.devices[1].runtime=runtime;
   return {...s,device:s.devices.find(d=>d.udid===id),deviceJob:job};
  }});
  dom.byId['device-chip'].dispatch('click');
@@ -238,7 +363,8 @@ test('selecting a stopped device never loads its stream or boots until Open is c
  const open=dom.byId.overlay.querySelector('button');assert.equal(open.textContent,'打开');
  await open.listeners.click[0]();
  assert.equal(calls.filter(c=>c.action==='boot').length,1);
- assert.equal(dom.byId.screen.loads.at(-1),`/simulators/${other}?handheld=0&cindyViewer=token#cindyClipboard=123.token`);
+ assert.equal(dom.byId.screen.loads.at(-1),platform==='iOS'?`/simulators/${other}?handheld=0&cindyViewer=token#cindyClipboard=123.token`:`/platform-stage.html?udid=${other}&lang=zh-CN&platform=${platform}&cindyViewer=token`);
+ }
 });
 
 test('a page that outlives its service says how to reopen, then reconnects on its own when the service is back',async()=>{
@@ -255,4 +381,21 @@ test('a page that outlives its service says how to reopen, then reconnects on it
  assert.equal(dom.byId.screen.loads.at(-1),`/simulators/${udid}?handheld=0&cindyViewer=token#cindyClipboard=123.token`,'reloaded without opening a new tab');
  mode='expired';await poll();
  assert.match(dom.text(dom.byId.overlay),/这个画面已过期/);assert.equal(dom.byId.status.textContent,'画面已过期');
+});
+
+test('rectangular TV and Vision zoom uses view points, preserves actual size and reduces monotonically',async()=>{
+ for(const runtime of ['tvOS-27-0','xrOS-27-0']){
+  const f=await boot({respond:({action})=>action==='viewport'?{width:1920,height:1080}:status({device:{udid,name:'Rectangle',state:'Booted',runtime}})});
+  f.dom.byId.stage.getBoundingClientRect=()=>({width:300,height:200});
+  await f.sim.measure();assert.equal(f.sim.state.fitPct,15.625);
+  f.sim.setZoom({mode:'pct',pct:100});assert.equal(f.dom.byId.frame.style.width,'1920px');
+  f.sim.setZoom({mode:'pct',pct:75});assert.equal(f.dom.byId.frame.style.width,'1440px');
+  await f.sim.measure();assert.equal(f.sim.state.fitPct,15.625);
+  f.dom.byId.stage.getBoundingClientRect=()=>({width:600,height:400});
+  await f.sim.measure();assert.equal(f.sim.state.fitPct,31.25);assert.equal(f.dom.byId.frame.style.width,'1440px');
+  f.sim.setZoom({mode:'fit'});assert.equal(f.dom.byId.frame.style.width,'600px');
+  f.context.getComputedStyle=()=>({paddingLeft:'12px',paddingRight:'12px',paddingTop:'12px',paddingBottom:'64px'});
+  f.sim.setZoom({mode:'pct',pct:100});await f.sim.measure();
+  assert.equal(f.sim.state.fitPct,30);assert.equal(f.dom.byId.frame.style.width,'1944px','screen points exclude the fixed frame padding');
+ }
 });

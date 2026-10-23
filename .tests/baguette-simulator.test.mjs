@@ -24,3 +24,9 @@ import './baguette/viewer-session.test.cjs';
 import './baguette/review-invariants.test.cjs';
 import './baguette/page-rpc.test.cjs';
 import './baguette/device-identity.test.cjs';
+
+import "./baguette/platform-screen.test.cjs";
+import './baguette/platform-stage.test.cjs';
+import './baguette/trackpad.test.cjs';
+import './baguette/spatial.test.cjs';
+import './baguette/native-spatial-protocol.test.cjs';

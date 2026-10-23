@@ -178,3 +178,15 @@ test('task binding follows the selected device without changing its power state'
   assert.equal(job.activeUdid,b);assert.equal(f.devices[1].state,targetState);
  }
 });
+
+test('cross-platform switches preserve device power and app records without device operations',async t=>{
+ for(const [source,target] of [['iOS','tvOS'],['iOS','xrOS'],['tvOS','iOS'],['xrOS','tvOS']])for(const targetState of ['Shutdown','Booted']){
+  const f=await fixture(t);f.devices[0].runtime=`com.apple.CoreSimulator.SimRuntime.${source}-27-0`;f.devices[1].runtime=`com.apple.CoreSimulator.SimRuntime.${target}-27-0`;f.devices[1].state=targetState;
+  await f.runtime.request('launch_app',{udid:a,bundleId:'test.example.phone'});f.calls.length=0;
+  await f.runtime.request('viewer_switch',{udid:a,targetUdid:b});
+  assert.equal((await finish(f)).state,'done');
+  assert.ok(f.calls.every(c=>c.method==='devices'),'selection never shuts down, boots, opens a stream or moves an app');
+  assert.deepEqual(f.devices.map(d=>d.state),['Booted',targetState]);
+  assert.equal(await f.runtime.currentApp(a),'test.example.phone');assert.equal(await f.runtime.currentApp(b),null);
+ }
+});

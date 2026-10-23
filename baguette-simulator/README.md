@@ -2,6 +2,66 @@
 
 [简体中文](README.zh-CN.md)
 
+## Shared controls
+
+iPhone, iPad, Apple TV and Vision Pro share Home, Screenshot, viewing zoom and
+Controls help. Action buttons execute once; selected modes, toggles and foldable
+postures use the same highlight. Temporary camera-button dragging preserves the
+selected mode. Hover tips explain operations and shortcuts; the shared help
+dialog is also available on touch screens and describes the current device's
+input. Toolbar wrapping reserves space beneath the view on narrow screens.
+
+## Apple TV and Vision Pro
+
+Create either device in the management view or task tab using an installed tvOS
+or visionOS runtime (`xrOS` in runtime identifiers). Build for `tvOS Simulator`
+or `visionOS Simulator`, then install and launch the matching `.app` as usual.
+Both support a live rectangular view, screenshots, local OCR, waits and logs.
+Switching between platforms does not copy the previous platform's app.
+
+Apple TV uses the on-screen remote or `press` with `up`, `down`, `left`, `right`,
+`select`, `back`, `menu`, `home`, or `play-pause`; arrow keys, Return, Escape and
+Space also work. `type_text auto/type` sends up to 300 US-keyboard characters; keys are also supported.
+tvOS has no simulator clipboard: paste and Unicode text are not supported.
+In the live display, two-finger trackpad motion sends a continuous native Siri
+Remote touch contact. Longer swipes can cross multiple items; tvOS handles focus
+movement from the touch trajectory. A primary click selects the focused item and
+a right-click goes back (Control-click also works on macOS). Click position does
+not select a TV screen coordinate. With macOS natural scrolling, focus follows
+finger movement; both wheel axes are inverted from document-scrolling deltas.
+The desktop wheel stream includes OS acceleration/momentum and lacks physical
+finger-up events, so its timing and feel are not identical to a hardware remote.
+Vision Pro follows [Apple's Device Hub controls](https://developer.apple.com/documentation/xcode/interacting-with-your-visionos-app-in-device-hub):
+click/hold/drag to pinch and move, Shift-drag for depth, Control-drag to look,
+and toolbar modes for tilt, pan, orbit, dolly and reset. Drag a camera-mode button
+directly to adjust the view temporarily without changing the selected pointer mode;
+click it to select how subsequent canvas drags behave. Hover tips explain both actions. WASD/arrows move
+forward/back/left/right; Q/E move down/up. Two-finger scrolling pans and trackpad pinch
+moves forward/back. Option-drag (or the two-hands button) scales horizontally
+and rotates vertically. Keyboard capture sends text/keys and paste into the guest;
+when disabled, only camera navigation keys are handled.
+pointer capture forwards relative mouse motion/buttons. Escape releases capture.
+The recording button saves the live view as a video. Capture requires a focused
+desktop viewer and browser support; it reports failure if capture is denied.
+Standard game controllers navigate while the display has focus: left stick
+moves, R2/L2 raise/lower, and right stick turns. Release the sticks after an input
+error before continuing. Physical-controller acceptance is still pending.
+
+Agents use `tap` with screenshot coordinates/OCR text, `press digital-crown`
+(or `home`), ordinary drag/swipe/pinch/pan, or `gesture kind=spatial` with
+`action=drag|pinch|rotate|gaze|tilt|pan|orbit|dolly|move|reset`.
+Coordinates are screenshot view points; spatial camera translation is in metres
+and rotation in degrees. Spatial `pan` takes `by=[right,up]` (two axes only);
+use `move` with `[right,up,back]` or `dolly distance` for depth.
+Take another screenshot after moving the camera.
+
+Orientation, posture, status-bar override, touch-menu paste, `scroll_to` and `heal` remain
+iOS-only. tvOS/visionOS return OCR text lists in all query modes, including
+`mode=full` and `x,y` hit tests, instead of accessibility trees/IDs. Input adapters
+were exercised with Xcode 27 and tvOS/visionOS 27; other versions are unverified.
+See [native protocol and verification notes](native/platform-support.md).
+Stable/Beta Cindy package installation and embedded-preview acceptance are pending.
+
 Screenshots fall back to a file path on older hosts or when JPEG compression still exceeds the 130 KB inline budget. Open that path with an image tool before choosing coordinates; the full-resolution file is preserved.
 
 Viewer screenshot exports to the Mac clipboard or Desktop report confirmed writes as `executed` and command failures after dispatch as `unknown`; inspect the destination before retrying. Temporary clipboard-image cleanup cannot replace the export outcome. `environment.baguette` is the detected binary version; compatibility notes do not repeat a fixed version.

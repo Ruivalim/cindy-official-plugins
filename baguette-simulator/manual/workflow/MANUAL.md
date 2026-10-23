@@ -2,6 +2,58 @@
 
 本插件在独立设备集合里运行 iOS 模拟器：设备只属于本插件，不碰 Xcode 默认设备，也不碰 Cindy 内置设备。所有观察与操作都走模拟器自身的通道（截图、无障碍树、系统触摸），不依赖任何窗口，Mac 锁屏时也能用。画面实时显示在当前任务的侧栏页签，用户可以随时看着你操作或亲自接管。
 
+## Apple TV / Vision Pro
+
+各平台共用主屏幕、截图、查看缩放及操作说明入口；单击动作按钮执行一次，模式、
+开关和折叠姿态使用同一选中高亮。按钮悬停可看说明和快捷键，触屏可点操作说明。
+Vision Pro 临时拖动视角按钮不改变当前模式。画面里的具体手势按设备能力解释。
+
+在 `environment` 里按平台选运行时与机型，设备的 runtime 决定操作方式。Apple TV
+使用 `press` 遥控（up/down/left/right/select/back/menu/home/play-pause）；Vision Pro
+使用 `tap` 空间点击、长按及键盘，`press digital-crown` 返回主界面。截图与 OCR
+坐标遵循同一视图点空间，Vision Pro 点击通过单手捏合发送。
+TV/Vision 的 `describe_ui` 所有模式均返回 OCR 文本列表，`mode=full` 不提供无障碍树，
+`x,y` 按文字框筛选并优先返回最小包含框；OCR 失败会报错，不视为空画面。
+
+Apple TV 的实时画面支持双指触控板移动，连续发送原生 Siri Remote 触点的开始、
+移动和结束事件，长滑可以跨越多个选项。单击确认当前焦点项，右键或 macOS Control
+点击返回。macOS 自然滚动下焦点跟随手指移动；点击不按电视画面坐标选取。
+桌面滚动事件包含系统加速与惯性，没有真实抬指信号，手感并非与实体遥控器完全相同。
+
+两者均支持 App 安装启动、实时画面、截图和 OCR。构建目标选择 tvOS Simulator 或
+visionOS Simulator，不能把 iOS App 装到 Apple TV；Vision Pro 兼容 iPad App 走整包
+安装，由运行时判断兼容性。跨平台切换不自动搬运 App。Vision Pro `type_text auto` 默认粘贴；
+tvOS `auto/type` 使用至多 300 字符的 US 键盘事件，需要先选择英文输入法。
+tvOS 无模拟器剪贴板，不支持粘贴及 Unicode 文本。两者均支持 `keys`。
+
+Vision Pro 的实时画面支持点击、长按、拖动，Shift 拖动控制远近；Control 拖动转向。
+工具栏可选择转向、平移、环绕、推拉及复位。直接拖动四个视角按钮可临时调整视角，
+不会改变当前指针模式；单击才切换画面拖动模式，悬停提示会说明。WASD/方向键移动，Q/E 下降/上升；
+触控板双指滚动平移，捏合推拉。Option 拖动或启用双手按钮后，横向缩放、纵向旋转。
+键盘按钮开启后向设备输入文字、按键和粘贴；关闭时仅处理视角移动键。鼠标捕获把相对移动和按键交给设备，Escape
+退出捕获。录屏按钮开始录制，再按一次保存。鼠标捕获需要桌面查看器焦点及浏览器支持。
+标准映射的游戏手柄：左摇杆移动、R2/L2 升降、右摇杆转向，仅在画面获得焦点时生效。
+输入失败后先松开摇杆再继续；物理手柄适配仍待真机验收。
+
+AI 空间操作沿用 `gesture`：
+
+- `kind=spatial, action=drag, from=[x,y], to=[x,y], depth=0.2`：空间拖动，depth 单位米。
+- `action=pinch, center=[x,y], scale=2`：双手缩放；`action=rotate, angle=45`：双手旋转。
+- `action=tilt|orbit, by=[水平角,垂直角]`：相机旋转，单位度。
+- `action=pan, by=[右,上]`：二维相机平移，单位米，传第三项会被拒绝。
+- `action=move, by=[右,上,后]`：三轴相机移动，单位米；前后移动也可用 dolly。
+- `action=dolly, distance=0.3`：向后推拉；负值向前。`action=reset` 复位。
+- `action=gaze, center=[x,y]`：仅移动视线，不按压。
+
+以上均带 `kind=spatial`；`duration` 控制动作时长，`hold` 控制移动前停留。
+普通 `drag/swipe/pinch/pan` 也可用于 Vision Pro。观察坐标与 `tap` 相同，移动相机后
+重新截图再选点；环绕以视点前方一米为中心。双手是模拟输入，不提供真实手部追踪。
+不要把 `execution=executed` 当作应用已完成动作：它确认输入已交付，仍需观察结果。
+
+两者不提供无障碍树或 ID。屏幕旋转、折叠、状态栏覆盖、`scroll_to`、`heal` 仅支持 iOS。
+新增适配已验证 Xcode 27 与对应 27 运行时，其他版本未验证。
+下文 iOS 手势和软键盘恢复说明不适用于 TV/Vision。
+
 ## 1. 开始
 
 1. `devices`：每行带 `tasks`（几个任务在用）与 `thisTask`。优先用 `thisTask` 为 true 的设备，其次 `tasks` 为 0 的空闲设备；需要干净环境、特定机型或与其他任务隔离时才 `device action=create`（每台约 7–12 GB），新建前用 `environment` 查可用的运行时与机型。

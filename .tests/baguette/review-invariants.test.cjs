@@ -15,7 +15,7 @@ async function temporary(t) {const root=await fs.mkdtemp(path.join(os.tmpdir(),'
 
 test('bundle comparison detects equal-size equal-time resource changes; registration changes use installd', async t => {
   const root=await temporary(t), source=path.join(root,'Build.app'), installed=path.join(root,'Installed.app');
-  const info={CFBundleIdentifier:'test.example.game',CFBundleExecutable:'Game',CFBundleVersion:'1'};
+  const info={CFBundleSupportedPlatforms:['iPhoneSimulator'],CFBundleIdentifier:'test.example.game',CFBundleExecutable:'Game',CFBundleVersion:'1'};
   for(const folder of [source,installed]) {
     await fs.mkdir(folder);await fs.writeFile(path.join(folder,'Info.plist'),JSON.stringify(info));
     await fs.writeFile(path.join(folder,'Game'),'executable');await fs.writeFile(path.join(folder,'asset'),'old');
@@ -54,7 +54,7 @@ test('bundle comparison detects equal-size equal-time resource changes; registra
 
 test('foreground App info bounds comparison and hashing without imposing its deadline on install jobs',async t=>{
   const root=await temporary(t),source=path.join(root,'Game.app');await fs.mkdir(source);
-  const plist={CFBundleIdentifier:'test.example.game',CFBundleExecutable:'Game'};
+  const plist={CFBundleSupportedPlatforms:['iPhoneSimulator'],CFBundleIdentifier:'test.example.game',CFBundleExecutable:'Game'};
   await fs.writeFile(path.join(source,'Game'),Buffer.alloc(256*1024));
   for(const phase of ['compare','hash']){
     let clock=0,comparing=false;
@@ -73,7 +73,7 @@ test('foreground App info bounds comparison and hashing without imposing its dea
 test('installation comparison is already a pollable locked job, then settles as unchanged, sync or full',async t=>{
   for(const mode of ['unchanged','sync','full']){
     const root=await temporary(t),source=path.join(root,'Build.app'),installed=path.join(root,'Installed.app');
-    const plist={CFBundleIdentifier:'test.example.game',CFBundleExecutable:'Game',CFBundleVersion:'1'};
+    const plist={CFBundleSupportedPlatforms:['iPhoneSimulator'],CFBundleIdentifier:'test.example.game',CFBundleExecutable:'Game',CFBundleVersion:'1'};
     for(const folder of [source,installed]){
       await fs.mkdir(folder);await fs.writeFile(path.join(folder,'Info.plist'),JSON.stringify(plist));await fs.writeFile(path.join(folder,'Game'),'same');
     }
@@ -172,7 +172,7 @@ function agentFixture({frames=[],streamError=false,streamEvents=[],onDelay,onCom
     }
     return {stdout:''};
   };
-  const sim=async(args,options)=>{state.calls.push(['sim',args,options]);onCommand?.('sim',args,options,state);if(args[0]==='get_app_container'){if(state.missingApp)throw missingContainer();return {stdout:'/App.app'};}return {stdout:args.includes('show')?state.logEntries.map(e=>JSON.stringify(e)).join('\n'):''};};
+  const sim=async(args,options)=>{state.calls.push(['sim',args,options]);onCommand?.('sim',args,options,state);if(args[0]==='io'&&args[2]==='enumerate')return {stdout:state.enumeration||''};if(args[0]==='get_app_container'){if(state.missingApp)throw missingContainer();return {stdout:'/App.app'};}return {stdout:args.includes('show')?state.logEntries.map(e=>JSON.stringify(e)).join('\n'):''};};
   const spawnImpl=(_file,args)=>{
     const c=new EventEmitter();c.stdout=new EventEmitter();c.stderr=new EventEmitter();c.stdin=new EventEmitter();c.kill=()=>{};
     if(args[0]==='input') {
@@ -193,7 +193,7 @@ function agentFixture({frames=[],streamError=false,streamEvents=[],onDelay,onCom
     require(name){if(name==='node:fs/promises')return {mkdir:async()=>{},readdir:async p=>{onFile?.('readdir',p,state);return p.endsWith('DiagnosticReports')?[...state.diagnostics.keys()]:[];},stat:async p=>{onFile?.('stat',p,state);return state.diagnostics.get(path.basename(p));},rm:async p=>state.files.delete(p),writeFile:async(p,b)=>state.files.set(p,b),readFile:async p=>{onFile?.('readFile',p,state);const report=state.diagnostics.get(path.basename(p));if(report)return report.text;if(!state.files.has(p))throw Error('missing');return state.files.get(p);}};
       return require(name.startsWith('./')?path.join(dir,name):name);}};
   vm.runInNewContext(syncFs.readFileSync(path.join(dir,'agent.cjs'),'utf8'),context);
-  const agent=context.module.exports.createAgent({binary:'/bag',deviceSet:'/set',root:'/fixture',run,sim,Failure,spawnImpl,now:()=>{clock+=clockStep;return clock;}});
+  const agent=context.module.exports.createAgent({binary:'/bag',deviceSet:'/set',root:'/fixture',run,sim,Failure,spawnImpl,spatialAction:async(d,p,s)=>{state.spatial={device:d,params:p,screen:s};},now:()=>{clock+=clockStep;return clock;}});
   return {agent,state,device:{udid:A}};
 }
 
@@ -327,7 +327,7 @@ test('explicit log scope is shared by history and waits and never widens after l
 
 test('container lookup failures never become absent apps, installations or widened log scopes',async t=>{
   const root=await temporary(t),source=path.join(root,'Game.app');await fs.mkdir(source);await fs.writeFile(path.join(source,'Game'),'executable');
-  const plist=JSON.stringify({CFBundleIdentifier:'test.example.game',CFBundleExecutable:'Game'});
+  const plist=JSON.stringify({CFBundleSupportedPlatforms:['iPhoneSimulator'],CFBundleIdentifier:'test.example.game',CFBundleExecutable:'Game'});
   for(const code of ['COMMAND_FAILED','COMMAND_TIMEOUT','TIME_BUDGET_EXHAUSTED']) {
     const error=new Failure(code,'CoreSimulator service unavailable');const mutations=[];
     const apps=require(path.join(dir,'apps.cjs')).createApps({Failure,
@@ -882,6 +882,25 @@ test('describe distinguishes successful empty OCR from screenshot, Vision and bu
   }
 });
 
+test('TV and Vision describe modes always use real OCR, including point and full queries',async()=>{
+ for(const runtime of ['tvOS-27','xrOS-27']){
+  const f=agentFixture(),device={...f.device,runtime};
+  f.state.enumeration='Screen ID: 1\n Device Name: primary\n Pixel Size: {3840, 2160}\n Preferred UI Scale: 2\n';
+  f.state.ocr=[{text:'Continue',box:[.1,.1,.2,.1]},{text:'Go',box:[.11,.12,.05,.03]},{text:'Other',box:[.7,.7,.1,.1]}];
+  for(const params of [{},{mode:'full'},{x:220,y:140},{query:'continue'},{role:'button'},{x:0,y:0}]){
+   const result=await f.agent.describe(device,params);assert.equal(result.source,'ocr');assert.equal(result.tree,undefined);
+   if(params.x===220)assert.deepEqual(Array.from(result.elements,e=>e.label),['Go','Continue']);
+   else if(params.x===0||params.role==='button')assert.equal(result.elements.length,0);
+   else assert.equal(result.total,params.query?1:3);
+  }
+  assert.ok(!f.state.calls.some(([,args])=>args[0]==='describe-ui'));
+  for(const params of [{mode:'full'},{x:220,y:140}]){
+   f.state.ocr=null;await assert.rejects(f.agent.describe(device,params),/OCR unavailable/);
+   f.state.ocr=[];const empty=await f.agent.describe(device,params);assert.equal(empty.source,'ocr');assert.equal(empty.elements.length,0);
+  }
+ }
+});
+
 test('explicit viewer close survives task polling and worker restart; an unexpected exit can reconnect',async t=>{
   const {createRuntime}=require(path.join(dir,'runtime.cjs'));let wanted=true,live=false,opens=0;
   const bindings=new Map([['task-1',{udid:A}]]),settingsFile=path.join(await temporary(t),'settings.json');
@@ -1036,4 +1055,28 @@ test('management actions retire old refreshes and unload the iframe for shutdown
   assert.equal(f.get('screen').src,'about:blank');
   f.requests[1].resolve({ok:true,url:taskState(B).viewer.url});await pending;
   assert.equal(f.get('screen').src,'about:blank','late viewer cannot resurrect an unloaded page');
+});
+
+const rectangular = (name,width,height,scale) => `Screen ID: 1
+ Device Name: ${name}
+ Pixel Size: {${width}, ${height}}
+ Preferred UI Scale: ${scale}
+`;
+test('Vision Pro maps view points to a spatial ray; TV and spatial drags never send phone touches',async()=>{
+ const f=agentFixture();f.device.runtime='com.apple.CoreSimulator.SimRuntime.xrOS-27-0';
+ f.state.enumeration=rectangular('primary',3840,2160,2);
+ await f.agent.tap(f.device,{x:1152,y:648,observe:'none'});
+ const call=f.state.calls.find(([file])=>file.endsWith('/native/spatial'));
+ assert.deepEqual(Array.from(call[1].slice(3)),['0.6','0.6',String(16/9),'0.1','1']);
+ assert.equal(call[2].mutation,true);assert.equal(f.state.inputs.length,0);
+ await f.agent.gesture(f.device,{kind:'swipe',from:[100,100],to:[200,200],observe:'none'});
+ assert.equal(f.state.spatial.params.action,'drag');assert.equal(f.state.inputs.length,0);
+ await f.agent.gesture(f.device,{kind:'spatial',action:'reset',observe:'none'});
+ assert.equal(f.state.spatial.params.action,'reset');
+ f.device.runtime='com.apple.CoreSimulator.SimRuntime.tvOS-27-0';f.agent.forget(f.device.udid);
+ f.state.enumeration=rectangular('external-0',1920,1080,1);
+ await assert.rejects(f.agent.tap(f.device,{x:100,y:100}),e=>e.code==='UNSUPPORTED_INPUT');
+ const before=f.state.calls.length;
+ await assert.rejects(f.agent.setState(f.device,{appearance:'dark',orientation:'portrait'}),e=>e.code==='UNSUPPORTED_INPUT');
+ assert.equal(f.state.calls.length,before);
 });

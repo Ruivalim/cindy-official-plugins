@@ -14,6 +14,7 @@ const crypto = require('node:crypto');
 const {commandBudget} = require('./budget.cjs');
 const {deviceId} = require('./device-id.cjs');
 const {appContainer} = require('./app-container.cjs');
+const {platform} = require('./control-model.js');
 
 const BUNDLE = /^[A-Za-z0-9][A-Za-z0-9.-]+$/;
 const SYNC_LIMIT = 300;
@@ -93,9 +94,13 @@ function createApps({sim, run, Failure, now = Date.now, rsync = '/usr/bin/rsync'
     for (const [id, old] of jobs) if (old.state !== 'running' && now() - (old.finishedAt || 0) > 3600000) jobs.delete(id);
     let execution = 'not_executed';
     job.promise = (async () => {
+      const metadata = await plist(source), supported = metadata.CFBundleSupportedPlatforms;
+      const allowed = {iOS: ['iPhoneSimulator'], tvOS: ['AppleTVSimulator'], visionOS: ['XRSimulator', 'iPhoneSimulator']}[platform(device)];
+      if (Array.isArray(supported) && !supported.some(p => allowed.includes(p))) throw failure('APP_PLATFORM_MISMATCH', `This App was built for ${supported.join(', ')}; the device runs ${platform(device)}. Build for the matching simulator platform.`);
+      const nativePlatform = Array.isArray(supported) && supported.includes(allowed[0]);
       const local = await identity(source);
       job.bundleId = local.bundleId;
-      const container = p.mode === 'full' ? null : await installedAt(device, local.bundleId);
+      const container = p.mode === 'full' || !nativePlatform ? null : await installedAt(device, local.bundleId);
       let mode = 'full';
       if (container) {
         const installed = await identity(container).catch(() => null);

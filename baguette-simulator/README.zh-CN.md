@@ -2,6 +2,50 @@
 
 需要 macOS 15.0 或更新版本；旧系统会在启动随包二进制之前明确返回 UNSUPPORTED_OS。
 
+## 统一操作规则
+
+iPhone、iPad、Apple TV 和 Vision Pro 共用主屏幕、截图、查看缩放及操作说明入口。
+动作按钮单击执行；模式、开关和折叠姿态使用相同的选中高亮。临时拖动视角按钮保持
+原来的模式。悬停提示说明操作和快捷键，触屏也可打开统一的操作说明，查看当前设备
+支持的输入方式。窄窗口下工具栏换行时，画面会留出对应空间。
+
+## Apple TV 与 Vision Pro
+
+可在管理页或任务页新建设备，选择已安装的 tvOS 或 visionOS 运行时（后者标识为
+`xrOS`）。项目构建目标分别选择 `tvOS Simulator` 或 `visionOS Simulator`，再按原流程
+安装、启动对应 `.app`。两者均支持矩形实时画面、截图、本机 OCR、等待和日志。
+跨平台切换设备不会搬运原平台的 App。
+
+Apple TV 使用画面下方遥控器，或 `press` 的 `up`、`down`、`left`、`right`、`select`、
+`back`、`menu`、`home`、`play-pause`；也可用方向键、回车、Esc 和空格。
+`type_text auto/type` 支持至多 300 字符的 US 键盘逐字输入，也支持 keys；
+tvOS 运行时不提供模拟器剪贴板，不支持粘贴及 Unicode 文本。
+在实时画面内双指移动触控板会发送连续的原生 Siri Remote 触点；长滑可以跨过多个
+选项，焦点移动由 tvOS 按触摸轨迹处理。单击确认当前焦点项，右键返回（macOS 也
+支持 Control 点击）。点击位置不会直接选中电视画面上的坐标。使用 macOS 自然滚动
+时，焦点跟随手指移动，横纵两轴均与网页滚动增量反向。桌面滚动事件包含系统加速和
+惯性，也没有真实的抬指信号，因此时序和手感仍不等同于实体遥控器。
+Vision Pro 参照[苹果 Device Hub 的操作](https://developer.apple.com/documentation/xcode/interacting-with-your-visionos-app-in-device-hub)：
+点击、长按和拖动对应捏合操作，Shift 拖动控制远近，Control 拖动转向；工具栏提供
+转向、平移、环绕、推拉和复位。直接拖动四个视角按钮可临时调整视角，保留当前指针模式；
+单击按钮才切换画面拖动模式，悬停提示会说明两种操作。WASD/方向键水平移动，Q/E 下降/上升。触控板双指
+滚动平移、捏合前后移动。Option 拖动或启用双手按钮后，横向缩放、纵向旋转。
+键盘捕获开启时把文字、按键和粘贴传入设备；关闭时仅处理视角移动键。鼠标捕获发送相对移动和按键；Escape 退出捕获。
+录屏按钮保存实时画面。捕获需要桌面查看器获得焦点且浏览器支持，拒绝时会提示。
+标准游戏手柄在画面获得焦点时可导航：左摇杆移动、R2/L2 升降、右摇杆转向。
+输入失败后先松开摇杆再继续；实体手柄验收尚未完成。
+
+AI 可使用 `tap` 的截图坐标/OCR 文字、`press digital-crown`（或 `home`）、普通
+拖动/滑动/缩放/双指平移，或 `gesture kind=spatial` 搭配
+`action=drag|pinch|rotate|gaze|tilt|pan|orbit|dolly|move|reset`。
+坐标使用截图视图点，空间相机平移单位为米、旋转单位为度。空间 `pan` 仅接收 `by=[右,上]`，
+前后移动用 `move` 的 `[右,上,后]` 或 `dolly distance`；移动相机后重新截图。
+
+屏幕旋转、折叠姿态、状态栏覆盖、触摸菜单粘贴、`scroll_to` 及 `heal` 仅用于 iOS。
+tvOS/visionOS 所有查询模式均使用 OCR 文本列表（含 `mode=full` 和 `x,y` 点位查询），不提供无障碍树和元素 ID。
+新增输入适配已验证 Xcode 27、tvOS/visionOS 27；其他版本尚未验证。
+详见[原生协议及验证记录](native/platform-support.md)。正式版/Beta Cindy 整包安装及内嵌预览验收待完成。
+
 [English](README.md)
 
 截图在旧宿主上，或 JPEG 压缩后仍超过 130 KB 内联限制时，会返回文件路径。必须用读图工具打开后再选坐标，原分辨率文件仍保留。
