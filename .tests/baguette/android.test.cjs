@@ -185,9 +185,34 @@ test('SDK installation requires exact consent, verifies bytes and installs only 
   const xml=`<repository><license id="sdk-license">Test license</license><remotePackage path="system-images;android-36;google_apis;x86_64"><channelRef ref="channel-0"/><display-name>Test image</display-name><uses-license ref="sdk-license"/><archives><archive><complete><url>test-image.zip</url><size>${bytes.length}</size><checksum type="sha256">${hash}</checksum></complete></archive></archives></remotePackage></repository>`;
   t.mock.method(globalThis,'fetch',async url=>new Response(String(url).endsWith('.xml')?xml:bytes));
   const sdk=createSdk(path.join(root,'private'),{platform:'linux',arch:'x64',home:root,env:{ANDROID_HOME:existing}}),plan=await sdk.plan();
+  const downloads=path.join(root,'private/downloads'),old=path.join(downloads,'interrupted'),recent=path.join(downloads,'recent'),external=path.join(root,'keep');
+  await fs.mkdir(old,{recursive:true});await fs.mkdir(recent);await fs.mkdir(external);await fs.writeFile(path.join(old,'download.zip'),'old interrupted bytes');await fs.writeFile(path.join(recent,'download.zip'),'recent bytes');await fs.writeFile(path.join(external,'sentinel'),'keep');
+  const link=path.join(downloads,'old-link');await fs.symlink(external,link);const past=new Date(Date.now()-2*86400000);await fs.utimes(old,past,past);await fs.lutimes(link,past,past);
   await assert.rejects(sdk.install({planId:plan.id,acceptLicenses:false}),e=>e.code==='SDK_CONFIRM_REQUIRED');
-  await sdk.install({planId:plan.id,acceptLicenses:true});await sdk.pending();assert.equal(sdk.status().state,'done');assert.equal((await sdk.inspect()).ready,true);
+  assert.ok(await fs.stat(old),'no cleanup before installation consent');
+  const started=await sdk.install({planId:plan.id,acceptLicenses:true});await assert.rejects(sdk.install({planId:plan.id,acceptLicenses:true}),e=>e.code==='SDK_INSTALL_RUNNING');
+  await sdk.pending();assert.equal(sdk.status().state,'done');assert.equal((await sdk.inspect()).ready,true);
+  for(const removed of [old,link,path.join(downloads,started.id)])await assert.rejects(fs.lstat(removed),e=>e.code==='ENOENT');
+  assert.equal(await fs.readFile(path.join(recent,'download.zip'),'utf8'),'recent bytes');assert.equal(await fs.readFile(path.join(external,'sentinel'),'utf8'),'keep');
   assert.equal(await fs.readFile(path.join(existing,'emulator/emulator'),'utf8'),'existing');assert.equal(await fs.readFile(path.join(root,'private/sdk/system-images/android-36/google_apis/x86_64/system.img'),'utf8'),'test image');
+});
+test('Android screenshot rejects iOS-only masks before reading and preserves raw rectangle pixels',async t=>{
+  let reads=0;const png=new PNG({width:8,height:12});png.data.fill(255);
+  const endpoint=await emulator(t,(s,h)=>{reads++;assert.ok(h[':path'].endsWith('/getScreenshot'));send(s,'Image',{format:{width:8,height:12},image:PNG.sync.write(png)});});
+  const agent=require(path.join(A,'agent.cjs')).createAgent({root:await temp(t),devices:{adb:async()=>{reads++;return {stdout:'Viewport INTERNAL: displayId=0, orientation=0'};}}});
+  const d={udid:id,name:'Fixture',endpoint,model:{width:8,height:12,density:160}};
+  await assert.rejects(agent.screenshot(d,{corners:true}),e=>e.code==='INVALID_ARGUMENT'&&e.execution==='not_executed');assert.equal(reads,0);
+  for(const corners of [undefined,false]){
+    const result=await agent.screenshot(d,{corners,format:'png'}),actual=PNG.sync.read(await fs.readFile(result.path));
+    assert.equal(actual.width,8);assert.equal(actual.height,12);assert.deepEqual(actual.data,png.data);assert.match(result.note,/without an added corner or cutout mask/);
+  }
+});
+
+test('Android location clear is rejected before all batch mutations while coordinates enable GPS',async()=>{
+  const calls=[],state=require(path.join(A,'state.cjs')).createState({devices:{adb:async(d,args)=>calls.push(args)},agent:{frame:async()=>({screen:{}})}});
+  await assert.rejects(state({udid:id},{appearance:'dark',orientation:'portrait',network:'clear',location:'clear'}),e=>e.code==='INVALID_ARGUMENT'&&e.execution==='not_executed');assert.equal(calls.length,0);
+  const result=await state({udid:id},{location:{lat:25,lon:121}});assert.equal(result.execution,'executed');assert.deepEqual(result.applied,['location']);
+  assert.deepEqual(calls,[['shell','cmd','location','set-location-enabled','true'],['emu','geo','fix','121','25']]);
 });
 test('APK binary manifest parser rejects truncated and invalid chunks without executing content',()=>{
   const {manifest,packageId}=require(path.join(A,'apps.cjs'));

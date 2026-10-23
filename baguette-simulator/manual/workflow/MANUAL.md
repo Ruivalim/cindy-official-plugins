@@ -65,6 +65,8 @@ AI 空间操作沿用 `gesture`：
 
 导入图片/视频用 `device action=import_media`（安卓，绝对 path，每个 ≤128 MiB）。返回目标 path、copied 和 scanRequested；importError 时先检查目标，勿重复复制。用户可滚轮滚动、捏合、双向文本复制粘贴、拖入文件，并在更多里录像；无音频 WebM 最长 5 分钟/128 MiB，旋转留边，离开前保存。Agent 观察转场继续用 capture，不以视频下载开始代替目标验证。
 
+安卓 location={lat,lon} 会开启定位服务；location=clear 仅 iOS，安卓在任何批量修改前拒绝，不关闭定位服务。network=offline/100-loss 关闭 Wi-Fi/移动数据，其余档位开启两者；network=clear 恢复全带宽/无延迟。安卓 screenshot 不额外绘制物理圆角/挖孔遮罩，只支持省略 corners 或 false；true 在读屏前拒绝，不能用矩形截图证明物理遮挡/安全区。下次确认 SDK 安装时，既有一天保留规则清理旧 downloads 临时文件，不涉及 SDK/AVD 数据。
+
 下面 Xcode、SpringBoard、Vision、iPhone Duo、增量 .app 同步等细节专指 iOS；观察→操作→验证、权限、任务隔离与关机规则适用于两端。
 
 ## 1. 开始

@@ -120,9 +120,11 @@ function createSdk(root,{platform=process.platform,arch=process.arch,env=process
     const selected=offered;offered=null;
     job={id:randomUUID(),state:'running',phase:'downloading',bytes:0,total:selected.bytes,bytesPerSecond:0};
     pending=(async()=>{
-      const temporary=path.join(root,'downloads',job.id);await fs.mkdir(temporary,{recursive:true,mode:0o700});
+      const temporary=path.join(root,'downloads',job.id);
       let committed=false;
       try{
+        await require('./artifacts.cjs').directory(root,'downloads');
+        await fs.mkdir(temporary,{recursive:true,mode:0o700});
         for(const pkg of selected.packages){
           job.package=pkg.name;job.phase='downloading';const began=Date.now(),before=job.bytes;
           const r=await response(pkg.url,AbortSignal.timeout(30*60*1000)),hash=createHash(pkg.algorithm),file=path.join(temporary,'download.zip');

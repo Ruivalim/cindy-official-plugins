@@ -54,6 +54,7 @@ function createAgent({root,devices,run}){
     return {...match,ui};
   }
   async function screenshot(d,p={}){
+    if(p.corners!==undefined&&p.corners!==false)throw fail('INVALID_ARGUMENT','corners=true is iOS-only. Android returns the rectangular framebuffer without an added corner or cutout mask; omit corners or use false.');
     const f=await frame(d,p),scale=number(p.scale,'scale',1,3,1),r=p.region||{x:0,y:0,width:f.screen.width,height:f.screen.height};
     for(const [key,max] of [['x',f.screen.width],['y',f.screen.height],['width',f.screen.width-r.x],['height',f.screen.height-r.y]])number(r[key],key,key==='width'||key==='height'?1:0,max);
     const width=Math.max(1,Math.round(r.width*scale)),height=Math.max(1,Math.round(r.height*scale)),out=new PNG({width,height});
@@ -73,7 +74,7 @@ function createAgent({root,devices,run}){
       // bytes only to the trusted viewer request; Agent screenshots use files.
       return {udid:d.udid,path:file,mimeType:'image/png',clipboardPng:bytes.toString('base64'),execution:'executed'};
     }
-    return {udid:d.udid,path:file,mimeType:png?'image/png':'image/jpeg',pixels:{width,height},screen:f.screen,scale,...(p.region?{region:r}:{}),... (inline?{_modelImages:inline}:{}),note:'Image pixels divided by scale are view points; add the region origin when cropped. Use those coordinates for tap and gesture.'};
+    return {udid:d.udid,path:file,mimeType:png?'image/png':'image/jpeg',pixels:{width,height},screen:f.screen,scale,...(p.region?{region:r}:{}),... (inline?{_modelImages:inline}:{}),note:'Android rectangular framebuffer, without an added corner or cutout mask; this does not verify physical screen occlusion. Image pixels divided by scale are view points; add the region origin when cropped. Use those coordinates for tap and gesture.'};
   }
   async function after(d,p,result){
     try{

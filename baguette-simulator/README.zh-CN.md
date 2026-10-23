@@ -20,6 +20,8 @@
 
 底部 Home 栏可按住向上拖：短拖后松开返回主页，拖到屏幕中间停顿后松开进入最近任务。旋转按钮让设备外框随物理姿态旋转，主页也会跟着转。外框和画面采用与 iPhone 相同的 320 毫秒缓动，不叠加缩放动画。空间足够时旋转保持竖屏机身尺寸，只有窗口过窄时才限制横放尺寸；系统开启“减少动态效果”时跳过动画。内容方向由安卓和当前 App 决定：锁定竖屏的内容随设备一起转动，支持横屏的 App 可重新排版。摇一摇结束后保留原来的设备姿态。
 
+安卓 `location={lat,lon}` 会开启定位服务；`location=clear` 仅 iOS，安卓在所有批量写入前拒绝，不会关闭定位。`network=offline/100-loss` 关闭 Wi-Fi/移动数据，其余档位开启两者；clear 恢复全带宽/无延迟。安卓截图为矩形 framebuffer，不添加物理圆角/挖孔遮罩；`corners=true` 仅 iOS，安卓只接受省略/false，截图不能证明物理遮挡或安全区。下次确认安装 SDK 时，复用一天保留规则清理超过一天的 downloads 临时目录；保留较新条目，不触碰 SDK/AVD 或符号链接目标。
+
 ## 安卓交互对齐
 
 在画面上用滚轮或触控板滚动，捏合发送 App 内双指缩放；画面外捏合仍缩放查看窗口。选中文字后 Cmd/Ctrl+C 复制到电脑，也可在「更多」复制设备剪贴板；Cmd/Ctrl+V 粘贴。拖入 APK、图片或视频，或使用「更多 → 导入」（每个文件 ≤128 MiB）。APK 与 Agent 共用安装 job 和内容校验，媒体复制到 Downloads 并请求扫描。Agent 使用 `device action=import_media path=…`，先检查 copied、scanRequested、path 和 importError，再决定后续操作。
