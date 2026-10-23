@@ -9,8 +9,8 @@ const TEXT = {
     noneTitle: 'This task has no simulator yet', noneBody: 'Pick a device for this task or create a new one. Cindy also picks one when it opens the simulator.',
     use: 'Use', create: 'New iPhone…', creating: 'Creating…', inOther: (n) => n === 1 ? 'used by another task' : `used by ${n} other tasks`,
     offTitle: (name) => `${name} is off`, offBody: 'Start it to see the screen here. Apps and data are kept.', start: 'Start', starting: 'Starting…', change: 'Use another device',
-    pausedTitle: 'Simulators are turned off', pausedBody: 'Turn them on in Plugins → iOS Simulator to use them here.',
-    pluginOff: 'The iOS Simulator plugin is turned off.', needXcode: 'Needs full Xcode with an iOS runtime installed.',
+    pausedTitle: 'Simulators are turned off', pausedBody: 'Turn them on in Plugins → Device Simulator to use them here.',
+    pluginOff: 'The Device Simulator plugin is turned off.', needXcode: 'Needs full Xcode with an iOS runtime installed.',
     failed: 'Not completed. Check the device and try again.', busy: 'Another simulator operation is running. Trying again shortly…', timeout: 'No response from the simulator service. Reopen this tab.',
     devices: 'Devices', back: 'Back', stateFailed: 'The operation completed, but task status or the screen could not be read. Refresh this task; do not repeat the operation.', recordFailed: 'Device operation completed, but its task or App record was not saved. Check storage before assigning or switching devices; do not repeat the operation.',
   },
@@ -20,8 +20,8 @@ const TEXT = {
     noneTitle: '这个任务还没有模拟器', noneBody: '选一台设备给这个任务用，或新建一台。Cindy 打开模拟器时也会自己选。',
     use: '用这台', create: '新建 iPhone…', creating: '正在创建…', inOther: (n) => `另有 ${n} 个任务在用`,
     offTitle: (name) => `${name} 已关闭`, offBody: '启动后画面会显示在这里，App 和数据都保留。', start: '启动', starting: '正在启动…', change: '换一台设备',
-    pausedTitle: '模拟器运行已关闭', pausedBody: '在「插件 → iOS 模拟器」里打开开关后即可在这里使用。',
-    pluginOff: '「iOS 模拟器」插件已停用。', needXcode: '需要先安装完整的 Xcode 和一个 iOS 运行时。',
+    pausedTitle: '模拟器运行已关闭', pausedBody: '在「插件 → 设备模拟器」里打开开关后即可在这里使用。',
+    pluginOff: '「设备模拟器」插件已停用。', needXcode: '需要先安装完整的 Xcode 和一个 iOS 运行时。',
     failed: '操作没有完成，请核对设备后重试。', busy: '有其他模拟器操作正在进行，稍后自动重试…', timeout: '模拟器服务没有响应，请重新打开这个页签。',
     devices: '设备', back: '返回', stateFailed: '操作已完成，但任务状态或画面未能读取。请刷新此任务，不要重复操作。', recordFailed: '设备操作已完成，但任务绑定或 App 记录未保存。请先检查存储，再分配或切换设备；不要重复设备操作。',
   },
@@ -131,7 +131,7 @@ onPush((m) => {
 });
 (async () => {
   lang = await locale(); T = TEXT[lang] || TEXT.en; document.documentElement.lang = lang;
-  $('screen').title = lang === 'zh-CN' ? 'iOS 模拟器' : 'iOS Simulator';
+  $('screen').title = lang === 'zh-CN' ? '设备模拟器' : 'Device Simulator';
   render(); await refresh();
   // Bindings can change even while the current device keeps streaming.
   setInterval(() => { if (!document.hidden && !busy) refresh(); }, 4000);

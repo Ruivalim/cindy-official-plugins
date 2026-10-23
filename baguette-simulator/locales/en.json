@@ -1,5 +1,5 @@
 {
-  "name": "iOS Simulator",
+  "name": "Device Simulator",
   "description": "Private iOS simulators: each task sees its own device in its sidebar tab, and the Simulators view manages them all. Persistent run switch; 15-minute idle shutdown keeps data. Requires macOS 15+, Apple Silicon, full Xcode and an iOS runtime. Built on open-source Baguette (tddworks, Apache-2.0).",
   "whenToUse": "Default for iOS Simulator work: install, launch and drive built apps on private devices; screenshot, wait, capture changes, read logs; live view in the task sidebar. Start with devices. Verify with real touches (tap/gesture), not AXe/idb or Xcode windows. heal needs consent.",
   "tools": {
@@ -56,6 +56,6 @@
     "title": "Simulators"
   },
   "taskView": {
-    "title": "iOS Simulator"
+    "title": "Device Simulator"
   }
 }

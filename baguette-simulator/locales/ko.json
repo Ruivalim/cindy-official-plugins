@@ -1,5 +1,5 @@
 {
-  "name": "iOS 시뮬레이터",
+  "name": "기기 시뮬레이터",
   "description": "독립 iOS 시뮬레이터. 작업마다 사이드바 탭에서 자기 기기 화면을 보고, 「시뮬레이터」 보기에서 모든 기기를 관리합니다. 실행 스위치와 기본 15분 유휴 종료로 데이터를 보존합니다. macOS 15+, Apple Silicon, 전체 Xcode 및 iOS runtime이 필요합니다. 오픈소스 Baguette(tddworks, Apache-2.0) 기반입니다.",
   "whenToUse": "iOS 시뮬레이터 작업의 기본 도구: 전용 기기에서 빌드된 App을 설치·실행·조작하고 스크린샷, 대기, 변화 기록, 로그 확인을 하며 작업 사이드바에 실시간 화면을 보여 줍니다. 먼저 devices(새로 만들 때만 environment). 빈 기기를 재사용하거나 새로 만드세요. 검증은 tap/gesture의 실제 터치로 하고 AXe/idb를 받거나 Xcode 창을 누르지 마세요. 전체 절차는 매뉴얼. heal은 동의 필요. 실행 스위치를 대신 켜지 마세요.",
   "tools": {
@@ -56,6 +56,6 @@
     "title": "시뮬레이터"
   },
   "taskView": {
-    "title": "iOS 시뮬레이터"
+    "title": "기기 시뮬레이터"
   }
 }
