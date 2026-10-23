@@ -104,3 +104,31 @@ test('the logic page keeps one hold in flight while devices run and stops when n
  release(true);await new Promise(r=>setTimeout(r,20));
  assert.equal(holds.length,5,'the same loop re-issued once, then ended');
 });
+
+test('an open page without a stream prevents idle shutdown, including during status errors',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'baguette-viewing-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ let clock=120000,failStatus=false;
+ const context={module:{exports:{}},process,Date:class extends Date{static now(){return clock;}},require:name=>require(name.startsWith('./')?path.resolve('baguette-simulator/node',name):name)};
+ vm.runInNewContext(await fs.readFile('baguette-simulator/node/viewer.cjs','utf8')+'\nmodule.exports.bridgeForTest=initializeBridge;',context);
+ const viewer=context.module.exports;
+ const f=await fixture(t,{inUse:async()=>viewer.viewing()});
+ viewer.configureControls({status:async()=>{if(failStatus)throw Error('temporarily unavailable');return {devices:[]};}});
+ const server={base:'http://127.0.0.1:1',port:1};
+ t.after(()=>server.clipboard?.close());
+ await viewer.bridgeForTest(server,path.join(dir,'devices'),async()=>{});
+ const bridge=server.clipboard;bridge.devices.add(udid);
+ const poll=token=>fetch(bridge.base+'/control-api',{method:'POST',headers:{Origin:bridge.base,'X-Cindy-Clipboard':token},body:JSON.stringify({action:'status',udid})});
+ assert.equal(bridge.viewers(),0,'no video stream');
+ assert.equal((await poll('invalid')).status,403);
+ assert.equal(viewer.viewing(),false,'unauthenticated requests do not count');
+ const token=bridge.fragment.split('.')[1];
+ for(const unavailable of [false,true]){
+  failStatus=unavailable;clock+=16*60000;
+  assert.equal((await poll(token)).status,unavailable?503:200);
+  f.advance(16*60000);await f.runtime.checkIdle();
+  assert.equal(f.state(),'Booted','an open page protects the device');
+ }
+ clock+=viewer.VIEWER_GRACE_MS+1;
+ f.advance(16*60000);await f.runtime.checkIdle();
+ assert.equal(f.state(),'Shutdown','closing the page lets normal idle shutdown resume');
+});
