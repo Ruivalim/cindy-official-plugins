@@ -21,8 +21,30 @@ function stage(platform='tvOS',respond=async()=>({ok:true}),withVision=false){
  if(withVision)vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../baguette-simulator/node/vision-stage.js'),'utf8'),context);
  vm.runInNewContext(source,context);
  function emit(name,props={}){const e={button:0,pointerId:1,isPrimary:true,clientX:960,clientY:540,deltaX:0,deltaY:0,deltaMode:0,preventDefault(){this.prevented=true;},...props};fire(events,name,e);return e;}
- return {emit,calls,status,choose:value=>context.cindyVision.choose(value),advance:ms=>{now+=ms;},elapse:ms=>{now+=ms;for(const [id,t] of [...timers])if(t.at<=now){timers.delete(id);t.fn();}},windowEvent:name=>fire(windowEvents,name),hide:()=>{context.document.hidden=true;fire(docEvents,'visibilitychange');},show:()=>{context.document.hidden=false;},disconnect:()=>stream.onClose()};
+ return {emit,calls,status,cameraDrag:mode=>context.cindyVision.cameraDrag(mode),choose:value=>context.cindyVision.choose(value),advance:ms=>{now+=ms;},elapse:ms=>{now+=ms;for(const [id,t] of [...timers])if(t.at<=now){timers.delete(id);t.fn();}},windowEvent:name=>fire(windowEvents,name),hide:()=>{context.document.hidden=true;fire(docEvents,'visibilitychange');},show:()=>{context.document.hidden=false;},disconnect:()=>stream.onClose()};
 }
+test('all input kinds share order in discrete/gesture/discrete interleavings without replay or deadlock',async()=>{
+ for(const first of ['press','key','paste'])for(const kind of first==='press'?['wheel']:['pointer','wheel','camera'])for(const started of [false,true])for(const outcome of ['success','cancel','failure']){
+  if(kind==='camera'&&!started)continue; // Mode changes intentionally cancel queued keys before they start.
+  let ack,reject,blocked=false;const tv=first==='press';
+  const s=stage(tv?'tvOS':'visionOS',async(action)=>{if(action===first&&!blocked){blocked=true;await new Promise((resolve,r)=>{ack=resolve;reject=r;});}},!tv);
+  if(!tv)s.choose('keyboard');
+  if(tv)s.emit('contextmenu');else if(first==='paste')s.emit('paste',{clipboardData:{getData:()=> 'first'}});else s.emit('keydown',{code:'KeyB'});
+  if(started){await tick();assert.equal(s.calls.length,1);}
+  if(kind==='wheel'){s.emit('wheel',{deltaY:-10});s.emit('wheel',{deltaY:-20});s.elapse(tv?101:121);}
+  else if(kind==='pointer'){s.emit('pointerdown');s.emit('pointermove',{clientX:1000});s.emit('pointerup');}
+  else{const drag=s.cameraDrag('pan');drag.move(50,20);drag.end();}
+  if(tv){s.emit('pointerdown');s.emit('pointerup');}else s.emit('keydown',{code:'KeyC'});
+  await tick();assert.equal(s.calls.length,1,`${first}/${kind}: later began must wait for earlier discrete input`);
+  if(outcome==='cancel')s.windowEvent('blur');
+  if(outcome==='failure')reject(Error('uncertain delivery'));else ack();
+  await tick();
+  if(outcome==='success'){
+   assert.deepEqual(s.calls.map(p=>p.phase||p.action),[first,'began','changed','ended',tv?'press':'key']);
+   assert.equal(s.calls[1].gesture,s.calls[3].gesture);
+  }else assert.equal(s.calls.length,1,`${outcome} discards every queued input without replay`);
+ }
+});
 test('Vision keyboard switch gates keys and paste while preserving camera navigation',async()=>{
  const s=stage('visionOS',undefined,true),paste={clipboardData:{getData:()=> 'example'}};
  for(const code of ['KeyB','Digit1','Enter'])assert.equal(s.emit('keydown',{code}).prevented,true);

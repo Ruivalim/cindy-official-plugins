@@ -2,7 +2,7 @@
 // One live contact, using the same absolute-sample/coalescing protocol as TV.
 // A mode belongs to a gesture from pointer-down until release; modifier changes
 // cannot turn an already held pinch into a camera movement.
-globalThis.createVisionStage = function({canvas,api,message,onError,onCancel=()=>{},zh}) {
+globalThis.createVisionStage = function({canvas,api,message,onError,onCancel=()=>{},enqueueGesture,zh}) {
  let mode='interact',keyboard=false,twoHands=false,contact=null,pointer=null,stopped=false;
  let idleTimer=null,beat=null,lastHover=0,keys=new Set(),keyTimer=null,wheel=null;
  let recording=null,saving=false,hoverBlocked=false,game=null,gameTimer=null,gameFailed=false;
@@ -39,11 +39,14 @@ globalThis.createVisionStage = function({canvas,api,message,onError,onCancel=()=
   const c={id:crypto.randomUUID(),last:{z:0,spread:.1,angle:0,aspect:canvas.width/canvas.height||16/9,...value},samples:[],ready:false,busy:false,ending:false,finished:false};
   c.initial={...c.last};c.sent=c.initial;
   c.done=new Promise(resolve=>{c.resolve=resolve;});contacts.add(c);contact=c;
-  (previous?.done||Promise.resolve()).then(async()=>{
+  const start=async()=>{
    if(!usable()||c.cancelled){done(c);return;}
    try{await api('spatial',{...c.initial,gesture:c.id,phase:'began'});c.ready=true;pump(c);if(!c.ending)heartbeat(c);}
    catch{failed(c);}
-  });return c;
+  };
+  if(enqueueGesture)enqueueGesture(start,c.done);
+  else (previous?.done||Promise.resolve()).then(start);
+  return c;
  }
  function update(c,value){
   if(!c||c.ending||c.finished)return;

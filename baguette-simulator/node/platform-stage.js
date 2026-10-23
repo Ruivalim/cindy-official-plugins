@@ -10,19 +10,22 @@
   const message = text => { status.textContent = text; status.hidden = !text; };
   const inputError = () => {errorUntil=Date.now()+5000;message(zh ? '输入未确认，请查看画面后重试。' : 'Input not confirmed. Check the view before retrying.');};
   let inputEpoch = 0, pendingInputs = 0;
+  // Reserve the existing queue through a gesture's entire lifetime. Gesture
+  // starts and discrete actions therefore have one ordering owner.
+  const enqueueGesture=(start,done)=>{const previous=inputQueue;inputQueue=done;previous.then(start);};
   const input = action => {
     if (stopped || document.hidden) return;
     if (pendingInputs >= 16) { resetPointer(); inputError(); return; }
     const epoch = inputEpoch; pendingInputs++;
+    // Close only gestures already accepted before this action, synchronously.
+    // Waiting for the current gesture inside the queue could wait on its own tail.
+    endPan();vision?.finish();
     inputQueue = inputQueue.then(async () => {
-      if (stopped || document.hidden || epoch !== inputEpoch) return;
-      await endPan();
-      await vision?.finish();
       if (!stopped && !document.hidden && epoch === inputEpoch) return action();
     }).catch(() => { resetPointer(); inputError(); }).finally(() => { pendingInputs--; });
     return inputQueue;
   };
-  const vision=!tv&&globalThis.createVisionStage?globalThis.createVisionStage({canvas,api:(...args)=>parent.cindySim.api(...args),message:text=>{errorUntil=Date.now()+8000;message(text);},onError:inputError,onCancel:()=>{inputEpoch++;},zh}):null;
+  const vision=!tv&&globalThis.createVisionStage?globalThis.createVisionStage({canvas,api:(...args)=>parent.cindySim.api(...args),message:text=>{errorUntil=Date.now()+8000;message(text);},onError:inputError,onCancel:()=>{inputEpoch++;},enqueueGesture,zh}):null;
   const press=button=>input(()=>parent.cindySim.api('press',{button}));
   // Parent toolbar/shortcuts share this page's gesture ordering and cancellation.
   globalThis.cindyPlatform={press};
@@ -87,17 +90,16 @@
     return current?.done||Promise.resolve();
   }
   function beginPan(dx,dy) {
-    const previous=pan;
     // A relative desktop gesture has no absolute touchdown point. Leave room
     // in its initial direction, as a thumb starting near the opposite edge.
     const start={x:dx===0?.5:dx<0?.15:.85,y:dy===0?.5:dy<0?.15:.85};
     const contact={id:crypto.randomUUID(),...start,pending:null,ready:false,busy:false,ending:null,finished:false};
     contact.done=new Promise(resolve=>{contact.resolve=resolve;});pans.add(contact);pan=contact;
-    (previous?.done||Promise.resolve()).then(async()=>{
+    enqueueGesture(async()=>{
       if(stopped||contact.ending==='cancel'||document.hidden){finishPan(contact);return;}
       try{await parent.cindySim.api('trackpad',{gesture:contact.id,phase:'began',...start});contact.ready=true;pumpPan(contact);}
       catch{failPan(contact);}
-    });
+    },contact.done);
     return contact;
   }
   const resetPointer=()=>{inputEpoch++;down=null;endPan(true);vision?.cancel();};

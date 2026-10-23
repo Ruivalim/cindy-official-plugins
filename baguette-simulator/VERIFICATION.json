@@ -1,9 +1,10 @@
 {
   "date": "2026-10-24",
-  "pluginVersion": "0.1.65",
+  "pluginVersion": "0.1.66",
   "baguette": "0.2.10",
   "status": "vision-controls-review-regressions-verified-package-acceptance-pending",
   "passed": [
+    "0.1.66: 56 target controller/model/platform tests passed. TV and integrated Vision gestures reserve the existing platform inputQueue through their full done lifetime; discrete actions finish only previously accepted gestures synchronously before enqueueing. This consolidates both input directions without a new queue or retry. Thirty-six discrete/gesture/discrete interleavings cover press/key/paste, TV wheel and Vision pointer/wheel/toolbar camera, before the first API starts or while it is pending, normal release, cancellation and rejection. The old implementation first reproduced the out-of-order began failure. Existing reverse-order, cross-page, mouse-edge and cancellation regressions pass. Native source/binaries and permissions unchanged.",
     "0.1.65: rebased onto main 1c35c36 (#202). Manifest and all four locales retain the upstream Device Simulator name/task title while preserving TV/Vision descriptions and tools. Task messages combine the upstream name with required iOS/tvOS/visionOS runtime guidance. The rebase introduces no change to spatial/native input, queue ownership or permissions.",
     "0.1.64: 55 controller/model/platform regressions passed. Cross-page fixtures execute real control.js capture listeners before real platform/Vision handlers. Parent/frame TV remote shortcuts, toolbar buttons and Home wait for began/changed/ended acknowledgement and all accepted swipe motion; cancellation/failure invalidate pending presses. Remote mouse-down preserves device focus. Vision frame Cmd/Ctrl+S, Shift+H, +, -, 0 and 1 reach the device with modifiers while capture is on; viewer shortcuts remain active outside the frame and when capture is off, and Escape exits capture. Missing platform controller does not fall back to direct device input. Both original cross-page findings failed against 0.1.63 before the fix. Existing device queue owns all toolbar press delivery; no new queue, native change or permission.",
     "0.1.63: 52 controller/model/platform regressions passed. TV ending intent is explicit (normal finish versus cancel), and normal queued swipes no longer expire silently by age. Six success interleavings delay began/changed/ended by 101/1001 ms while three short swipes and a following Back action are accepted; every swipe retains began/motion/ended order before Back. Existing cancellation/failure interleavings remain green. The success regression first failed on 0.1.62. Rebased main be48e71 (#201), retaining first-connect presentation and both upstream/review tests. Native source/binaries and permissions unchanged.",
@@ -22,10 +23,10 @@
     "Browser standard-gamepad fixture drove the real camera through simultaneous translation/elevation/rotation, then stopped at neutral. Physical controller not used.",
     "Native EOF, malformed sample, SIGTERM and 750 ms inactivity released held input and allowed the next spatial tap to acquire the device lock.",
     "Controller checked at 1100 and 320 pixels in light/dark; spatial planner and lifecycle tests cover invalid/deadline inputs, fast clicks, absolute-motion coalescing, mode/depth stability, focus/hidden/page/stream loss, failed input without replay, gamepad neutral/focus gating.",
-    "Repository contract, localization, provisioning, publish and simulator suite: 291/294 pass. The three failures are unchanged Bash 4 lowercase-expansion workflow tests on macOS Bash 3; all three reproduced on clean latest main 1c35c36. No changed-feature test failed."
+    "Repository contract, localization, provisioning, publish and simulator suite: 292/295 pass. The three failures are unchanged Bash 4 lowercase-expansion workflow tests on macOS Bash 3; all three already reproduced on clean latest main 1c35c36 in the preceding round. No changed-feature test failed."
   ],
   "notVerified": [
-    "Final 0.1.65 .cindy installation and embedded preview on stable/Beta Cindy are pending. The user-confirmed 0.1.57 acceptance below predates these review fixes and does not attest the changed package.",
+    "Final 0.1.66 .cindy installation and embedded preview on stable/Beta Cindy are pending. The user-confirmed 0.1.57 acceptance below predates these review fixes and does not attest the changed package.",
     "Browser pointer-lock acceptance is not established: the local automated browser could not consistently retain OS foreground focus. Failure reports that limitation; native relative-pointer delivery is independently verified.",
     "Physical game controller, immersive apps, and Xcode/runtime versions other than 27. Orbit uses a fixed one-metre pivot; exact Apple camera sensitivity and hardware input feel are not claimed."
   ],
