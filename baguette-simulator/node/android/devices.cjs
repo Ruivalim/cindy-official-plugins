@@ -24,13 +24,13 @@ function createDevices({root,sdk,run,children}){
   }catch(e){if(e.code==='ENOENT')throw fail('DEVICE_NOT_OWNED','This Android device does not belong to the plugin.');throw e;}}
   async function endpoint(device){
     for(const directory of discovery){
-      for(const name of await fs.readdir(directory).catch(()=>[])){
+      for(const name of await fs.readdir(directory).catch(e=>{if(e.code==='ENOENT')return [];throw e;})){
         if(!/^pid_\d+(?:_info)?\.ini$/.test(name))continue;
-        const info=ini(await fs.readFile(path.join(directory,name),'utf8').catch(()=>''));
+        const info=ini(await fs.readFile(path.join(directory,name),'utf8').catch(e=>{if(e.code==='ENOENT')return '';throw e;}));
         if(info['avd.id']!==device.avdName||path.resolve(info['avd.dir']||'')!==path.resolve(device.directory))continue;
-        const pid=Number(name.match(/\d+/)[0]);try{process.kill(pid,0);}catch{continue;}
+        const pid=Number(name.match(/\d+/)[0]);try{process.kill(pid,0);}catch(e){if(e.code==='ESRCH')continue;throw e;}
         const port=Number(info['grpc.port']),serial=Number(info['port.serial']);
-        if(!Number.isInteger(port)||port<1024||port>65535||!Number.isInteger(serial)||serial<5554||serial>5682||!info['grpc.token'])continue;
+        if(!Number.isInteger(port)||port<1024||port>65535||!Number.isInteger(serial)||serial<5554||serial>5682||!info['grpc.token'])throw fail('DEVICE_DISCOVERY_UNCONFIRMED','The running private Android device has an invalid connection record. Inspect its state before changing this device.');
         return {port,token:info['grpc.token'],serial:`emulator-${serial}`,pid};
       }
     }
@@ -38,7 +38,7 @@ function createDevices({root,sdk,run,children}){
   }
   async function devices(){
     const local=await sdk.inspect(),out=[];
-    for(const name of await fs.readdir(avds).catch(()=>[])){
+    for(const name of await fs.readdir(avds).catch(e=>{if(e.code==='ENOENT')return [];throw e;})){
       if(!UUID.test(name.slice(0,-5))||!name.endsWith('.json'))continue;
       const d=await metadata(name.slice(0,-5)),ep=await endpoint(d);let state='Shutdown';
       if(ep){try{const {stdout}=await run(local.adb,['-s',ep.serial,'shell','getprop','sys.boot_completed'],{timeout:2000});state=stdout==='1'?'Booted':'Booting';}catch{state='Booting';}}

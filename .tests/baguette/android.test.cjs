@@ -467,6 +467,68 @@ async function privateAndroid(t){
   await fs.writeFile(path.join(d.directory,'one.img'),'one');await fs.writeFile(path.join(d.directory,'two.img'),'two');
   return {root,devices,d};
 }
+test('Android discovery never turns unreadable runtime evidence into a stopped device',async t=>{
+  for(const source of ['directory','record','pid','connection'])for(const code of source==='connection'?['DEVICE_DISCOVERY_UNCONFIRMED']:source==='pid'?['EPERM']:['EACCES','EIO','ENOTDIR'])await t.test(source+' '+code,async t=>{
+    const {devices,d}=await privateAndroid(t),name='pid_'+process.pid+'.ini',list=fs.readdir,read=fs.readFile,kill=process.kill;
+    const error=()=>Object.assign(Error('discovery unreadable'),{code});
+    t.mock.method(fs,'readdir',async(dir,...args)=>{
+      if(String(dir).endsWith(path.join('avd','running'))){if(source==='directory')throw error();return [name];}
+      return list(dir,...args);
+    });
+    t.mock.method(fs,'readFile',async(file,...args)=>{
+      if(path.basename(String(file))!==name)return read(file,...args);
+      if(source==='record')throw error();
+      return `avd.id=${d.avdName}\navd.dir=${d.directory}\ngrpc.port=${source==='connection'?0:12345}\ngrpc.token=test-capability\nport.serial=5554\n`;
+    });
+    t.mock.method(process,'kill',(pid,signal)=>{if(source==='pid'&&pid===process.pid&&signal===0)throw error();return kill(pid,signal);});
+    const rejected=e=>e.code===code&&(e.execution===undefined||e.execution==='not_executed');
+    for(const operation of [()=>devices.devices(),()=>devices.boot({udid:d.udid}),()=>devices.shutdown({udid:d.udid}),...['delete_device','erase_device'].map(method=>()=>devices.manage(method,{udid:d.udid}))])await assert.rejects(operation(),rejected);
+    assert.equal(await fs.readFile(path.join(d.directory,'one.img'),'utf8'),'one');assert.equal(await devices.owns(d.udid),true);
+  });
+});
+test('Android discovery tolerates only real absence and rejects unreadable post-shutdown evidence',async t=>{
+  for(const phase of ['missing-directory','missing-record','dead-pid','after-shutdown'])await t.test(phase,async t=>{
+    const {devices,d}=await privateAndroid(t),list=fs.readdir,read=fs.readFile,kill=process.kill,name='pid_'+process.pid+'.ini';let stopped=false;
+    const endpoint=await emulator(t,s=>{stopped=true;send(s,'Empty',{});});
+    t.mock.method(fs,'readdir',async(dir,...args)=>{
+      if(String(dir).endsWith(path.join('avd','running'))){
+        if(phase==='missing-directory'||stopped)throw Object.assign(Error('discovery '+phase),{code:stopped?'EACCES':'ENOENT'});
+        return [name];
+      }
+      return list(dir,...args);
+    });
+    t.mock.method(fs,'readFile',async(file,...args)=>{
+      if(path.basename(String(file))!==name)return read(file,...args);
+      if(phase==='missing-record')throw Object.assign(Error('record gone'),{code:'ENOENT'});
+      return `avd.id=${d.avdName}\navd.dir=${d.directory}\ngrpc.port=${endpoint.port}\ngrpc.token=test-capability\nport.serial=5554\n`;
+    });
+    t.mock.method(process,'kill',(pid,signal)=>{if(phase==='dead-pid'&&pid===process.pid&&signal===0)throw Object.assign(Error('pid gone'),{code:'ESRCH'});return kill(pid,signal);});
+    if(phase==='after-shutdown'){
+      const result=await devices.manage('delete_device',{udid:d.udid});assert.equal(stopped,true);assert.equal(result.execution,'unknown');assert.equal(result.deviceError.code,'EACCES');assert.deepEqual(result.completedSteps,[]);assert.equal(await devices.owns(d.udid),true);
+      assert.equal(await fs.readFile(path.join(d.directory,'one.img'),'utf8'),'one');
+    }else {assert.equal((await devices.devices())[0].state,'Shutdown');assert.equal((await devices.shutdown({udid:d.udid})).execution,'not_executed');}
+  });
+});
+test('unreadable private Android inventory makes every stop-all entry incomplete',async t=>{
+  const {createRuntime}=require('../../baguette-simulator/node/runtime.cjs');
+  for(const entry of ['manual','disable','idle','exit'])for(const phase of ['before','after'])await t.test(entry+' '+phase,async t=>{
+    const {root,devices}=await privateAndroid(t),list=fs.readdir;let reads=0,clock=0;
+    t.mock.method(fs,'readdir',async(dir,...args)=>{
+      if(String(dir)===path.join(root,'avd')&&++reads>=(phase==='before'?1:2))throw Object.assign(Error('inventory denied'),{code:'EACCES'});
+      return list(dir,...args);
+    });
+    const runtime=createRuntime({settingsFile:path.join(root,'runtime.json'),now:()=>clock,dispatch:async method=>{
+      if(method==='devices')try{return {devices:await devices.devices()};}catch(e){return {devices:[],platformErrors:[{platform:'android',code:e.code,message:e.message}]};}
+      assert.equal(method,'close_viewer');return {};
+    }});
+    if(entry==='idle')clock=15*60000;
+    const result=entry==='manual'?await runtime.request('settings_stop_all'):entry==='disable'?await runtime.request('settings_save',{enabled:false,idleMinutes:15}):entry==='idle'?await runtime.checkIdle():await runtime.close();
+    assert.equal(result.ok,false);assert.equal(result.execution,'unknown');assert.equal(result.errorCode,'STOP_INCOMPLETE');assert.equal(result.platformErrors[0].code,'EACCES');
+  });
+  await t.test('missing inventory is empty',async t=>{
+    const {root,devices}=await privateAndroid(t);await fs.rm(path.join(root,'avd'),{recursive:true});assert.deepEqual(await devices.devices(),[]);
+  });
+});
 test('device removal reports each completed step and preserves records when a later deletion fails',async t=>{
   for(const action of ['delete_device','erase_device'])for(let failure=0;failure<(action==='delete_device'?3:2);failure++)await t.test(action+' step '+failure,async t=>{
     const {devices,d}=await privateAndroid(t),remove=fs.rm;let writes=0;

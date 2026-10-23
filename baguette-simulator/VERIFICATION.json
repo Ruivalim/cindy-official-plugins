@@ -1,8 +1,8 @@
 {
   "date": "2026-10-24",
-  "pluginVersion": "0.2.16",
+  "pluginVersion": "0.2.17",
   "baguette": "0.2.10",
-  "status": "platform-contract-and-input-evidence-source-verified-package-acceptance-pending",
+  "status": "discovery-failures-source-verified-package-acceptance-pending",
   "baseCommit": "e13abcd2caad2f83a66ed7b1716312ed4145eae8",
   "passed": [
     "Rebased onto main e13abcd (#199). TV/Vision native helpers, platform-stage, vision-stage, spatial and trackpad implementation files are byte-identical to main. Android review fixes retained.",
@@ -15,10 +15,12 @@
     "Shake read/status/shape preflight failures send zero sensor/pose writes and retain not_executed. Existing first/last sample and either/both cleanup failure tests still retain unknown and restore both values.",
     "scroll_to keeps completed swipe counts and execution across later screen-change, connection, budget and plain observation failures. Failed later input remains unknown; first-read failures stay not_executed; target-found and target-missing cases retain progress. No new retry or recovery mechanism.",
     "Real API36: after confirming each test lock setting has settled, four physical orientations preserve accelerometer_rotation=0 and =1. Original lock setting and portrait/Home restored; the private test device returned to Shutdown. No other Apple device or installed Cindy was changed.",
-    "Binary package offline fixtures: 21 Python tests completed, 1 opt-in live case skipped. The existing ZIP source-copy loop omits directory entries before collecting dependencies. The same final 256-entry cap and source/expanded/archive limits remain: 256 regular entries pass, 257 fail. Source bytes, dependency bytes, executable modes and final path validation remain covered."
+    "Binary package offline fixtures: 21 Python tests completed, 1 opt-in live case skipped. The existing ZIP source-copy loop omits directory entries before collecting dependencies. The same final 256-entry cap and source/expanded/archive limits remain: 256 regular entries pass, 257 fail. Source bytes, dependency bytes, executable modes and final path validation remain covered.",
+    "0.2.17: Android discovery retains non-ENOENT directory/record errors, non-ESRCH process-probe errors and invalid live private connection records. Preflight failures stop lifecycle writes; failed post-shutdown observation remains unknown; existing core platformErrors and runtime stopAll preserve incomplete stop evidence. No new retry/state mechanism. Android tests 90/90, including file-system faults and all four stop-all entry points; new regressions fail on the previous implementation. No emulator or installed Cindy was changed in this round.",
+    "0.2.17 full repository gate including binary dependencies: 411/414 passed; only the same three Bash 3 baseline publishing failures on unchanged main e13abcd. Final manifest/localization checks 27/27. Forge validation passed."
   ],
   "notVerified": [
-    "0.2.16 packaged acceptance on production/Beta Cindy is pending. Dash confirmed 0.2.14 on Beta; that historical attestation does not cover this rebased package.",
+    "0.2.17 packaged acceptance on production/Beta Cindy is pending. Dash confirmed 0.2.14 on Beta; that historical attestation does not cover this rebased package.",
     "No other iOS/tvOS/visionOS device was started or stopped for this integration. Upstream real-device evidence remains recorded separately.",
     "Android Windows/Linux physical-host acceptance remains pending."
   ],
