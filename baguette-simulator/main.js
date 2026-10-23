@@ -28,7 +28,7 @@ function holdWhileRunning() {
 const pages = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('baguette-pages') : null;
 const hasTaskView = () => typeof cindy.taskView === 'function';
 const withTask = (url, sessionId) => sessionId ? url.replace('#', `&task=${encodeURIComponent(sessionId)}#`) : url;
-const TASK_LOCATION = {'zh-CN':'Cindy 任务侧栏「iOS 模拟器」页签', en:'the "iOS Simulator" tab in the task sidebar'};
+const TASK_LOCATION = {'zh-CN':'Cindy 任务侧栏「设备模拟器」页签', en:'the "Device Simulator" tab in the task sidebar'};
 
 // Show a live view: the task's own page when the host has task pages (the page
 // loads its state itself; a page already open gets the URL pushed), otherwise
