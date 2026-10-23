@@ -50,6 +50,30 @@ async function boot({respond,abortSignal=AbortSignal}){
 }
 const status=(over={})=>({ready:true,parked:false,generation:1,device:{udid,name:'iPhone 17 Pro',state:'Booted',runtime:'com.apple.CoreSimulator.SimRuntime.iOS-27-1',deviceType:'x.iPhone-17-Pro'},devices:[{udid,name:'iPhone 17 Pro',state:'Booted',runtime:'iOS 27.1',deviceType:'x.iPhone-17-Pro'},{udid:other,name:'iPad',state:'Shutdown',runtime:'iOS 27.0',deviceType:'x.iPad'}],settings:{enabled:true,idleMinutes:15},idleDeadline:Date.now()+15*60000,...over});
 
+test('a newly opened task view connects while its first status request is pending',async()=>{
+ for(const firstResponse of [status(),{ok:false,errorCode:'CONTROL_FAILED'}]){
+  let resolveStatus;
+  const pending=new Promise(resolve=>{resolveStatus=resolve;});
+  const {dom}=await boot({respond:()=>pending});
+  assert.equal(dom.byId.status.textContent,'正在连接画面…');
+  assert.equal(dom.byId['chip-dot'].dataset.tone,'busy');
+  assert.match(dom.text(dom.byId.overlay),/正在连接画面/);
+  assert.doesNotMatch(dom.text(dom.byId.overlay),/画面已断开|恢复画面/);
+  assert.equal(dom.byId.overlay.querySelector('button'),null);
+  assert.equal(dom.byId['btn-home'].disabled,true);
+  resolveStatus(firstResponse);
+  await new Promise(resolve=>setImmediate(resolve));
+  if(firstResponse.ready){
+   assert.equal(dom.byId.overlay.hidden,true);
+   assert.equal(dom.byId.status.textContent,'运行中');
+   assert.equal(dom.byId.screen.loads.length,1);
+  }else{
+   assert.match(dom.text(dom.byId.overlay),/画面已断开/);
+   assert.equal(dom.byId.overlay.querySelector('button').textContent,'恢复画面');
+  }
+ }
+});
+
 test('slow desktop and clipboard screenshots finish before the viewer HTTP budget expires',async()=>{
  for(const to of ['desktop','clipboard']){
   let shots=0;

@@ -76,6 +76,8 @@
   function presence(s, flags = {}) {
     const state = s?.device?.state;
     if (flags.switching) return { tone: 'busy', key: 'booting' };
+    // No response yet is a normal page load, not a disconnected view.
+    if (!s && !flags.lost) return { tone: 'busy', key: 'connecting' };
     if (!s && flags.lost === 'stopped') return { tone: 'off', key: 'serviceOff' };
     if (!s && flags.lost === 'expired') return { tone: 'off', key: 'expired' };
     if (!s) return { tone: 'off', key: 'offline' };
@@ -92,6 +94,7 @@
     if (flags.switching) return { kind: 'switching', phase: flags.phase || 'preparing' };
     if (flags.recovering) return { kind: 'recovering' };
     if (flags.stopping) return { kind: 'stopping' };
+    if (!s && !flags.lost) return { kind: 'connecting' };
     // The page outlived its service: nothing to recover here, say how to reopen.
     if (!s && flags.lost === 'stopped') return { kind: 'serviceOff' };
     if (!s && flags.lost === 'expired') return { kind: 'expired' };
