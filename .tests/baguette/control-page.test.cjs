@@ -76,14 +76,14 @@ test('live device loads the handheld screen once; a service generation change al
  assert.equal(calls.filter(c=>c.action==='status').length,2);
 });
 
-test('unreadable App records keep the live screen and controls while only disabling device switching',async()=>{
+test('unreadable App records do not block device selection or live controls',async()=>{
  let damaged=true;
  const {dom,poll,calls}=await boot({respond:()=>status(damaged?{currentApp:null,currentAppError:{code:'APP_CONTEXT_UNREADABLE',message:'unreadable'}}:{currentApp:'test.example.app'})});
  assert.equal(dom.byId.overlay.hidden,true);assert.equal(dom.byId.tools.hidden,false);assert.equal(dom.byId['btn-home'].disabled,false);
  assert.equal(dom.byId.status.textContent,'运行中');assert.equal(dom.byId.screen.loads.length,1);
  dom.byId['device-chip'].dispatch('click');
- assert.match(dom.text(dom.body),/无法读取 App 记录/);
- let rows=dom.body.querySelectorAll('button').filter(b=>b.attrs.role==='menuitemradio');assert.ok(rows.every(b=>b.disabled));
+ assert.doesNotMatch(dom.text(dom.body),/无法读取 App 记录/);
+ let rows=dom.body.querySelectorAll('button').filter(b=>b.attrs.role==='menuitemradio');assert.equal(rows[1].disabled,false);
  damaged=false;await poll();dom.byId['device-chip'].dispatch('click');
  rows=dom.body.querySelectorAll('button').filter(b=>b.attrs.role==='menuitemradio');assert.equal(rows[1].disabled,false);
  assert.equal(dom.byId.screen.loads.length,1,'record repair never restarts or reloads the view');
@@ -106,7 +106,7 @@ test('a shut-down device shows a start button in place of the screen; starting b
  const {dom,calls}=await boot({respond:({action})=>{if(action==='boot'){state='Booted';return {ok:true};}return status({device:{udid,name:'iPhone 17 Pro',state}});}});
  assert.deepEqual(dom.byId.screen.loads,[],'no stream is loaded for a shut-down device');
  assert.match(dom.text(dom.byId.overlay),/iPhone 17 Pro 已关闭/);assert.equal(dom.byId['btn-home'].disabled,true);
- const start=dom.byId.overlay.querySelector('button');assert.equal(start.textContent,'启动设备');
+ const start=dom.byId.overlay.querySelector('button');assert.equal(start.textContent,'打开');
  await start.listeners.click[0]();
  assert.equal(calls.filter(c=>c.action==='boot').length,1);assert.equal(dom.byId.overlay.hidden,true);assert.equal(dom.byId.screen.loads.length,1);
 });
@@ -124,7 +124,7 @@ test('idle countdown card appears only in the last minute and keeps the device a
 test('switching follows the device job, then adopts the new device without exposing a UDID in the chip',async()=>{
  let job=null,current=udid;
  const {dom,poll,calls,context}=await boot({respond:({action,targetUdid})=>{
-  if(action==='switch'){job={id:'j1',sourceUdid:udid,targetUdid,state:'running',phase:'booting'};return {ok:true,job};}
+  if(action==='switch'){job={id:'j1',sourceUdid:udid,targetUdid,state:'running',phase:'preparing'};return {ok:true,job};}
   if(action==='status')return status({device:{udid:current,name:current===udid?'iPhone 17 Pro':'iPad',state:'Booted'},deviceJob:job});
   return {ok:true};}});
  dom.byId['device-chip'].dispatch('click');
@@ -132,11 +132,32 @@ test('switching follows the device job, then adopts the new device without expos
  assert.equal(rows.length,2);assert.equal(rows[0].disabled,true,'current running device is not switchable');assert.ok(!dom.text(rows[1]).includes(other.slice(-4)));
  rows[1].listeners.click[0]();await new Promise(r=>setImmediate(r));await poll();
  assert.equal(calls.filter(c=>c.action==='switch')[0].targetUdid,other);
- assert.match(dom.text(dom.byId.overlay),/正在启动 iPad/);
+ assert.match(dom.text(dom.byId.overlay),/正在切换/);
  job={...job,state:'done',phase:'done',activeUdid:other};current=other;await poll();
  assert.match(context.location.href,new RegExp('udid='+other));assert.equal(dom.byId['chip-name'].textContent,'iPad');
  assert.equal(dom.byId.screen.loads.at(-1),`/simulators/${other}?handheld=0&cindyViewer=token#cindyClipboard=123.token`);
  assert.match(dom.text(dom.byId.dock),/已切换/);
+});
+
+test('selecting a stopped device never loads its stream or boots until Open is clicked',async()=>{
+ let job=null,targetState='Shutdown';
+ const {dom,poll,calls}=await boot({respond:({action,targetUdid,udid:id})=>{
+  if(action==='switch'){job={id:'select-off',sourceUdid:udid,targetUdid,state:'done',phase:'done',activeUdid:targetUdid};return {ok:true,job};}
+  if(action==='boot'){assert.equal(id,other);targetState='Booted';return {ok:true};}
+  const s=status();s.devices[1].state=targetState;
+  return {...s,device:s.devices.find(d=>d.udid===id),deviceJob:job};
+ }});
+ dom.byId['device-chip'].dispatch('click');
+ const row=dom.body.querySelectorAll('button').find(b=>b.attrs.role==='menuitemradio'&&!b.disabled);
+ row.listeners.click[0]();await new Promise(r=>setImmediate(r));
+ assert.equal(dom.byId['chip-name'].textContent,'iPad');
+ assert.match(dom.text(dom.byId.overlay),/iPad 已关闭/);
+ assert.ok(!dom.byId.screen.loads.some(src=>src.includes(other)),'source status must not load a stopped target');
+ await poll();assert.ok(!calls.some(c=>c.action==='boot'),'polling never starts the target');
+ const open=dom.byId.overlay.querySelector('button');assert.equal(open.textContent,'打开');
+ await open.listeners.click[0]();
+ assert.equal(calls.filter(c=>c.action==='boot').length,1);
+ assert.equal(dom.byId.screen.loads.at(-1),`/simulators/${other}?handheld=0&cindyViewer=token#cindyClipboard=123.token`);
 });
 
 test('a page that outlives its service says how to reopen, then reconnects on its own when the service is back',async()=>{

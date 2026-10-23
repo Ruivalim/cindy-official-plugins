@@ -22,6 +22,9 @@ function blockedRoute(url){
 // matching background at attach time. `?cindyFull=1` keeps the upstream workbench.
 const STAGE_STYLE='<style id="cindy-stage-style">'+[
  '.preview-banner,#nativeRightRails,.handheld-ui,.handheld-hint,#nativeHandheldUI,#nativeHandheldHint{display:none!important}',
+ // The hidden right-hand rails reserve 58px on the device row upstream.
+ // Remove their gutter too, otherwise the bezel shifts left and clips in landscape.
+ 'html:not([data-cindy-full]) #simNativeView .dual-pane{padding-right:0!important}',
  'html:not([data-cindy-full]) .top-bar,html:not([data-cindy-full]) #nativeSidebarViewToggle,html:not([data-cindy-full]) #nativeThemeToggle,html:not([data-cindy-full]) #nativeStatus{display:none!important}',
  'html,body{background:transparent!important}',
  '@media (prefers-color-scheme:light){#simNativeView{--nv-page-bg:#f8f8f6!important}}',

@@ -5,7 +5,7 @@
   "name": "iOS 模拟器",
   "description": "独立的 iOS 模拟器：每个任务在自己的侧栏页签里看到自己的设备画面，「模拟器」主视图管理所有设备。插件设置提供运行开关，默认闲置 15 分钟关闭并保留数据。需要 macOS 15.0+、Apple Silicon、完整 Xcode 和 iOS runtime。基于开源项目 Baguette（tddworks，Apache-2.0）。",
   "whenToUse": "iOS 模拟器任务默认使用：在独立设备上安装、启动和操作已构建的 App，截图、等待、录下变化、看日志，画面实时显示在任务侧栏。先 devices，复用本任务或空闲设备（新建设备时才需要 environment）。用 tap/gesture 的真实触摸验证，不要另外下载 AXe/idb 或去点 Xcode 窗口。完整流程见手册。heal 须用户同意；不替用户重开运行开关。",
-  "version": "0.1.50",
+  "version": "0.1.54",
   "kind": "chip",
   "entry": "main.js",
   "icon": "assets/icon.png",
@@ -895,7 +895,7 @@
     },
     {
       "name": "viewer",
-      "description": "在当前任务侧栏打开（open）或关闭（close）设备的实时画面。open 返回 previewOpened，确认后才能说已显示；close 只停止画面服务，设备与 App 继续运行。画面页由用户操作，开放输入、文件与 App 安装（可能覆盖已有 App）、复制粘贴（替换 Mac 或模拟器剪贴板）、旋转、摇一摇、截图（存桌面或剪贴板）、设备切换与启停（关机终止 App），以及 Baguette 高级工具：位置与运动模拟、状态栏与持续生效的网络条件、摄像头输入、远程通知注入（可能触发 App 行为）、无障碍树、日志、录屏导出（可能含 App 隐私数据）；地图搜索与瓦片经插件代理发往 OpenStreetMap。打开前告知这些能力；打开页面不会自动执行它们。仅监听 127.0.0.1。 任务绑定或近期 App 记录保存失败时返回 taskBindingError/appContextError，设备结果保留；先检查记录和存储，不要重复设备操作。",
+      "description": "在当前任务侧栏打开（open）或关闭（close）设备的实时画面。open 返回 previewOpened，确认后才能说已显示；close 只停止画面服务，设备与 App 继续运行。画面页由用户操作，开放输入、文件与 App 安装（可能覆盖已有 App）、复制粘贴（替换 Mac 或模拟器剪贴板）、旋转、摇一摇、截图（存桌面或剪贴板）、设备切换与启停（关机终止 App），以及 Baguette 高级工具：位置与运动模拟、状态栏与持续生效的网络条件、摄像头输入、远程通知注入（可能触发 App 行为）、无障碍树、日志、录屏导出（可能含 App 隐私数据）；地图搜索与瓦片经插件代理发往 OpenStreetMap。打开前告知这些能力；打开页面不会自动执行它们。仅监听 127.0.0.1。 任务绑定或近期 App 记录保存失败时返回 taskBindingError/appContextError，设备结果保留；先检查记录和存储，不要重复设备操作。 切换只选择设备，不关机、不自动启动或搬运 App；已关闭的设备需点击「打开」。",
       "parameters": {
         "type": "object",
         "properties": {

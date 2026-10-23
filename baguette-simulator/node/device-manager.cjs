@@ -40,7 +40,6 @@ function createDeviceManager({dispatch,exclusive,assertEnabled,touch,contextFile
   const source=devices.find(d=>deviceId(d.udid)===deviceId(p.udid)),target=devices.find(d=>deviceId(d.udid)===deviceId(p.targetUdid));
   if(!source||!target)throw fail('DEVICE_NOT_OWNED','Select a device from this plugin.');
   if(!target.isAvailable)throw fail('DEVICE_UNAVAILABLE','The selected runtime is unavailable.');
-  if(devices.some(d=>d.udid!==source.udid&&d.udid!==target.udid&&d.state!=='Shutdown'))throw fail('OTHER_DEVICE_RUNNING','Shut down other Baguette devices before switching.');
   if(!['Booted','Shutdown'].includes(source.state)||!['Booted','Shutdown'].includes(target.state))throw fail('BUSY','Wait for the device state change to complete.');
   return {source,target};
  }
@@ -53,34 +52,19 @@ function createDeviceManager({dispatch,exclusive,assertEnabled,touch,contextFile
   const entry={id:randomUUID(),sourceUdid:source.udid,targetUdid:target.udid,state:'running',phase:'preparing',execution:'not_executed'};job=entry;
   const failed=async error=>{
    entry.errorCode=error.code||'SWITCH_FAILED';entry.execution=entry.execution==='not_executed'?(error.execution||'not_executed'):'unknown';
-   try{const actual=(await dispatch('devices')).devices;entry.activeUdid=actual.find(d=>d.udid===target.udid&&d.state==='Booted')?.udid||actual.find(d=>d.udid===source.udid&&d.state==='Booted')?.udid||null;}
-   catch{entry.activeUdid=null;}
-   await onSettled(entry,p).catch(()=>{});
+   // Selection failed before committing a new device. Keep the source selected,
+   // regardless of whether either simulator is running.
+   entry.activeUdid=source.udid;
    entry.state='failed';entry.phase='failed';touch();
   };
   const operation=exclusive(async()=>{
    try{
     await assertEnabled();
     ({source,target}=await selection(p));
-    const bundleId=await currentApp(source.udid);entry.bundleId=bundleId;
-    let appPath=null;
-    if(bundleId&&source.state==='Booted'){
-     // Only the application bundle is reused. No app data or credentials move.
-     const app=await dispatch('app_bundle',{udid:source.udid,bundleId});appPath=app.appPath;
-    }
-    if(source.udid!==target.udid&&source.state!=='Shutdown'){
-     entry.phase='stopping';entry.execution='unknown';await dispatch('shutdown',{udid:source.udid});
-     if((await dispatch('devices')).devices.find(d=>d.udid===source.udid)?.state!=='Shutdown')throw fail('STOP_UNCONFIRMED','Previous device shutdown was not confirmed.','unknown');
-     entry.execution='executed';
-    }
-    await assertEnabled();entry.phase='booting';entry.execution='unknown';await dispatch('boot',{udid:target.udid});entry.execution='executed';
-    if(bundleId){
-     if(appPath&&source.udid!==target.udid){entry.phase='installing';let job=await dispatch('install_app',{udid:target.udid,appPath});while(job?.state==='running')job=await dispatch('app_install_status',{udid:target.udid,job:job.job});}
-     entry.phase='launching';await dispatch('launch_app',{udid:target.udid,bundleId,showViewer:false});
-     await updateRecord(entry,()=>remember(target.udid,bundleId));
-    }
-    entry.phase='opening';const viewer=await dispatch('open_viewer',{udid:target.udid,_locale:p._locale});
-    entry.activeUdid=target.udid;entry.url=viewer.url;
+    // Only select the device. A stopped device waits for the explicit Start
+    // action; running devices and their apps are left exactly as they are.
+    // activeUdid identifies the selected device, not its power state.
+    entry.activeUdid=target.udid;entry.execution='executed';
     await onSettled(entry,p);entry.state='done';entry.phase='done';touch();
    }catch(error){await failed(error);}
   });

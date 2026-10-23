@@ -173,6 +173,11 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
       return manager.start(params);
     }
     if (method === 'task_state') return taskState(params._task, params._locale);
+    if (method === 'task_target') {
+      const sessionId = tasks ? await tasks.latestForDevice(params.udid) : null;
+      if (!sessionId) throw failure('TASK_NOT_BOUND', 'No task uses this device. Refresh the device list.');
+      return {ok:true, sessionId};
+    }
     if (method === 'task_bind') {
       if (!tasks || !validSession(params._task)) throw failure('INVALID_ARGUMENT', 'Unknown task.');
       const listed = (await dispatch('devices')).devices;

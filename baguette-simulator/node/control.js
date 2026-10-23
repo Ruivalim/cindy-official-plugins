@@ -183,7 +183,7 @@
     label($('btn-home'), t.home, '⇧⌘H'); label($('btn-shot'), `${t.screenshot} · ${shotTo() === 'clipboard' ? t.shotToClipboard : t.shotToDesktop}`, '⌘S'); label($('btn-shot-menu'), t.shotTo);
     label($('btn-rotl'), t.rotateLeft, '⌘←'); label($('btn-rotr'), t.rotateRight, '⌘→');
     label($('zoom-out'), t.zoomOut, '⌘−'); label($('zoom-in'), t.zoomIn, '⌘+'); label($('btn-more'), t.more);
-    $('device-chip').title = s?.currentAppError ? t.appRecordUnreadable : t.devices;
+    $('device-chip').title = t.devices;
     renderPosture();
   }
   function renderOverlay() {
@@ -235,6 +235,9 @@
       const s = await api('status');
       state.status = s; state.lost = false;
       trackSwitch(s);
+      // A completed selection may point at a stopped device. Use its own
+      // state immediately, never load its stream using the source's state.
+      if (s.device?.udid !== udid) s.device = s.devices?.find((d) => d.udid === udid);
       if (!state.switching && s.device?.state === 'Booted' && s.ready) {
         let unavailable = false; try { unavailable = !!screen.contentDocument?.querySelector('[data-viewer-unavailable]'); } catch {}
         if (state.generation === null || screen.src === 'about:blank' || unavailable) load();
@@ -434,8 +437,7 @@
     const paused = state.status?.settings?.enabled === false;
     showMenu($('device-chip'), [
       h('div', { class: 'head', text: t.devices }),
-      state.status?.currentAppError ? h('div', { class: 'head', role: 'status', text: t.appRecordUnreadable }) : null,
-      ...rows.map((d) => h('button', { class: 'item', role: 'menuitemradio', 'aria-checked': String(d.current), disabled: paused || !!state.status?.currentAppError || state.switching || !d.available || (d.current && d.tone === 'on'),
+      ...rows.map((d) => h('button', { class: 'item', role: 'menuitemradio', 'aria-checked': String(d.current), disabled: paused || state.switching || !d.available || d.current,
         title: d.current ? t.current : t.switchTo, onclick: () => { closeMenu(); switchTo(d.udid); } }, [
         h('span', { class: 'dot', 'data-tone': d.tone }),
         h('span', { class: 'label' }, [h('span', { text: d.name }), h('span', { class: 'sub', text: d.meta })]),
