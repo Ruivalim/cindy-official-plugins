@@ -411,8 +411,8 @@
   },
   {
     "path": "vendor/baguette/Baguette_Baguette.bundle/Web/sim-native.html",
-    "bytes": 147656,
-    "sha256": "4cc6ab478d340c7944b794dd513133cfc72d70db0327e1be229b244a0f852eb2"
+    "bytes": 148864,
+    "sha256": "469958dda82ebb7ee66337ebc6f50f95bd168a76a6db0a4a3a4f44cc11dc58a0"
   },
   {
     "path": "vendor/baguette/Baguette_Baguette.bundle/Web/sim-native.js",

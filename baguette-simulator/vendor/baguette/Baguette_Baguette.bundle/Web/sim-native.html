@@ -694,6 +694,18 @@
      control is simply gone. */
   #simNativeView .top-bar.tight .tb-os { display: none; }
   #simNativeView .top-bar.tight .tb-name { max-width: 92px; }
+  /* Narrowest windows (a 320-430px phone viewport): the bar must keep
+     the capture chip and the embedded settings button on screen, so the
+     tight state also trims gaps, padding and the chip's glyph. Button hit
+     areas stay as they are. */
+  #simNativeView .top-bar.tight { gap: 2px; padding-left: 2px; padding-right: 3px; }
+  #simNativeView .top-bar.tight .tb-label { gap: 3px; padding: 4px 3px 4px 4px; }
+  #simNativeView .top-bar.tight .tb-name { max-width: 52px; }
+  #simNativeView .top-bar.tight .tb-controls { gap: 2px; padding-right: 0; }
+  @media (max-width: 340px) { #simNativeView .top-bar.tight .tb-name { max-width: 26px; } }
+  #simNativeView .top-bar.tight .cap-size-glyph { display: none; }
+  #simNativeView .top-bar.tight .cap-size-chip { padding: 0 6px; }
+  #simNativeView .top-bar.tight .cap-size-code { min-width: 0; }
   #simNativeView .tb-scroll::-webkit-scrollbar { display: none; }  /* WebKit */
 
   /* ── Cluster folding ────────────────────────────────────────────
@@ -1031,6 +1043,10 @@
   @media (max-width: 420px) {
     #simNativeView .fmt-picker { display: none; }
     #simNativeView .tb-label .tb-name { max-width: 16ch; }
+    /* On a phone-width viewport the pill may be wider than the device
+       below it (the device column shrink-wraps to the widest child), so
+       the capture chip and the embedded settings button are not cut off. */
+    #simNativeView .top-bar { max-width: calc(100vw - 8px); margin-right: -58px; }  /* -58px: the rails' reserved padding on .dual-pane */
   }
 
   /* Live-log sheet — slides up from the bottom on toggle. Hidden

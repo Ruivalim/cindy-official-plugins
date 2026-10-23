@@ -129,3 +129,17 @@ test('viewer side: the ⚙ is hidden, last in the toolbar, driven only by same-o
  const css=fs.readFileSync(require.resolve(NODE+'control.css'),'utf8');
  assert.match(css,/body\.immersive\.gear-in-bar #settings-fab\{display:none\}body\.immersive\.gear-in-bar #viewport\{margin-top:0\}/);
 });
+
+test('narrow viewports keep the whole device toolbar (capture chip and ⚙) inside the pill',()=>{
+ const html=fs.readFileSync(require.resolve('../../baguette-simulator/vendor/baguette/Baguette_Baguette.bundle/Web/sim-native.html'),'utf8');
+ const media=(max)=>{const i=html.indexOf('@media (max-width: '+max+'px)');assert.ok(i>=0,'media '+max);return html.slice(i,html.indexOf('\n  }\n',i)+5);};
+ // 402 and 351 fall under the 420 query, 320 under the 340 one as well.
+ assert.match(media(420),/\.top-bar \{ max-width: calc\(100vw - 8px\); margin-right: -58px; \}/,'pill may exceed the device width, offset by the rails padding');
+ assert.match(media(340),/\.top-bar\.tight \.tb-name \{ max-width: 26px; \}/);
+ assert.match(html,/\.top-bar\.tight \.tb-name \{ max-width: 52px; \}/);
+ assert.match(html,/\.top-bar\.tight \.cap-size-glyph \{ display: none; \}/);
+ assert.match(html,/\.top-bar\.tight \.cap-size-code \{ min-width: 0; \}/);
+ assert.ok(!/\.top-bar\.tight[^{]*\{[^}]*\bwidth:\s*[0-9]+px/.test(html.replace(/max-width|min-width/g,'')),'tight state must not shrink button hit areas');
+ const patch=fs.readFileSync(require.resolve('../../baguette-simulator/vendor-web.patch'),'utf8');
+ assert.ok(patch.includes('max-width: calc(100vw - 8px)')&&patch.includes('.top-bar.tight .cap-size-code'),'vendor-web.patch carries the change');
+});
