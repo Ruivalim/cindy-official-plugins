@@ -2,28 +2,35 @@
 const fs=require('node:fs/promises'),path=require('node:path'),{randomUUID,createHash}=require('node:crypto');
 const {PNG,jpeg}=require('../../vendor/android/deps.cjs'),{rpc}=require('./grpc.cjs'),{number}=require('./agent.cjs');
 const {commandBudget}=require('../budget.cjs'),{label}=require('./labels.cjs');
+const {normalizeFrame}=require('./geometry.cjs');
 async function capture({d,p,root,agent,perform}){
   const seconds=number(p.seconds,'seconds',0.5,15,3),fps=number(p.fps,'fps',1,20,10),max=number(p.max_frames,'max_frames',2,30,12),start=Date.now(),deadline=p._deadline||start+110000;
-  commandBudget(seconds*1000,deadline);
-  const before=(await agent.frame(d,p)).screen;
+  let before,stream=Promise.resolve();
   const frames=[],abort=new AbortController();let changed=false,shape=null,last=0,error=null,actionResult=null,actionError=null,finished=start,keptBytes=0,lastHash=null,received=0;
+  const confirmScreen=async()=>{
+    if(changed||JSON.stringify(before)!==JSON.stringify((await agent.frame(d,p)).screen))throw Object.assign(Error('The screen changed during capture. Record again with a fixed orientation.'),{code:'SCREEN_CHANGED'});
+  };
   const width=Math.round(d.model.width/(d.model.density/160)),height=Math.round(d.model.height/(d.model.density/160));
-  const stream=rpc(d.endpoint,'streamScreenshot',{format:0,width:Math.max(width,height),height:Math.max(width,height)},{deadline,signal:abort.signal,onData:image=>{
+  try{
+  commandBudget(seconds*1000,deadline);
+  before=(await agent.frame(d,p)).screen;
+  stream=rpc(d.endpoint,'streamScreenshot',{format:0,width:Math.max(width,height),height:Math.max(width,height)},{deadline,signal:abort.signal,onData:image=>{
     const now=Date.now(),geometry=JSON.stringify([image.format.width,image.format.height,image.format.rotation?.rotation]);
     if(shape&&shape!==geometry)changed=true;shape=geometry;
     if(!image.image.length||now-last<1000/fps)return;last=now;received++;
     const hash=createHash('sha256').update(image.image).digest('hex');if(hash===lastHash)return;lastHash=hash;
     if((keptBytes+=image.image.length)>64e6){error=Object.assign(Error('Capture exceeded its memory limit. Use a shorter interval.'),{code:'CAPTURE_TOO_LARGE'});abort.abort();return;}
-    frames.push({at:now,bytes:Buffer.from(image.image)});
+    frames.push({at:now,bytes:Buffer.from(normalizeFrame(image,before.rotation||0).bytes)});
   }}).catch(e=>{if(!abort.signal.aborted)error=e;});
-  try{
     while(!frames.length&&!error&&Date.now()<Math.min(deadline,start+5000))await new Promise(r=>setTimeout(r,20));
     if(error)throw error;if(!frames.length)throw Error('Android produced no capture frames.');
+    await confirmScreen();
     if(p.action)try{actionResult=await perform(p.action);}catch(e){actionError={code:e.code,message:e.message,execution:e.execution||'unknown'};}
     finished=Date.now();
+    await confirmScreen();
     if(commandBudget(seconds*1000,deadline).timeout<seconds*1000)throw Object.assign(Error('Not enough time remains to finish capture.'),{code:'TIME_BUDGET_EXHAUSTED'});
     await new Promise(r=>setTimeout(r,seconds*1000));
-    if(JSON.stringify(before)!==JSON.stringify((await agent.frame(d,p)).screen))changed=true;
+    await confirmScreen();
   }catch(e){error=e;}
   finally{abort.abort();await stream;}
   const outcome={udid:d.udid,execution:actionError?.execution||actionResult?.execution||'not_executed',...(actionResult?{action:actionResult}:{}),...(actionError?{actionError}:{})};

@@ -3,7 +3,7 @@ const {number}=require('./agent.cjs'),{packageId}=require('./apps.cjs'),{rpc}=re
 const fail=(message)=>Object.assign(Error(message),{code:'INVALID_ARGUMENT',execution:'not_executed'});
 function createState({devices,agent}){
   return async function setState(d,p){
-    const operations=[],applied=[];
+    const operations=[],applied=[],appliedSteps=[];
     const add=(name,args)=>operations.push({name,run:()=>devices.adb(d,args,{deadline:p._deadline,mutation:true})});
     const setting=(name,space,key,value)=>add(name,['shell','settings','put',space,key,String(value)]);
     if(p.orientation!==undefined){
@@ -34,11 +34,12 @@ function createState({devices,agent}){
     if(p.privacy!==undefined){
       const q=p.privacy,id=packageId(q.bundleId),permissions={camera:['CAMERA'],microphone:['RECORD_AUDIO'],contacts:['READ_CONTACTS','WRITE_CONTACTS'],calendar:['READ_CALENDAR','WRITE_CALENDAR'],location:['ACCESS_FINE_LOCATION','ACCESS_COARSE_LOCATION'],'location-always':['ACCESS_FINE_LOCATION','ACCESS_COARSE_LOCATION','ACCESS_BACKGROUND_LOCATION'],photos:['READ_MEDIA_IMAGES','READ_MEDIA_VIDEO'],'photos-add':[],motion:['ACTIVITY_RECOGNITION'],'media-library':['READ_MEDIA_AUDIO']};
       if(!['grant','revoke','reset'].includes(q.action))throw fail('Unknown privacy action.');
+      if(q.action==='reset')throw fail('Android supports grant/revoke only. Permission reset is iOS-only; no permissions were changed.');
       if(q.service==='all'||!permissions[q.service]?.length)throw fail('Choose a specific Android permission: camera, microphone, contacts, calendar, location, location-always, photos, motion or media-library.');
       for(const permission of permissions[q.service])add('privacy',['shell','pm',q.action==='grant'?'grant':'revoke',id,'android.permission.'+permission]);
     }
-    for(const [index,operation] of operations.entries()){try{await operation.run();if(operations[index+1]?.name!==operation.name)applied.push(operation.name);}catch(e){return {udid:d.udid,execution:e.execution==='not_executed'&&!applied.length?'not_executed':'unknown',outcome:'partial',applied:[...new Set(applied)],stateError:{field:operation.name,code:e.code||'STATE_FAILED',message:e.message,execution:e.execution||'unknown'},nextAction:'Inspect the failed field; do not repeat the entire batch.'};}}
-    const result={udid:d.udid,execution:operations.length?'executed':'not_executed',applied:[...new Set(applied)]};
+    for(const [index,operation] of operations.entries()){try{await operation.run();appliedSteps.push({field:operation.name,step:operations.slice(0,index+1).filter(o=>o.name===operation.name).length});if(operations[index+1]?.name!==operation.name)applied.push(operation.name);}catch(e){return {udid:d.udid,execution:e.execution==='not_executed'&&!appliedSteps.length?'not_executed':'unknown',outcome:'partial',applied:[...new Set(applied)],appliedSteps,stateError:{field:operation.name,step:appliedSteps.filter(s=>s.field===operation.name).length+1,code:e.code||'STATE_FAILED',message:e.message,execution:e.execution||'unknown'},nextAction:'Inspect the failed field and its completed steps; do not repeat the entire batch.'};}}
+    const result={udid:d.udid,execution:operations.length?'executed':'not_executed',applied:[...new Set(applied)],appliedSteps};
     try{result.screen=(await agent.frame(d,p)).screen;}catch(e){result.observationError={code:e.code,message:e.message};}
     return result;
   };

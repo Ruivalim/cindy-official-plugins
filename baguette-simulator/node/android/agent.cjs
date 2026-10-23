@@ -4,7 +4,7 @@ const {randomUUID,createHash}=require('node:crypto');
 const {PNG,jpeg,XMLParser}=require('../../vendor/android/deps.cjs');
 const {rpc}=require('./grpc.cjs'),G=require('../geometry.cjs'),pixels=require('../pixels.cjs');
 const {commandBudget}=require('../budget.cjs');
-const {displayRotation,rotateImage}=require('./geometry.cjs');
+const {displayRotation,normalizeFrame}=require('./geometry.cjs');
 const XML=new XMLParser({ignoreAttributes:false,attributeNamePrefix:'',parseTagValue:false,processEntities:true});
 const fail=(code,message,execution='not_executed')=>Object.assign(Error(message),{code,execution});
 const number=(v,name,min,max,fallback)=>{if(v===undefined)return fallback;if(typeof v!=='number'||!Number.isFinite(v)||v<min||v>max||(['count','max_swipes','max_frames','limit','fps'].includes(name)&&!Number.isInteger(v)))throw fail('INVALID_ARGUMENT',`${name} must be ${min}–${max}.`);return v;};
@@ -19,9 +19,8 @@ function createAgent({root,devices,run}){
     const image=await call(d,'getScreenshot',{format:0},p);
     if(rotation!==await displayRotation(devices,d,p))throw fail('SCREEN_CHANGED','Android display orientation changed during capture. Observe again.');
     if(!image.image?.length)throw fail('SCREEN_UNAVAILABLE','Android has not produced a frame yet. Wait for startup and retry.');
-    const turns=((image.format.rotation?.rotation||0)-rotation+4)%4;
-    const decoded=rotateImage(PNG.sync.read(image.image),turns),ratio=d.model.density/160;
-    return {bytes:turns?PNG.sync.write(decoded):image.image,image:decoded,screen:{width:decoded.width/ratio,height:decoded.height/ratio,orientation:['portrait','landscape-left','portrait-upside-down','landscape-right'][rotation],ratio,rotation}};
+    const normalized=normalizeFrame(image,rotation),decoded=normalized.image,ratio=d.model.density/160;
+    return {...normalized,screen:{width:decoded.width/ratio,height:decoded.height/ratio,orientation:['portrait','landscape-left','portrait-upside-down','landscape-right'][rotation],ratio,rotation}};
   }
   async function tree(d,p={}){
     const {stdout}=await devices.adb(d,['exec-out','uiautomator','dump','/dev/tty'],{deadline:p._deadline,timeout:18000});
@@ -106,7 +105,8 @@ function createAgent({root,devices,run}){
     }else{
       let from=p.from,to=p.to;
       if(p.kind==='edge'){const edge=p.edge||'bottom';from=edge==='bottom'?[screen.width/2,screen.height-1]:edge==='top'?[screen.width/2,1]:edge==='left'?[1,screen.height/2]:[screen.width-1,screen.height/2];to=to||[screen.width/2,screen.height/2];}
-      if(p.direction){const v={up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]}[p.direction];if(!v)throw fail('INVALID_ARGUMENT','Invalid swipe direction.');const dist=number(p.distance,'distance',1,Math.max(screen.width,screen.height),Math.min(screen.width,screen.height)*0.6);from=p.within||[screen.width/2-v[0]*dist/2,screen.height/2-v[1]*dist/2];to=[from[0]+v[0]*dist,from[1]+v[1]*dist];}
+      if(p.direction){const v={up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]}[p.direction];if(!v)throw fail('INVALID_ARGUMENT','Invalid swipe direction.');const dist=number(p.distance,'distance',1,Math.max(screen.width,screen.height),Math.min(screen.width,screen.height)*0.6);from=from||p.within||[screen.width/2-v[0]*dist/2,screen.height/2-v[1]*dist/2];to=[from[0]+v[0]*dist,from[1]+v[1]*dist];}
+      if(p.kind==='pan')from=from||[screen.width/2,screen.height/2];
       from=point(from,'from');
       if(p.kind==='pan'){const by=point(p.by,'by');paths=[[[from[0]-20,from[1]],[from[0]-20+by[0],from[1]+by[1]]],[[from[0]+20,from[1]],[from[0]+20+by[0],from[1]+by[1]]]];}
       else{if(!['swipe','drag','edge'].includes(p.kind))throw fail('INVALID_ARGUMENT','Unknown gesture.');paths=[[from,point(to,'to')]];}
@@ -187,7 +187,15 @@ function createAgent({root,devices,run}){
   }
   async function logs(d,p){
     const limit=number(p.limit,'limit',1,1000,150),seconds=number(p.last_seconds,'last_seconds',1,86400,60),args=['logcat','-d','-v','epoch','-t','3000'];
-    if(p.bundleId||p.process){const processName=p.process||p.bundleId;if(!/^[\w.:-]+$/.test(processName))throw fail('INVALID_ARGUMENT','Invalid Android process name.');const r=await devices.adb(d,['shell','pidof',processName],{deadline:p._deadline}).catch(()=>({stdout:''}));const pid=r.stdout.split(/\s+/)[0];if(!/^\d+$/.test(pid))return {udid:d.udid,lines:[],note:'The process is not running.'};args.push('--pid='+pid);}
+    if(p.bundleId||p.process){const processName=p.process||p.bundleId;if(!/^[\w.:-]+$/.test(processName))throw fail('INVALID_ARGUMENT','Invalid Android process name.');
+      // ps succeeds even when the process is absent. Transport, identity and
+      // budget errors must propagate instead of becoming an empty log result.
+      const r=await devices.adb(d,['shell','ps','-A','-o','PID,NAME'],{deadline:p._deadline}),rows=r.stdout.trim().split(/\r?\n/);
+      if(!/^\s*PID\s+NAME\s*$/.test(rows.shift()||''))throw fail('PROCESS_QUERY_FAILED','Android did not return a valid process list. Inspect the device connection.');
+      const processes=rows.filter(l=>l.trim()).map(l=>/^\s*(\d+)\s+(\S+)\s*$/.exec(l));
+      if(processes.some(m=>!m))throw fail('PROCESS_QUERY_FAILED','Android returned an invalid process entry. Inspect the device connection.');
+      const process=processes.find(m=>m[2]===processName);
+      if(!process)return {udid:d.udid,lines:[],note:'The process is not running.'};args.push('--pid='+process[1]);}
     if(p.crashes!==false)args.push('-b','crash','-b','main');
     const raw=(await devices.adb(d,args,{deadline:p._deadline,maxBuffer:4e6})).stdout;let regex;
     try{if(p.match)regex=new RegExp(p.match,'i');}catch{throw fail('INVALID_ARGUMENT','Invalid log expression.');}

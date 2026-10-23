@@ -23,4 +23,11 @@ function rotateImage(image,turns){
   }
   return {width,height,data:out};
 }
-module.exports={toNative,displayRotation,rotateImage};
+// Screenshot and contact-sheet frames must use the same display coordinates.
+function normalizeFrame(frame,rotation){
+  const {PNG}=require('../../vendor/android/deps.cjs');
+  const turns=((frame.format.rotation?.rotation||0)-rotation+4)%4;
+  const image=rotateImage(PNG.sync.read(frame.image),turns);
+  return {image,bytes:turns?PNG.sync.write(image):frame.image};
+}
+module.exports={toNative,displayRotation,rotateImage,normalizeFrame};

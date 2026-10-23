@@ -14,7 +14,7 @@
 
 工具坐标均为用户看到的视图点（安卓为密度无关点），横竖屏截图与触摸保持一致。UIAutomator 提供无障碍树；自绘界面用本机 Tesseract 识别英文与简体中文。Unicode 使用设备剪贴板粘贴，`type` 最多输入 300 个 ASCII 字符；`touch` 通过已聚焦输入框的粘贴菜单输入。支持返回、主屏幕、电源、音量、App 切换和摇一摇。录帧期间要求方向与尺寸固定，录帧失败仍保留动作执行结果。
 
-系统差异：安卓手机/平板没有折叠铰链，不支持自定义丢包率、iOS 进程启动参数/环境变量、iOS 崩溃报告摘要。支持网络带宽/延迟/离线、定位、外观、字号、干净状态栏与具体运行时权限，受系统镜像及 App 声明限制。`heal` 重启安卓并结束 App，须用户接受影响；`viewer close` 只停画面，`device shutdown` 关机并保留数据。
+系统差异：安卓手机/平板没有折叠铰链，不支持自定义丢包率、iOS 进程启动参数/环境变量、iOS 崩溃报告摘要。支持网络带宽/延迟/离线、定位、外观、字号、干净状态栏与具体运行时权限，受系统镜像及 App 声明限制。`heal` 重启安卓并结束 App，须用户接受影响；`viewer close` 只停画面，`device shutdown` 关机并保留数据。 安卓通过 `appliedSteps` 的 field/step 记录字段内成功步骤，`applied` 仅列完整字段，`stateError.step` 指明失败步骤；部分执行不会误报未执行。安卓权限仅支持 grant/revoke，reset 在任何修改前拒绝。限定进程的日志查询保留连接/身份错误。联系表与截图共用方向校正，首次画面或预算失败也统一返回 `captureError`，不执行动作。
 
 数据位于 `BaguetteCindy/android`：macOS 在 `~/Library/Application Support`，Windows 在 `%LOCALAPPDATA%`，Linux 在 `$XDG_DATA_HOME`（默认 `~/.local/share`）。SDK、独立 AVD 与产物保存在本地。回环 HTTP/gRPC 用随机能力凭据，ADB 每次执行前确认独立 AVD 身份。任务需要时截图会发送给用户配置的模型；不提取设备账号凭据。
 

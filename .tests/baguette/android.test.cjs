@@ -167,7 +167,7 @@ test('APK binary manifest parser rejects truncated and invalid chunks without ex
 });
 test('capture retains a completed action when the final observation fails',async t=>{
   const endpoint=await emulator(t,s=>send(s,'Image',{format:{width:108,height:240},image:image()})),root=await temp(t);let calls=0;
-  const result=await require(path.join(A,'capture.cjs')).capture({d:{udid:id,endpoint,model:{width:108,height:240,density:160}},p:{seconds:0.5,action:{tool:'press'}},root,agent:{frame:async()=>{if(++calls>1)throw Object.assign(Error('Screen unavailable'),{code:'SCREEN_UNAVAILABLE'});return {screen:{width:108,height:240}};}},perform:async()=>({execution:'executed'})});
+  const result=await require(path.join(A,'capture.cjs')).capture({d:{udid:id,endpoint,model:{width:108,height:240,density:160}},p:{seconds:0.5,action:{tool:'press'}},root,agent:{frame:async()=>{if(++calls>2)throw Object.assign(Error('Screen unavailable'),{code:'SCREEN_UNAVAILABLE'});return {screen:{width:108,height:240}};}},perform:async()=>({execution:'executed'})});
   assert.equal(result.execution,'executed');assert.equal(result.captureError.code,'SCREEN_UNAVAILABLE');assert.equal(result.sheet,undefined);
 });
 test('Android viewer rotation keeps the portrait body size and caps only a narrow-window overflow',async()=>{
@@ -209,4 +209,72 @@ for(const broken of [false,true])test(`Android shake restores the original physi
   const agent=require(path.join(A,'agent.cjs')).createAgent({root:await temp(t),devices:{}}),action=agent.press({endpoint},{button:'shake'});
   if(broken)await assert.rejects(action,e=>e.execution==='unknown');else assert.equal((await action).execution,'executed');
   assert.equal(samples.length,broken?1:6);assert.ok(samples.every(s=>s.value.data[1]===0));assert.equal(poses.length,1);assert.deepEqual(poses[0].value.data,[0,0,90]);assert.equal(poses[0].interpolation,1);
+});
+
+test('state progress preserves every completed step within a partially applied field',async()=>{
+  const {createState}=require(path.join(A,'state.cjs'));
+  for(const profile of ['offline','wifi','clear'])for(const failAt of Array.from({length:profile==='offline'?3:5},(_,i)=>i)){
+    let calls=0;const state=createState({devices:{adb:async()=>{if(calls++===failAt)throw Object.assign(Error('budget'),{code:'TIME_BUDGET_EXHAUSTED',execution:'not_executed'});}},agent:{frame:async()=>({screen:{}})}});
+    const result=await state({udid:id},{network:profile,appearance:'dark'});
+    // appearance is the first step; network includes two or four substeps.
+    assert.equal(result.stateError.code,'TIME_BUDGET_EXHAUSTED');assert.equal(result.appliedSteps.length,failAt);
+    assert.equal(result.execution,failAt?'unknown':'not_executed');
+    assert.equal(result.applied.includes('network'),false);assert.equal(calls,failAt+1);
+  }
+  const calls=[],state=createState({devices:{adb:async(d,args)=>calls.push(args)},agent:{frame:async()=>({screen:{}})}});
+  assert.deepEqual((await state({udid:id},{network:'wifi'})).applied,['network']);assert.ok(calls.some(a=>a.join(' ')==='emu network speed full'));
+  calls.length=0;
+  await assert.rejects(state({udid:id},{appearance:'dark',privacy:{action:'reset',service:'camera',bundleId:'test.example.app'}}),e=>e.code==='INVALID_ARGUMENT'&&e.execution==='not_executed');assert.equal(calls.length,0,'unsupported reset is rejected before any field changes');
+});
+
+test('scoped logs distinguish absent processes, exact matches and query failures',async()=>{
+  const create=adb=>require(path.join(A,'agent.cjs')).createAgent({devices:{adb}}),d={udid:id};
+  for(const code of ['DEVICE_NOT_OWNED','COMMAND_FAILED','TIME_BUDGET_EXHAUSTED']){
+    const agent=create(async()=>{throw Object.assign(Error('query failed'),{code});});
+    await assert.rejects(agent.logs(d,{process:'test.example.app'}),e=>e.code===code);
+    if(code!=='TIME_BUDGET_EXHAUSTED')await assert.rejects(agent.waitFor(d,{log:'ready',process:'test.example.app',timeout:.1}),e=>e.code===code);
+  }
+  assert.equal((await create(async()=>({stdout:'PID NAME\n1 init\n8 test.example.app.other'})).logs(d,{process:'test.example.app'})).lines.length,0);
+  let scope;
+  const result=await create(async(d,args)=>{if(args.includes('ps'))return {stdout:'PID NAME\n7 test.example.app\n8 test.example.app.other'};scope=args;return {stdout:Date.now()/1000+' 7 7 I test: ready'};}).logs(d,{process:'test.example.app'});
+  assert.ok(scope.includes('--pid=7'));assert.equal(result.lines.length,1);
+  await assert.rejects(create(async()=>({stdout:''})).logs(d,{process:'test.example.app'}),e=>e.code==='PROCESS_QUERY_FAILED');
+});
+
+test('directional swipes preserve explicit starts and pan defaults to the screen center',async t=>{
+  const touches=[],png=new PNG({width:400,height:800});png.data.fill(255);
+  const endpoint=await emulator(t,(s,h,body)=>{const name=h[':path'].split('/').at(-1);
+    if(name==='getScreenshot')return send(s,'Image',{format:{width:400,height:800},image:PNG.sync.write(png)});
+    assert.equal(name,'sendTouch');touches.push(schema.lookupType('TouchEvent').decode(body.subarray(5)).touches);send(s,'Empty',{});
+  });
+  const agent=require(path.join(A,'agent.cjs')).createAgent({devices:{adb:async()=>({stdout:'Viewport INTERNAL: displayId=0, orientation=0'})}}),d={udid:id,endpoint,model:{width:400,height:800,density:160}};
+  await agent.gesture(d,{kind:'swipe',direction:'up',from:[100,500],distance:100,duration:.01,observe:'none'});
+  assert.deepEqual([touches[0][0].x,touches[0][0].y],[100,500]);assert.ok(touches.some(ts=>ts[0]?.y===400));touches.length=0;
+  await agent.gesture(d,{kind:'pan',by:[0,100],duration:.01,observe:'none'});
+  assert.deepEqual(touches[0].map(p=>[p.x,p.y]),[[180,400],[220,400]]);assert.ok(touches.some(ts=>ts.length===2&&ts.every(p=>p.y===500)));
+});
+
+test('capture preflight failures always retain the capture result shape without executing an action',async()=>{
+  const {capture}=require(path.join(A,'capture.cjs'));let actions=0;
+  for(const code of ['SCREEN_UNAVAILABLE','SCREEN_CHANGED','TIME_BUDGET_EXHAUSTED']){
+    const result=await capture({d:{udid:id,model:{width:2,height:3,density:160}},p:{seconds:.5,action:{tool:'press'}},agent:{frame:async()=>{throw Object.assign(Error('preflight'),{code});}},perform:async()=>{actions++;}});
+    assert.equal(result.captureError.code,code);assert.equal(result.execution,'not_executed');assert.equal(result.sheet,undefined);
+  }
+  assert.equal(actions,0);
+});
+
+test('contact-sheet frame bytes use locked display orientation before saving and rendering',async t=>{
+  const png=new PNG({width:2,height:3});png.data=Buffer.from([1,2,3,4,5,6].flatMap(n=>[n,0,0,255]));
+  for(const [rotation,sensor,expected,width,height]of [[0,2,[6,5,4,3,2,1],2,3],[1,0,[2,4,6,1,3,5],3,2]]){
+    const endpoint=await emulator(t,s=>send(s,'Image',{format:{width:2,height:3,rotation:{rotation:sensor}},image:PNG.sync.write(png)})),screen={width,height,rotation},root=await temp(t);
+    const result=await require(path.join(A,'capture.cjs')).capture({d:{udid:id,endpoint,model:{width:2,height:3,density:160}},p:{seconds:.5},root,agent:{frame:async()=>({screen})}});
+    assert.equal(result.captureError,undefined);assert.deepEqual(result.screen,screen);const frame=PNG.sync.read(await fs.readFile(result.frames[0].path));assert.equal(frame.width,width);assert.equal(frame.height,height);
+    assert.deepEqual([...frame.data].filter((_,i)=>i%4===0),expected);assert.ok((await fs.stat(result.sheet)).size>0);
+  }
+});
+
+test('capture rechecks the display after its first stream frame before executing the action',async t=>{
+  const endpoint=await emulator(t,s=>send(s,'Image',{format:{width:108,height:240},image:image()}));let reads=0,actions=0;
+  const result=await require(path.join(A,'capture.cjs')).capture({d:{udid:id,endpoint,model:{width:108,height:240,density:160}},p:{seconds:.5,action:{tool:'press'}},root:await temp(t),agent:{frame:async()=>({screen:{rotation:reads++?1:0}})},perform:async()=>{actions++;return {execution:'executed'};}});
+  assert.equal(result.captureError.code,'SCREEN_CHANGED');assert.equal(result.execution,'not_executed');assert.equal(actions,0);
 });

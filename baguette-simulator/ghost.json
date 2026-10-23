@@ -5,7 +5,7 @@
   "name": "设备模拟器",
   "description": "独立的 iPhone、iPad 与安卓模拟器，共用任务侧栏画面、设备管理和操作工具。默认闲置 15 分钟关机并保留数据。iOS 需要 macOS 15+、Apple Silicon、Xcode 与 iOS runtime；安卓支持 Mac、Windows x64、Linux x64，设置页引导确认下载大小与许可后安装环境。iOS 基于 Baguette（Apache-2.0）。",
   "whenToUse": "iOS 与安卓模拟器、App 安装启动、真实触摸、截图和界面检查、等待与录制变化、设备状态和日志排查。先 devices 选择设备，按手册验证结果。",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "kind": "chip",
   "entry": "main.js",
   "icon": "assets/icon.png",
@@ -757,7 +757,7 @@
     },
     {
       "name": "set_state",
-      "description": "改变设备状态，可一次改多项：orientation 方向；posture 折叠屏姿态 closed/open/flat 或角度；appearance light/dark；contrast 增强对比度；text_size 动态字体档位；network 网络条件（profile 名、offline、clear 或 {latency, bandwidth, loss}，对之后启动的 App 生效）；location {lat, lon} 或 clear；status_bar clean（9:41、满格满电，适合截图）或 clear；privacy {action: grant/revoke/reset, service, bundleId}，提前授权可避免权限弹窗。改权限会结束该 App，请在启动前设置。所有步骤与读回共用本次调用截止时间；applied 列出已完成字段，失败或预算耗尽时停止后续步骤，stateError 含失败字段 field、code、message、execution，先核对该字段，不整批重试。方向/姿态变化后的屏幕信息仅在剩余时间内确认成功时返回；current 中 null 表示未确认。 安卓支持方向、外观、字号、位置、状态栏及运行时权限，无折叠铰链；网络不支持自定义丢包率。",
+      "description": "改变设备状态，可一次改多项：orientation 方向；posture 折叠屏姿态 closed/open/flat 或角度；appearance light/dark；contrast 增强对比度；text_size 动态字体档位；network 网络条件（profile 名、offline、clear 或 {latency, bandwidth, loss}，对之后启动的 App 生效）；location {lat, lon} 或 clear；status_bar clean（9:41、满格满电，适合截图）或 clear；privacy {action: grant/revoke/reset, service, bundleId}，提前授权可避免权限弹窗。改权限会结束该 App，请在启动前设置。所有步骤与读回共用本次调用截止时间；applied 列出已完成字段，失败或预算耗尽时停止后续步骤，stateError 含失败字段 field、code、message、execution，先核对该字段，不整批重试。方向/姿态变化后的屏幕信息仅在剩余时间内确认成功时返回；current 中 null 表示未确认。 安卓支持方向、外观、字号、位置、状态栏及具体运行时权限（仅 grant/revoke，reset 仅 iOS）；无折叠铰链或自定义丢包率。安卓 appliedSteps 列出各字段已成功步骤（field、step），applied 仅列完整字段；stateError.step 是失败步骤。部分执行后不会报告未执行；先检查字段内进度，不整批重试。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -926,7 +926,7 @@
     },
     {
       "name": "heal",
-      "description": "按 Baguette 修复流程显式修复 Device Hub 导致的 iOS 27 输入失效；使用 simctl 指定独立设备集合。会重启 SpringBoard、终止设备中运行的 App，仅用户接受影响后调用。卡键先用 press(release-input)。",
+      "description": "修复前须让用户接受影响：iOS 按 Baguette 流程在独立设备集合重启 SpringBoard，终止运行中的 App；安卓会重启整个模拟器并结束所有 App，等待 devices 再次报告 Booted 后继续。仅用户接受相应平台的重启影响后调用。卡键先用 press(release-input)。",
       "parameters": {
         "type": "object",
         "properties": {

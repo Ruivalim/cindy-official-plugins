@@ -1,8 +1,8 @@
 {
   "date": "2026-10-24",
-  "pluginVersion": "0.2.8",
+  "pluginVersion": "0.2.9",
   "baguette": "0.2.10",
-  "status": "android-parity-development-package-verified",
+  "status": "android-review-regressions-source-verified",
   "passed": [
     "Repository plugin/contract/localization/provisioning/publishing suite: 283/286 passed; the same three Bash 3 bad-substitution failures reproduce on clean origin/main be48e71e80867bfc1d29c73f8fba5d5bd7835b75.",
     "Android API 36 on Apple Silicon: real Settings scroll via viewer wheel; bidirectional Unicode clipboard including selected-text copy; Ctrl-wheel two-finger pinch changes guest Chrome visual viewport scale from 1 to 2.56.",
@@ -10,10 +10,12 @@
     "Real viewer recording across rotation exported a playable silent WebM; Chrome decoded 720x1600 video (18 frames observed).",
     "Packaged 0.2.7 installed through the normal update API in isolated Cindy Dev (host commit d75ffb3b85); installed viewer exercised Unicode paste, selected copy, pinch, narrow viewport, dark mode and recording export without page errors.",
     "Pinned Android dependency/vendor inventory check passed. Targeted tests cover import failure progress, upload authentication and cleanup, APK comparison failures, partial state updates and wheel touch sequencing.",
-    "0.2.8 packaging-only follow-up: three portable OCR resources moved to existing SHA-pinned build inputs. Official archive SHA-512 matches npm lock and selected resource bytes exactly match the 0.2.7 installed/tested package. Runtime interaction code unchanged."
+    "0.2.8 packaging-only follow-up: three portable OCR resources moved to existing SHA-pinned build inputs. Official archive SHA-512 matches npm lock and selected resource bytes exactly match the 0.2.7 installed/tested package. Runtime interaction code unchanged.",
+    "0.2.9 review regressions: Android/contract/localization 62/62 passed; full suite including binary packaging 290/293, with only the same three Bash 3 baseline failures. Fault injection covers each network substep, unsupported permission reset before any batch mutation, scoped-log query errors, exact process names, gesture origins, capture preflight failures, display recheck before action and normalized saved frame pixels.",
+    "Real Android API 36: scoped process/logcat read succeeded; permission reset rejected before mutation; contact sheet stayed portrait with physical device upside down and Launcher locked portrait; default two-finger pan succeeded. Restored portrait Home after testing."
   ],
   "notVerified": [
-    "Stable production/Beta installation of the 0.2.7 package remains pending. Development acceptance is not the repository device attestation; minCindyVersion remains 0.1.116.",
+    "The 0.2.9 package has not been installed in stable production/Beta or the isolated development Cindy; only 0.2.7/0.2.8 have earlier development installation evidence. Source/real-emulator checks do not replace packaged-client acceptance; minCindyVersion remains 0.1.116.",
     "Android Windows/Linux physical-host acceptance remains pending; SDK discovery and platform choices have unit coverage only.",
     "No new iOS real-device acceptance was performed in this Android parity round. Shared behavior is covered by repository tests; historical iOS verification below applies only to the stated old releases.",
     "Continuous video export is a user-viewer feature: silent WebM, up to five minutes/128 MiB, save before leaving the viewer. Agent capture remains a contact-sheet workflow."
