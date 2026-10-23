@@ -5,7 +5,7 @@
   "name": "iOS 模拟器",
   "description": "独立的 iOS 模拟器：每个任务在自己的侧栏页签里看到自己的设备画面，「模拟器」主视图管理所有设备。插件设置提供运行开关，默认闲置 15 分钟关闭并保留数据。需要 macOS 15.0+、Apple Silicon、完整 Xcode 和 iOS runtime。基于开源项目 Baguette（tddworks，Apache-2.0）。",
   "whenToUse": "iOS 模拟器任务默认使用：在独立设备上安装、启动和操作已构建的 App，截图、等待、录下变化、看日志，画面实时显示在任务侧栏。先 devices，复用本任务或空闲设备（新建设备时才需要 environment）。用 tap/gesture 的真实触摸验证，不要另外下载 AXe/idb 或去点 Xcode 窗口。完整流程见手册。heal 须用户同意；不替用户重开运行开关。",
-  "version": "0.1.51",
+  "version": "0.1.52",
   "kind": "chip",
   "entry": "main.js",
   "icon": "assets/icon.png",
