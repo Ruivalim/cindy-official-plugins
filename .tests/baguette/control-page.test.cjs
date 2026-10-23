@@ -32,11 +32,11 @@ function fakeDocument(){
  return {document,byId,body,text:n=>[n.textContent,...all(n).map(c=>c.textContent)].join(' ')};
 }
 
-async function boot({respond,abortSignal=AbortSignal}){
+async function boot({respond,abortSignal=AbortSignal,query=''}){
  const dom=fakeDocument();const calls=[];let intervals=[];
  const context={
   document:dom.document,URLSearchParams,URL,AbortSignal:abortSignal,Error,Object,JSON,Math,Date,String,Array,Number,Promise,console,parseFloat,clearTimeout,setTimeout,
-  location:{search:'?udid='+udid,hash:'#cindyClipboard=123.token',href:'http://127.0.0.1:1/control?udid='+udid+'&lang=zh-CN#cindyClipboard=123.token',origin:'http://127.0.0.1:1'},
+  location:{search:'?udid='+udid+query,hash:'#cindyClipboard=123.token',href:'http://127.0.0.1:1/control?udid='+udid+'&lang=zh-CN'+query+'#cindyClipboard=123.token',origin:'http://127.0.0.1:1'},
   history:{replaceState(_s,_t,url){context.location.href=String(url);}},
   ResizeObserver:class{observe(){}},setInterval:fn=>{intervals.push(fn);return intervals.length;},
   fetch:async(_url,opts)=>{const body=JSON.parse(opts.body);calls.push(body);const r=await respond(body,opts);if(r instanceof Error)throw r;if(r?.httpStatus)return {ok:false,status:r.httpStatus,json:async()=>({error:'denied'})};return {ok:true,status:200,json:async()=>r};},
@@ -137,6 +137,61 @@ test('switching follows the device job, then adopts the new device without expos
  assert.match(context.location.href,new RegExp('udid='+other));assert.equal(dom.byId['chip-name'].textContent,'iPad');
  assert.equal(dom.byId.screen.loads.at(-1),`/simulators/${other}?handheld=0&cindyViewer=token#cindyClipboard=123.token`);
  assert.match(dom.text(dom.byId.dock),/已切换/);
+});
+
+// A shared status job is not a request to change every controller on its source.
+test('only the initiating controller adopts a switch; other tasks, hub and reopened views keep their device',async()=>{
+ let job=null;
+ const respond=({action,targetUdid,udid:id})=>{
+  if(action==='switch'){job={id:'owned-switch',sourceUdid:id,targetUdid,state:'running',phase:'preparing'};return {ok:true,job};}
+  const s=status();s.devices[1].state='Booted';
+  return {...s,device:s.devices.find(d=>d.udid===id),deviceJob:job};
+ };
+ const owner=await boot({respond,query:'&task=task-1'});
+ const observers=await Promise.all(['&task=task-2','&embed=hub'].map(query=>boot({respond,query})));
+ const unchanged=()=>{
+  for(const view of observers){
+   assert.equal(view.dom.byId['chip-name'].textContent,'iPhone 17 Pro');
+   assert.equal(view.dom.byId.screen.loads.length,1,'foreign jobs must not blank or replace this screen');
+   assert.equal(view.dom.byId.overlay.hidden,true);
+   assert.equal(new URL(view.context.location.href).searchParams.get('udid'),udid);
+  }
+ };
+ owner.dom.byId['device-chip'].dispatch('click');
+ const row=owner.dom.body.querySelectorAll('button').find(b=>b.attrs.role==='menuitemradio'&&!b.disabled);
+ row.listeners.click[0]();await new Promise(r=>setImmediate(r));
+ assert.equal(owner.calls.find(c=>c.action==='switch').task,'task-1');
+ for(const view of observers)await view.poll();unchanged();
+ job={...job,state:'done',phase:'done',activeUdid:other};
+ await owner.poll();for(const view of observers)await view.poll();unchanged();
+ assert.equal(new URL(owner.context.location.href).searchParams.get('udid'),other);
+ const reopened=await boot({respond,query:'&task=task-2'});
+ assert.equal(new URL(reopened.context.location.href).searchParams.get('udid'),udid,'a retained completed job never redirects a newly opened controller');
+ // A later job involving the owner's selected device belongs to another page too.
+ job={id:'foreign-switch',sourceUdid:other,targetUdid:udid,state:'done',activeUdid:udid};
+ await owner.poll();
+ assert.equal(new URL(owner.context.location.href).searchParams.get('udid'),other);
+});
+
+test('a replaced switch result stops waiting without adopting another page selection',async()=>{
+ let job=null,delay=false,release;
+ const {dom,poll,context}=await boot({respond:({action,targetUdid})=>{
+  if(action==='switch'){job={id:'own',sourceUdid:udid,targetUdid,state:'running',phase:'preparing'};return {ok:true,job};}
+  const snapshot=status({deviceJob:job});
+  if(delay){delay=false;return new Promise(resolve=>release=()=>resolve(snapshot));}
+  return snapshot;
+ }});
+ delay=true;const earlier=poll();
+ dom.byId['device-chip'].dispatch('click');
+ dom.body.querySelectorAll('button').find(b=>b.attrs.role==='menuitemradio'&&!b.disabled).listeners.click[0]();
+ await new Promise(r=>setImmediate(r));
+ release();await earlier;
+ assert.match(dom.text(dom.byId.overlay),/正在切换/,'late status from before the request must not discard its job');
+ job={id:'other-page',sourceUdid:udid,targetUdid:other,state:'done',activeUdid:other};
+ await poll();
+ assert.equal(new URL(context.location.href).searchParams.get('udid'),udid);
+ assert.equal(dom.byId.overlay.hidden,true);
+ assert.match(dom.text(dom.byId.dock),/切换没有完成/);
 });
 
 test('selecting a stopped device never loads its stream or boots until Open is clicked',async()=>{

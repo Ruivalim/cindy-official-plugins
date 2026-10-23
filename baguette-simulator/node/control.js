@@ -13,7 +13,7 @@
 
   // Page state. `status` is the last successful status response; flags are page-local.
   const state = { status: null, lost: false, generation: null, zoom: { mode: 'fit' }, fitPct: 0, fullToolbar: false,
-    recovering: false, stopping: false, switching: false, phase: null, handledJob: null, lastTouch: 0, screenWidth: 0,
+    recovering: false, stopping: false, switching: false, phase: null, switchJob: null, lastTouch: 0, screenWidth: 0,
     pose: null, viewport: null };
   // Inside the management view the device list names the device; show a title instead of the switcher.
   const hub = params.get('embed') === 'hub';
@@ -232,9 +232,10 @@
   async function check() {
     if (checking) return; checking = true;
     try {
+      const switchJob = state.switchJob;
       const s = await api('status');
       state.status = s; state.lost = false;
-      trackSwitch(s);
+      if (switchJob === state.switchJob) trackSwitch(s);
       // A completed selection may point at a stopped device. Use its own
       // state immediately, never load its stream using the source's state.
       if (s.device?.udid !== udid) s.device = s.devices?.find((d) => d.udid === udid);
@@ -252,16 +253,24 @@
     finally { checking = false; render(); }
   }
   function trackSwitch(s) {
-    const job = s.deviceJob, relevant = job && (job.sourceUdid === udid || job.targetUdid === udid);
+    // Status is shared by every controller. Only the job returned by this
+    // page's own switch request may change its selected device.
+    const job = s.deviceJob, relevant = job && job.id === state.switchJob;
+    if (!state.switchJob) return;
+    if (!relevant) {
+      // Another request replaced the shared result before we observed ours.
+      // Keep this page's device and leave the pending UI rather than adopting it.
+      state.switchJob = null; state.switching = false; state.phase = null;
+      toast(t.switching.failed, 'error'); return;
+    }
     if (relevant && job.state === 'running') { state.switching = true; state.phase = job.phase; state.switchTarget = job.targetUdid; if (screen.src !== 'about:blank') blank(); return; }
-    if (relevant && job.id !== state.handledJob && job.state !== 'running') {
-      state.handledJob = job.id; state.switching = false; state.phase = null;
+    if (relevant && job.state !== 'running') {
+      state.switchJob = null; state.switching = false; state.phase = null;
       if (job.activeUdid && job.activeUdid !== udid) adopt(job.activeUdid);
       if (job.state === 'done') toast(t.switching.done, 'ok'); else toast(`${t.switching.failed} (${job.errorCode || 'SWITCH_FAILED'})`, 'error');
       if (job.taskBindingError || job.appContextError) toast(t.switching.recordFailed, 'error');
       return;
     }
-    if (!relevant) state.switching = false;
   }
   function adopt(id) {
     udid = id; state.generation = null; state.screenWidth = 0;
@@ -449,10 +458,14 @@
   });
   async function switchTo(targetUdid) {
     if (state.switching) return;
-    state.switching = true; state.phase = 'preparing'; state.switchTarget = targetUdid; state.handledJob = null; blank(); render();
+    state.switching = true; state.phase = 'preparing'; state.switchTarget = targetUdid; state.switchJob = null; blank(); render();
     // Inside a task page the switch also moves that task to the new device.
-    try { await api('switch', { targetUdid, ...(params.get('task') ? { task: params.get('task') } : {}) }); }
-    catch (error) { state.switching = false; toast(`${t.switching.failed} (${error.code || 'SWITCH_FAILED'})`, 'error'); }
+    try {
+      const result = await api('switch', { targetUdid, ...(params.get('task') ? { task: params.get('task') } : {}) });
+      state.switchJob = result.job.id;
+      trackSwitch({ deviceJob: result.job });
+    }
+    catch (error) { state.switchJob = null; state.switching = false; state.phase = null; toast(`${t.switching.failed} (${error.code || 'SWITCH_FAILED'})`, 'error'); }
     await check();
   }
 
