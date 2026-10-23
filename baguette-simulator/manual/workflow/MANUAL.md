@@ -56,8 +56,8 @@ AI 空间操作沿用 `gesture`：
 
 ## 1. 开始
 
-1. `devices`：每行带 `tasks`（几个任务在用）与 `thisTask`。优先用 `thisTask` 为 true 的设备，其次 `tasks` 为 0 的空闲设备；需要干净环境、特定机型或与其他任务隔离时才 `device action=create`（每台约 7–12 GB），新建前用 `environment` 查可用的运行时与机型。
-2. `device action=boot`（想马上看画面就加 `screenshot: true`，启动后等画面稳定并附上截图，省一步），然后 `viewer action=open`（或 `app action=launch`，它会顺带打开画面，同样可加 `screenshot: true`）。检查 `previewOpened`，为 true 才能说画面已显示。
+1. `devices`：`tasks` / `thisTask` 只表示当前选择；`activeTasks` / `thisTaskActive` 表示近 15 分钟使用，同一任务可使用多台。优先复用自己的设备；`usage: unknown` 不代表空闲，先核对画面和 `operation`，不要只凭 `tasks: 0` 接管；需要干净环境、特定机型或与其他任务隔离时才 `device action=create`（每台约 7–12 GB），新建前用 `environment` 查可用的运行时与机型。
+2. `device action=boot`（想马上看画面就加 `screenshot: true`，启动后等画面稳定并附上截图，省一步），然后 `viewer action=open`（或 `app action=launch`，它会顺带打开画面，同样可加 `screenshot: true`）。检查 `previewOpened`，为 true 才能说画面已显示。`appLaunched: true` 与 `outcome: partial` 表示 App 已启动但画面未完成；仅重试 `viewer action=open`，不要重启 App。
 
 不要另外下载 AXe、idb、Maestro，也不要用电脑操控工具去点 Xcode / Device Hub / Simulator 窗口：本插件已经提供真实触摸、截图和等待，后者会抢用户鼠标、在锁屏时失效。
 
@@ -76,7 +76,7 @@ xcodebuild -scheme <Scheme> -sdk iphonesimulator \
 
 CMake、Unity、游戏引擎等用项目已有的脚本，找到输出的模拟器 `.app`。
 
-- `app action=install appPath=<绝对路径>`：与已装内容完全相同时直接跳过（`mode: unchanged`）；只改了少量文件时增量同步（`mode: sync`，保留 App 数据）；否则整包安装（`mode: full`）。哈希、构建比较和写入属于同一个 job；`mode: checking` 表示还在比较。整个流程默认等待约 80 秒，未完成会返回 `state: running` 与 `job`，用 `app action=install_status job=<job>` 继续等，不要重复发起安装。
+- `app action=install appPath=<绝对路径>`：与已装内容完全相同时直接跳过（`mode: unchanged`）；只改了少量文件时增量同步（`mode: sync`，保留 App 数据）；否则整包安装（`mode: full`）。哈希、构建比较和写入属于同一个 job；`mode: checking` 表示还在比较。`modeReason` 说明安装选择原因；比较完成时可带 `changedFiles`。整个流程默认等待约 80 秒，未完成会返回 `state: running` 与 `job`，用 `app action=install_status job=<job>` 继续等，不要重复发起安装。
 - `app action=info appPath=<同一路径>`：`matchesLocal: true` 才说明设备上装的就是这次构建。版本号相同不代表是同一次构建，以可执行文件指纹为准。测试前、向用户报告“已修复”前都应确认。
 - 容器查询只有明确的 App 缺失才视为未安装；超时、设备服务故障或空响应会报错，自动安装在写入前停止。日志与日志等待也保留查询错误，不扩大到全设备。
 - `app action=launch`：默认先结束旧进程再启动；需要启动参数或环境变量时传 `arguments`、`env`。
@@ -97,7 +97,7 @@ CMake、Unity、游戏引擎等用项目已有的脚本，找到输出的模拟�
 1. 有无障碍树的界面（原生 App、多数 SwiftUI/UIKit/RN 页面）：先 `describe_ui`（可加 `query`），再 `tap text=…` 或 `tap id=…`。同名元素多时加 `role`（如 `field`、`button`）或 `nth`。按文字点击会自动避开屏幕外的同名元素。
 2. 没有无障碍树的界面（游戏、引擎自绘、部分 WebGL）：`describe_ui` 自动改为识别画面上的文字（`source: "ocr"`），每行文字带 `frame` 与 `center`；`tap text=…`、`wait_for text=…` 同样按识别出的文字工作，一行里的某个词也能单独定位。没有文字的图标、角色和道具用 `screenshot grid=true` 读坐标后 `tap x=… y=…`；小按钮先用 `region` 放大核对；按坐标点到识别出的文字上时，结果里的 `hint` 会提醒（图标可能被旁边的文字盖住，点中的是文字所属的控件）。识别在本机完成，不上传画面。
 3. 操作会带来新页面或弹窗时，用 `until=<新页面上的文字>`（`tap`、`gesture`、`type_text` 都支持）：文字一出现就返回，最长 15 秒，没出现会尝试附上当时截图。比猜 `settle` 更快更准，也省一次截图。
-   每次操作后核对结果：`tap` 与 `gesture` 默认在约 0.6 秒后返回新的界面元素（`observe=ui`；游戏里是识别出的文字）；要看画面就用 `observe=screenshot`，截图直接附在结果里，不必再单独截图。动画较长时加 `settle`，或改用 `wait_for`。
+   每次操作后核对结果：`tap` 与 `gesture` 默认在约 0.6 秒后返回新的界面元素（`observe=ui`；游戏里是识别出的文字）；要看画面就用 `observe=screenshot`，截图直接附在结果里，不必再单独截图。`settle` 接受 0–5 秒，默认 0.6；更长等待使用 `until` 或 `wait_for`。
 4. 输入文字：先点输入框确认焦点，再 `type_text text=…`。默认 `method=auto`：普通 App 里粘贴（精确，支持中文与任意 Unicode）；游戏等没有无障碍元素的界面往往不接受粘贴，改为逐键输入英文、数字与符号，设备键盘是拼音、日文等输入法时会自动切到英文（结果里会说明，Ctrl+空格切回）。粘贴后输入框仍为空就用 `method=type` 重试；游戏里要输入中文只能粘贴，不接受时如实告诉用户。提交用 `keys: ["Enter"]`，清空用 `clear=true`。按键可写 `Enter`、`esc`、`up`、`a`、`A`、`cmd+A`、`shift+Tab`。
    - 粘贴（Cmd+V）、逐键输入、`keys`、`clear` 都是硬件按键：输入期间 iOS 会隐藏屏幕键盘。最后一次输入结束约 3 秒后，插件尝试清除硬件键盘记录；点空白处再重新聚焦输入框，观察键盘是否恢复，不保证自动弹出。要检查“键盘弹出时按钮是否被挡住”，先确认屏幕键盘已显示，再用 `method=touch`（点编辑菜单里的「粘贴」，纯触摸，保持键盘状态）填字并截图。`method=touch` 用在已聚焦的空输入框上，不需要为此重启设备。
    - `method=touch` 不能与 `clear=true` 或 `keys` 同用；这种组合会在输入前被拒绝，避免硬件按键隐藏屏幕键盘。
@@ -111,7 +111,7 @@ CMake、Unity、游戏引擎等用项目已有的脚本，找到输出的模拟�
 - 等加载或动画结束：`wait_for stable=1`（画面变化低于 `tolerance`，默认 0.5% 像素，持续 1 秒）。游戏启动、场景切换用 `stable=2` 和较长的 `timeout`。
 - 游戏背景常有持续动画（水面、粒子、待机动作），画面永远不会完全静止：没等到时会返回 `met: false`、每帧典型变化比例、建议的 `tolerance` 和当时截图（受剩余时间预算限制）；按建议加大 `tolerance`，或用 `region` 只看 UI 所在的区域。
 - 等 App 打出某条日志：`wait_for log=<正则> bundleId=…`。
-- 没等到时返回 `met: false`（不是报错），附原因、当时屏幕上的文字，并在剩余时间预算内尝试截图；截图失败或预算用尽会返回 `screenshot.error`，需要画面时另调 `screenshot`，等待结果仍保留。据此判断是没加载完、走错页面还是出错了，不要盲目加长时间重试。
+- 没等到时返回 `met: false` 与 `goalMet: false`（调用完成不等于目标达成），附原因、当时屏幕上的文字，并在剩余时间预算内尝试截图；截图失败或预算用尽会返回 `screenshot.error`，需要画面时另调 `screenshot`，等待结果仍保留。据此判断是没加载完、走错页面还是出错了，不要盲目加长时间重试。
 - `device action=boot`、`app action=launch` 的 `screenshot: true` 会先等过黑屏启动帧和加载动画再截图；画面仍是黑屏时截图说明里会提示。启动、操作后的观察和附图共用本次调用截止时间，截图失败或时间不足时保留已完成的操作结果并返回 `screenshot.error`，需要画面可另调截图。
 
 ## 6. 抓一闪而过的画面
@@ -162,7 +162,7 @@ capture action={"tool":"tap","args":{"text":"登录"}} seconds=2 fps=12
 ## 11. 异常恢复
 
 - `taskBindingError` / `appContextError`：设备操作的原结果仍保留，但任务绑定或近期 App 记录未能保存。先检查记录文件和存储，不要为保存记录重发设备操作。切换任务的 `deviceJob` 同样保留这两个附属错误以及实际设备和执行状态；删除时分别尝试清理两类记录，一类失败不跳过另一类。
-- `BUSY`：同一台设备上的上一个操作还没结束（安装、录制等），等它完成。不同设备的普通输入可并行；启动 App 要保存共享记录，全局操作要协调全部设备，这些操作仍会互相等待。
+- `BUSY`：结果说明占用操作、设备和已用时间；安装占用给出 `install_status` 查询方式。设备操作执行前最多短等 1 秒，不重放已执行或结果未知的操作。不同设备的输入与 App 启动可并行，共享 App 记录仅在写入时串行；全局设置、关闭全部设备及共享查看器仍互斥。
 - 工具与查看器的键盘/剪贴板输入按同一规范化 UDID 互斥，不同设备互不阻塞。设置页的全部关闭与关闭运行开关共用一次截止时间，耗尽后停止后续关机；`completed` 是已完成的关机命令，`outcomes` 保留逐设备执行归属，`unprocessed` 是未执行的设备。若返回 `devicesError`，列表是上次状态，仍须刷新确认，不能把命令完成当作全部设备已核实关闭。单台设置关机的复核失败同样保留 `completed`。
 - 键盘连发或卡键：`press button=release-input`。
 - iOS 27 上所有触摸都“成功”却没反应：多半是 Xcode Device Hub 抢占了输入，先告知用户，经同意后 `heal`（会重启 SpringBoard、结束运行中的 App）。
@@ -174,4 +174,8 @@ capture action={"tool":"tap","args":{"text":"登录"}} seconds=2 fps=12
 
 `viewer` 打开的画面页由用户操作，可以输入、安装文件和 App（可能覆盖已有 App）、复制粘贴（替换 Mac 或模拟器剪贴板）、旋转、摇一摇、截图（存桌面或剪贴板）、切换与启停设备，以及使用 Baguette 高级工具（位置与运动模拟、状态栏与网络条件、摄像头输入、远程通知注入（可能触发 App 行为）、无障碍树、日志、录屏导出，可能包含 App 隐私数据；地图搜索与瓦片经插件代理发往 OpenStreetMap）。打开前把这些告诉用户；打开页面不会自动执行它们。
 
+长脚本操作前可 `device action=activity udid=…`，每五分钟续一次，结束时在 finally 中 `device action=release udid=…`。记录 15 分钟到期，重启 worker 后清空；它不是排他预约，也不切换当前设备。普通操作自动更新记录，列表与安装状态轮询不更新。release 仅解除本任务记录，保留设备和 App 运行。
+
 用完：不再需要的设备 `device action=shutdown`；`network`、`status_bar`、`location` 改过的记得还原。删除或抹掉设备只在用户要求时做。
+
+App 内容校验失败会返回 `comparisonError` 与 `verification: unconfirmed`。此时 `matchesLocal: false` 不证明构建不同，检查比较失败原因，不要直接重装。

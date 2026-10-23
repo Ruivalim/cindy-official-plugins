@@ -74,6 +74,11 @@ cindy.onHostMessage(async function (msg) {
       if (shown.location) viewer.location = shown.location;
       if (shown.previewError) viewer.previewError = shown.previewError;
     }
+    if (result.ok && viewer?.previewOpened === false) {
+      result.outcome = 'partial';
+      result.nextAction = 'Retry viewer action=open for this device. Do not repeat an App launch that already succeeded.';
+    }
+    if (typeof result.met === 'boolean') result.goalMet = result.met;
     // Images go next to `result` (hosts without the field ignore them; the path stays in `result`).
     const images = Array.isArray(result._modelImages) ? result._modelImages : null;
     delete result._modelImages;

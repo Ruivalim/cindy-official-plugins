@@ -7,7 +7,9 @@ const {readJsonRecord,recordUpdate}=require('./json-record.cjs');
 const {platform}=require('./control-model.js');
 // Device changes run through the same runtime lock as Agent tools and shutdown.
 function createDeviceManager({dispatch,exclusive,assertEnabled,touch,contextFile,onSettled=async()=>{}}) {
- let job=null,apps=null;
+ let job=null,apps=null,recordQueue=Promise.resolve();
+ // Serialize only the tiny shared record write, not device operations.
+ const recordWrite=fn=>{const next=recordQueue.then(fn,fn);recordQueue=next.catch(()=>{});return next;};
  const updateRecord=(result,update)=>recordUpdate(result,'appContextError',update,
   'The device operation completed, but recent App records could not be saved. Check the records file and storage before switching devices; do not repeat the device operation.');
  const fail=(code,message,execution='not_executed')=>Object.assign(Error(message),{code,execution});
@@ -19,23 +21,24 @@ function createDeviceManager({dispatch,exclusive,assertEnabled,touch,contextFile
   apps ||= Object.fromEntries(Object.entries(value).map(([id,bundle])=>[deviceId(id),bundle]));
   return apps;
  }
- async function remember(udid,bundleId){
+ async function writeApp(udid,bundleId){
   const values={...await contexts()},id=deviceId(udid);
   if(bundleId)values[id]=bundleId;else delete values[id];
   const temporary=contextFile+'.'+randomUUID()+'.tmp';
   try{await fs.mkdir(path.dirname(contextFile),{recursive:true,mode:0o700});await fs.writeFile(temporary,JSON.stringify(values),{mode:0o600});await fs.rename(temporary,contextFile);apps=values;}
   finally{await fs.rm(temporary,{force:true}).catch(()=>{});}
  }
+ const remember=(udid,bundleId)=>recordWrite(()=>writeApp(udid,bundleId));
  const snapshot=()=>job?{...job}:null;
  async function currentApp(udid){return (await contexts())[udid.toUpperCase()]||null;}
- async function forget(udid,bundleId){
+ const forget=(udid,bundleId)=>recordWrite(async()=>{
   try{
    const current=await currentApp(udid);
    if(!current||(bundleId&&current!==bundleId))return;
-   await remember(udid,null);
+   await writeApp(udid,null);
   }
   catch{throw fail('APP_CONTEXT_UNSAVED','The App was removed, but its recent-app record could not be cleared. Check storage before switching devices.','executed');}
- }
+ });
  async function selection(p){
   const devices=(await dispatch('devices')).devices;
   const source=devices.find(d=>deviceId(d.udid)===deviceId(p.udid)),target=devices.find(d=>deviceId(d.udid)===deviceId(p.targetUdid));

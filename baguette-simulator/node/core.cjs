@@ -439,11 +439,11 @@ async function dispatch(method,p={},deadline=Date.now()+110000) {
       for(const [k,v] of Object.entries(p.env)){if(!/^[A-Za-z_][A-Za-z0-9_]{0,100}$/.test(k)||typeof v!=='string'||v.length>4000)throw new Failure('INVALID_ARGUMENT','env names must be identifiers and values strings');env['SIMCTL_CHILD_'+k]=v;}
     }
     agent().forget(device.udid);
-    const launched={udid:device.udid,bundleId:id,...await simCommand(args,{mutation:true,env}),execution:'executed'};
+    const launched={udid:device.udid,bundleId:id,...await simCommand(args,{mutation:true,env}),execution:'executed',appLaunched:true};
     if(p.showViewer===false)return settledShot(device,p,launched);
     let viewer;
     try{viewer={viewer:await deviceViewer(device,p._locale)};}
-    catch(error){viewer={viewer:{previewOpened:false,error:error.message},note:'App launched, but viewer failed. Retry viewer action=open, not launch.'};}
+    catch(error){viewer={outcome:'partial',viewer:{ready:false,previewOpened:false,error:error.message},note:'App launched, but viewer failed. Retry viewer action=open, not launch.'};}
     return settledShot(device,p,{...launched,...viewer});
   }
   if(method==='heal') {
@@ -480,6 +480,7 @@ function startWorker() {
   };
   const runtime=require('./runtime.cjs').createRuntime({dispatch,settingsFile:path.join(ROOT,'runtime-settings.json'),inUse,viewing:()=>require('./viewer.cjs').viewing(),forgetViewer:()=>require('./viewer.cjs').forgetSession(DEVICE_SET),
     pendingOperation:udid=>appsImpl?.pending(udid),
+    pendingJob:udid=>appsImpl?.runningFor(udid),
     viewerWanted:()=>require('./viewer.cjs').hasSession(DEVICE_SET),
     tasks:require('./tasks.cjs').createTaskBindings(path.join(ROOT,'task-bindings.json')),
     existingViewerUrl:(udid,locale)=>require('./viewer.cjs').existingViewerUrl(udid,locale)});
@@ -504,7 +505,7 @@ function startWorker() {
     let request;try{request=JSON.parse(line);}catch{return reply({jsonrpc:'2.0',id:null,error:{code:-32700,message:'Invalid JSON'}});}
     if(request.id===undefined)return;
       try {reply({jsonrpc:'2.0',id:request.id,result:{ok:true,...await runtime.request(request.method,request.params)}});}
-      catch(e){reply({jsonrpc:'2.0',id:request.id,result:{ok:false,errorCode:e.code||'FAILED',message:e.message,execution:e.execution||'not_executed'}});}
+      catch(e){reply({jsonrpc:'2.0',id:request.id,result:{ok:false,errorCode:e.code||'FAILED',message:e.message,execution:e.execution||'not_executed',...(e.busy?{busy:e.busy}:{})}});}
   });
   input.on('close',stop);process.on('SIGTERM',stop);process.on('SIGINT',stop);
 }

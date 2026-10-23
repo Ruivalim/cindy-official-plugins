@@ -1,219 +1,246 @@
 {
   "date": "2026-10-24",
-  "pluginVersion": "0.1.67",
+  "pluginVersion": "0.1.52",
   "baguette": "0.2.10",
-  "status": "vision-controls-review-regressions-verified-package-acceptance-pending",
+  "status": "agent-health-source-replay-verified-package-install-pending",
+  "baseline": "fa698acb2fc68abf43be9aa6effd79a26d7ac6a6",
   "passed": [
-    "0.1.67: 57 target regressions passed. Removed pointer-lock changes implicitly assigning the keyboard toggle; no restoration snapshot or extra state. New transition regression first failed on 0.1.66, then verified both initial keyboard states, repeated pointer enter/exit/error, keyboard toggles during lock, latest-choice preservation on exit, explicit Escape release, actual key-routing decisions and matching toolbar aria-pressed. Keyboard state is written only by its explicit button and Escape command. Existing ordering/cancellation and pointer-mask regressions remain green. Native source/binaries and permissions unchanged.",
-    "0.1.66: 56 target controller/model/platform tests passed. TV and integrated Vision gestures reserve the existing platform inputQueue through their full done lifetime; discrete actions finish only previously accepted gestures synchronously before enqueueing. This consolidates both input directions without a new queue or retry. Thirty-six discrete/gesture/discrete interleavings cover press/key/paste, TV wheel and Vision pointer/wheel/toolbar camera, before the first API starts or while it is pending, normal release, cancellation and rejection. The old implementation first reproduced the out-of-order began failure. Existing reverse-order, cross-page, mouse-edge and cancellation regressions pass. Native source/binaries and permissions unchanged.",
-    "0.1.65: rebased onto main 1c35c36 (#202). Manifest and all four locales retain the upstream Device Simulator name/task title while preserving TV/Vision descriptions and tools. Task messages combine the upstream name with required iOS/tvOS/visionOS runtime guidance. The rebase introduces no change to spatial/native input, queue ownership or permissions.",
-    "0.1.64: 55 controller/model/platform regressions passed. Cross-page fixtures execute real control.js capture listeners before real platform/Vision handlers. Parent/frame TV remote shortcuts, toolbar buttons and Home wait for began/changed/ended acknowledgement and all accepted swipe motion; cancellation/failure invalidate pending presses. Remote mouse-down preserves device focus. Vision frame Cmd/Ctrl+S, Shift+H, +, -, 0 and 1 reach the device with modifiers while capture is on; viewer shortcuts remain active outside the frame and when capture is off, and Escape exits capture. Missing platform controller does not fall back to direct device input. Both original cross-page findings failed against 0.1.63 before the fix. Existing device queue owns all toolbar press delivery; no new queue, native change or permission.",
-    "0.1.63: 52 controller/model/platform regressions passed. TV ending intent is explicit (normal finish versus cancel), and normal queued swipes no longer expire silently by age. Six success interleavings delay began/changed/ended by 101/1001 ms while three short swipes and a following Back action are accepted; every swipe retains began/motion/ended order before Back. Existing cancellation/failure interleavings remain green. The success regression first failed on 0.1.62. Rebased main be48e71 (#201), retaining first-connect presentation and both upstream/review tests. Native source/binaries and permissions unchanged.",
-    "0.1.62: 30 controller/spatial regressions passed. One ordered sample queue preserves per-button-mask displacement before each edge and zero-displacement button transitions before subsequent motion. Eight delayed began/changed interleavings cover both first buttons, event/move-reported mask changes, partial/all releases and normal end; the regression failed against 0.1.61 and against an incomplete edge-coalescing implementation. Rebased onto main 1ef61f4 (#204), retaining the old-iPhone Home placement fix. Native source/binaries are unchanged in this round.",
-    "0.1.61: 29 browser/controller regression tests passed. TV and Vision cancellation now cover all unfinished contacts and queued discrete input. Pointer tests cover both left/right button orderings, button changes delivered by pointermove, fast edges while an acknowledgement is pending, partial release, cancellation of pending edges, and 120000/-60000 pixel cumulative motion. Six issue/cross-input regressions were first reproduced against the old implementation.",
-    "0.1.61 native protocol regression executes the production stream loop with stub HID and a fast clock: 2101 changed samples (2521200/-1260600 pixels), held-mask transitions, final release, malformed-input release, and preserved spatial coordinate/time limits pass. Native pointer offsets use the same finite +/-1e9 limit as Node; the pointer mode is exempt from the spatial 20 s/2000-sample cap while EOF/750 ms/SIGTERM release stays. spatial.m was rebuilt with Xcode 27.1 (27A9269), ad-hoc signed and signature-verified. This is protocol isolation, not new guest or installed-Cindy acceptance.",
-    "0.1.60: rebased onto main 8978c1e (#203) and retained its authenticated open-page idle protection, including status failures. The only rebase conflict was manifest metadata; all Vision controls and input/OCR review fixes are retained. Full repository and simulator checks pass 277/280; all three Bash 3 workflow failures reproduce on clean main 8978c1e.",
-    "0.1.59: 86 controller/spatial/platform/Agent regression tests passed. TV/Vision default/full/point/query/role modes execute OCR with visible/empty/failure cases; modified Cmd/Ctrl+Left/Right (including Shift) rotate iOS only and pass through TV/Vision. Cancellation tests delay began/changed/ended acknowledgements, queue three gestures, then blur/hide/cancel/exit/pointercancel: only the active release is sent and no queued contact starts. A failure at each delivery phase also cancels queued contacts. The four new issue regressions failed against the preceding implementation before the fixes.",
-    "0.1.58: 19 spatial/platform-stage regression tests passed, including two-axis pan validation, keyboard-off suppression of letters/digits/Enter/modifier shortcuts/paste, camera navigation while capture is off, text/key/paste delivery when enabled, Escape release, and dropping queued input after capture is disabled. These tests execute the real Vision and platform controllers together with simulated browser events.",
-    "0.1.57: shared toolbar behavior, help dialog and responsive spacing verified in a real browser with mocked device APIs for iPhone, iPad, Apple TV, Vision Pro and foldable iPhone at 320/1100px in light/dark (20 combinations). Touch and keyboard help activation, Escape dismissal/focus restoration, action-vs-toggle semantics, retained camera mode and no toolbar overlap passed. No new hardware/runtime acceptance is claimed for this presentation change.",
-    "0.1.56: real browser toolbar drags changed the native visionOS camera for tilt/pan/orbit/dolly while preserving the selected interact/pan mode and canvas cursor. Verified release outside button, blur cancellation, subsequent click, keyboard activation, click jitter, 320px view, and all 112 spatial API deliveries. Regression tests cover temporary gesture ownership and click/drag separation.",
-    "Xcode 27 / visionOS 27: compiled and signature-verified the spatial helper; simulator input only, no guest app injection or bundled Apple frameworks.",
-    "Real browser/controller/API/native/SwiftUI probe: click, hold/drag (112 points), two-hand magnification (1.8x), rotation (28.8 degrees), tilt/pan/orbit/dolly, identity reset, WASD movement and MP4 recording/download. Final run confirmed all 217 spatial API deliveries.",
-    "Camera control updates both the rendered Paloma pose and vhmdd shared pose. Selection after translation hit the visible button; selection after rotation used Agent OCR coordinates and incremented the test app counter.",
-    "Relative mouse motion (100, -100) and left-button release reached the guest GCMouse handler; the helper removes its mouse service on exit.",
-    "Browser standard-gamepad fixture drove the real camera through simultaneous translation/elevation/rotation, then stopped at neutral. Physical controller not used.",
-    "Native EOF, malformed sample, SIGTERM and 750 ms inactivity released held input and allowed the next spatial tap to acquire the device lock.",
-    "Controller checked at 1100 and 320 pixels in light/dark; spatial planner and lifecycle tests cover invalid/deadline inputs, fast clicks, absolute-motion coalescing, mode/depth stability, focus/hidden/page/stream loss, failed input without replay, gamepad neutral/focus gating.",
-    "Repository contract, localization, provisioning, publish and simulator suite: 293/296 pass. The three failures are unchanged Bash 4 lowercase-expansion workflow tests on macOS Bash 3; all three already reproduced on clean latest main 1c35c36. No changed-feature test failed."
+    "242 of 245 repository checks pass after rebasing onto 8978c1e, including its viewer-open idle regression. The remaining three publish-workflow failures also reproduce on unchanged main with macOS Bash 3 (lowercase expansion: bad substitution); those workflow and test files are unchanged between the replay baseline and 8978c1e. Plugin contracts, four locales and simulator regressions pass.",
+    "A historical game UI task was replayed with its 6.3 GB simulator App on disposable private-set iPad Pro 11-inch M5 and iPhone 18 Pro, iOS 27.0. The same frozen App was used by baseline and changed source.",
+    "Baseline: launching iPhone B while iPad A installs returns BUSY. Changed runtime: B launches in 492 ms while A still installs; conflicting launch on A remains not_executed after 1017 ms and identifies its install job.",
+    "On a real native viewer serving the historical game, a controlled rolled-log condition makes baseline ready time out after 12136 ms; changed ready succeeds in 3 ms. H.264 stream delivers three frames (220353 bytes) in 1615 ms.",
+    "Fresh screenshots visually confirm the game main menu, settings after a real native tap, and return to the main menu after Cancel. No App-process event injection was used.",
+    "An intentionally shortened 10-second real content comparison returns comparisonError and verification=unconfirmed, retaining matching executable fingerprints and explaining that matchesLocal=false is not proof of a different build.",
+    "Regression coverage includes per-device exclusion, global stop exclusion, bounded waits before execution, no replay after uncertain mutation, concurrent App-record writes, multi-device task activity, expiry/release/restart, partial preview outcomes and wait goalMet."
+  ],
+  "limitations": [
+    "A fresh device container query timed out during initial baseline setup; explicitly full installation was used only on known-empty disposable test devices.",
+    "Full 6.3 GB resource comparison did not finish within one normal App-info call; the executable fingerprints matched. This led to the new unconfirmed comparison diagnostic, not a claim that full resource equality was verified.",
+    "The first settings tap returned display bind failed: unavailable before execution. A fresh screenshot and one subsequent tap succeeded; no automatic replay or heal was added.",
+    "An early test harness omitted viewer HTML assets; corrected setup now preloads the viewer proxy before device creation. This was test preparation failure, not a plugin regression."
   ],
   "notVerified": [
-    "Final 0.1.67 .cindy installation and embedded preview on stable/Beta Cindy are pending. The user-confirmed 0.1.57 acceptance below predates these review fixes and does not attest the changed package.",
-    "Browser pointer-lock acceptance is not established: the local automated browser could not consistently retain OS foreground focus. Failure reports that limitation; native relative-pointer delivery is independently verified.",
-    "Physical game controller, immersive apps, and Xcode/runtime versions other than 27. Orbit uses a fixed one-metre pivot; exact Apple camera sensitivity and hardware input feel are not claimed."
+    "Final .cindy installation and task sidebar acceptance in a stable/Beta Cindy. Source-module/native replay does not meet the repository installed-package attestation.",
+    "No installed plugin replacement: the current installation includes separate TV/Vision development outside this main-based change.",
+    "No full historical conversation rerun, longitudinal Agent success-rate measurement, Xcode 26 or TV/Vision regression pass. These are targeted reproductions, not a fleet-wide performance estimate."
   ],
   "previousReleaseVerification": {
-    "date": "2026-10-21",
-    "pluginVersion": "0.1.24",
+    "date": "2026-10-24",
+    "pluginVersion": "0.1.67",
     "baguette": "0.2.10",
-    "status": "upstream-0.2.10-local-verified",
+    "status": "vision-controls-review-regressions-verified-package-acceptance-pending",
     "passed": [
-      "v0.2.10 release archive (2650f1e6…) matches the GitHub digest; source archive (b41596dc…) equals `git archive v0.2.10`; release Web equals the tagged source; vendor-web.patch applies with no offsets; native patch is only the version stamp (tddworks/baguette#122 and #123 merged upstream)",
-      "LTO build on Xcode 27.1: --version 0.2.10; real-simulator smoke 17/17 (iPhone 18 Pro iOS 27.0, iPhone Duo iOS 27.1); 30 open/close 3D cycles leave serve at 293 MB",
-      "Official v0.2.8 release archive (498328d1…) matches the GitHub asset digest; the source archive (f0fe577b…) equals `git archive v0.2.8`; release Web resources are byte-identical to the tagged source; vendor-web.patch applies with context and no fuzz",
-      "vendor-native.patch (device set for every simctl call, tddworks/baguette#122; 3D scene freed on close and models loaded once, tddworks/baguette#123; version stamp) on v0.2.8: the full upstream Swift suite passes (2536 tests in 305 suites, Swift 6.4, Xcode 27.1)",
-      "LTO build on Xcode 27.1 (27A9269): --version reports 0.2.8; node .tests/baguette/real-simulator-smoke.mjs --foldable passed 17/17 in a throwaway device set (iPhone 18 Pro on iOS 27.0, iPhone Duo on iOS 27.1): boot, flat H.264 and MJPEG frames, describe-ui, screenshot, tap/swipe/press, keyboard helper, private-set clipboard round trip, shake, status bar, rotation, hinge read and open/close, 3D frames",
-      "Before the device-set patch, POST /simulators/:udid/shake and GET /simulators/:udid/status-bar returned 500 for a private-set device; after it both succeed",
-      "3D stream memory: 30 open/close cycles leave serve at 233 MB with the patch (v0.2.8 unpatched: 1032 MB); flat streams plateau near 66 MB",
-      "Disconnect stress on 0.2.7 with iOS 27.1: about 25 minutes of three concurrent loops opening and dropping flat and 3D streams (clean close and TCP reset) did not crash the server",
-      "Idle cost measured against an idle iPhone Duo: flat MJPEG sends no frames, flat H.264 ~45 fps (+~5% CPU), 3D ~+10% CPU; set_fps 2 throttles both flat and 3D sockets",
-      "vendor-inventory.json matches all 103 packaged upstream files and is now checked by a plugin test",
-      "Plugin Node tests pass (81), including: blocked plugin/bakery/farm/device-twin/HTTP-input/CarPlay routes; hidden-page stream throttling; orphaned serve reaping and the idle memory recycle; private-set clipboard writes without devicectl",
-      "Headless Chrome against the real proxy and a booted private-set iPad Air 11 (iOS 27.0): the redesigned controller renders Cindy chrome with the live handheld screen, contain-fit with corner radius, light and dark; no console errors. iPhone Duo (iOS 27.1) renders the 3D stage under the same chrome (first 3D frame did not arrive within the headless budget; stream behavior is unchanged upstream code)",
-      "Settings page variants (devices, empty with one-tap creation, paused, English, dark) rendered in headless Chrome against a mocked host channel"
+      "0.1.67: 57 target regressions passed. Removed pointer-lock changes implicitly assigning the keyboard toggle; no restoration snapshot or extra state. New transition regression first failed on 0.1.66, then verified both initial keyboard states, repeated pointer enter/exit/error, keyboard toggles during lock, latest-choice preservation on exit, explicit Escape release, actual key-routing decisions and matching toolbar aria-pressed. Keyboard state is written only by its explicit button and Escape command. Existing ordering/cancellation and pointer-mask regressions remain green. Native source/binaries and permissions unchanged.",
+      "0.1.66: 56 target controller/model/platform tests passed. TV and integrated Vision gestures reserve the existing platform inputQueue through their full done lifetime; discrete actions finish only previously accepted gestures synchronously before enqueueing. This consolidates both input directions without a new queue or retry. Thirty-six discrete/gesture/discrete interleavings cover press/key/paste, TV wheel and Vision pointer/wheel/toolbar camera, before the first API starts or while it is pending, normal release, cancellation and rejection. The old implementation first reproduced the out-of-order began failure. Existing reverse-order, cross-page, mouse-edge and cancellation regressions pass. Native source/binaries and permissions unchanged.",
+      "0.1.65: rebased onto main 1c35c36 (#202). Manifest and all four locales retain the upstream Device Simulator name/task title while preserving TV/Vision descriptions and tools. Task messages combine the upstream name with required iOS/tvOS/visionOS runtime guidance. The rebase introduces no change to spatial/native input, queue ownership or permissions.",
+      "0.1.64: 55 controller/model/platform regressions passed. Cross-page fixtures execute real control.js capture listeners before real platform/Vision handlers. Parent/frame TV remote shortcuts, toolbar buttons and Home wait for began/changed/ended acknowledgement and all accepted swipe motion; cancellation/failure invalidate pending presses. Remote mouse-down preserves device focus. Vision frame Cmd/Ctrl+S, Shift+H, +, -, 0 and 1 reach the device with modifiers while capture is on; viewer shortcuts remain active outside the frame and when capture is off, and Escape exits capture. Missing platform controller does not fall back to direct device input. Both original cross-page findings failed against 0.1.63 before the fix. Existing device queue owns all toolbar press delivery; no new queue, native change or permission.",
+      "0.1.63: 52 controller/model/platform regressions passed. TV ending intent is explicit (normal finish versus cancel), and normal queued swipes no longer expire silently by age. Six success interleavings delay began/changed/ended by 101/1001 ms while three short swipes and a following Back action are accepted; every swipe retains began/motion/ended order before Back. Existing cancellation/failure interleavings remain green. The success regression first failed on 0.1.62. Rebased main be48e71 (#201), retaining first-connect presentation and both upstream/review tests. Native source/binaries and permissions unchanged.",
+      "0.1.62: 30 controller/spatial regressions passed. One ordered sample queue preserves per-button-mask displacement before each edge and zero-displacement button transitions before subsequent motion. Eight delayed began/changed interleavings cover both first buttons, event/move-reported mask changes, partial/all releases and normal end; the regression failed against 0.1.61 and against an incomplete edge-coalescing implementation. Rebased onto main 1ef61f4 (#204), retaining the old-iPhone Home placement fix. Native source/binaries are unchanged in this round.",
+      "0.1.61: 29 browser/controller regression tests passed. TV and Vision cancellation now cover all unfinished contacts and queued discrete input. Pointer tests cover both left/right button orderings, button changes delivered by pointermove, fast edges while an acknowledgement is pending, partial release, cancellation of pending edges, and 120000/-60000 pixel cumulative motion. Six issue/cross-input regressions were first reproduced against the old implementation.",
+      "0.1.61 native protocol regression executes the production stream loop with stub HID and a fast clock: 2101 changed samples (2521200/-1260600 pixels), held-mask transitions, final release, malformed-input release, and preserved spatial coordinate/time limits pass. Native pointer offsets use the same finite +/-1e9 limit as Node; the pointer mode is exempt from the spatial 20 s/2000-sample cap while EOF/750 ms/SIGTERM release stays. spatial.m was rebuilt with Xcode 27.1 (27A9269), ad-hoc signed and signature-verified. This is protocol isolation, not new guest or installed-Cindy acceptance.",
+      "0.1.60: rebased onto main 8978c1e (#203) and retained its authenticated open-page idle protection, including status failures. The only rebase conflict was manifest metadata; all Vision controls and input/OCR review fixes are retained. Full repository and simulator checks pass 277/280; all three Bash 3 workflow failures reproduce on clean main 8978c1e.",
+      "0.1.59: 86 controller/spatial/platform/Agent regression tests passed. TV/Vision default/full/point/query/role modes execute OCR with visible/empty/failure cases; modified Cmd/Ctrl+Left/Right (including Shift) rotate iOS only and pass through TV/Vision. Cancellation tests delay began/changed/ended acknowledgements, queue three gestures, then blur/hide/cancel/exit/pointercancel: only the active release is sent and no queued contact starts. A failure at each delivery phase also cancels queued contacts. The four new issue regressions failed against the preceding implementation before the fixes.",
+      "0.1.58: 19 spatial/platform-stage regression tests passed, including two-axis pan validation, keyboard-off suppression of letters/digits/Enter/modifier shortcuts/paste, camera navigation while capture is off, text/key/paste delivery when enabled, Escape release, and dropping queued input after capture is disabled. These tests execute the real Vision and platform controllers together with simulated browser events.",
+      "0.1.57: shared toolbar behavior, help dialog and responsive spacing verified in a real browser with mocked device APIs for iPhone, iPad, Apple TV, Vision Pro and foldable iPhone at 320/1100px in light/dark (20 combinations). Touch and keyboard help activation, Escape dismissal/focus restoration, action-vs-toggle semantics, retained camera mode and no toolbar overlap passed. No new hardware/runtime acceptance is claimed for this presentation change.",
+      "0.1.56: real browser toolbar drags changed the native visionOS camera for tilt/pan/orbit/dolly while preserving the selected interact/pan mode and canvas cursor. Verified release outside button, blur cancellation, subsequent click, keyboard activation, click jitter, 320px view, and all 112 spatial API deliveries. Regression tests cover temporary gesture ownership and click/drag separation.",
+      "Xcode 27 / visionOS 27: compiled and signature-verified the spatial helper; simulator input only, no guest app injection or bundled Apple frameworks.",
+      "Real browser/controller/API/native/SwiftUI probe: click, hold/drag (112 points), two-hand magnification (1.8x), rotation (28.8 degrees), tilt/pan/orbit/dolly, identity reset, WASD movement and MP4 recording/download. Final run confirmed all 217 spatial API deliveries.",
+      "Camera control updates both the rendered Paloma pose and vhmdd shared pose. Selection after translation hit the visible button; selection after rotation used Agent OCR coordinates and incremented the test app counter.",
+      "Relative mouse motion (100, -100) and left-button release reached the guest GCMouse handler; the helper removes its mouse service on exit.",
+      "Browser standard-gamepad fixture drove the real camera through simultaneous translation/elevation/rotation, then stopped at neutral. Physical controller not used.",
+      "Native EOF, malformed sample, SIGTERM and 750 ms inactivity released held input and allowed the next spatial tap to acquire the device lock.",
+      "Controller checked at 1100 and 320 pixels in light/dark; spatial planner and lifecycle tests cover invalid/deadline inputs, fast clicks, absolute-motion coalescing, mode/depth stability, focus/hidden/page/stream loss, failed input without replay, gamepad neutral/focus gating.",
+      "Repository contract, localization, provisioning, publish and simulator suite: 293/296 pass. The three failures are unchanged Bash 4 lowercase-expansion workflow tests on macOS Bash 3; all three already reproduced on clean latest main 1c35c36. No changed-feature test failed."
     ],
     "notVerified": [
-      "The 0.1.24 package has been installed only in a development Cindy build (task page and management view observed there); production or Beta installation remains the PR device-verification gate",
-      "Xcode 26 integration remains unverified",
-      "3D memory with the patch was measured on the iPhone Duo only; other 3D models are covered by upstream unit tests",
-      "Hidden-page throttling was verified by socket-level measurement and unit tests, not by watching CPU while switching Cindy sidebar tabs"
+      "Final 0.1.67 .cindy installation and embedded preview on stable/Beta Cindy are pending. The user-confirmed 0.1.57 acceptance below predates these review fixes and does not attest the changed package.",
+      "Browser pointer-lock acceptance is not established: the local automated browser could not consistently retain OS foreground focus. Failure reports that limitation; native relative-pointer delivery is independently verified.",
+      "Physical game controller, immersive apps, and Xcode/runtime versions other than 27. Orbit uses a fixed one-metre pivot; exact Apple camera sensitivity and hardware input feel are not claimed."
     ],
     "previousReleaseVerification": {
-      "date": "2026-10-13",
-      "pluginVersion": "0.1.23",
-      "baguette": "0.2.0",
-      "status": "review-regressions-verified-without-device-start",
+      "date": "2026-10-21",
+      "pluginVersion": "0.1.24",
+      "baguette": "0.2.10",
+      "status": "upstream-0.2.10-local-verified",
       "passed": [
-        "53 targeted tests passed, including successful boot followed by bootstatus timeout after an empty idle cleanup: polling does not renew and later idle shutdown still executes",
-        "Damaged JSON and unreadable settings path preserve device status and user shutdown; startup and settings writes remain blocked; incomplete shutdown remains explicit and repaired settings reload",
-        "Actual Node/core device listing and stop-all with an isolated damaged settings file confirm the already-stopped private devices remain Shutdown; no device was started",
-        "Actual settings.js/main.js/runtime executed in isolated headless browser with two fault-fixture devices: blocked startup/settings, working single/all shutdown, 340px layout and file repair",
-        "Tool descriptions in all four locales disclose sequential device switch and automatic app install potentially replacing the target app with the same bundleId"
+        "v0.2.10 release archive (2650f1e6…) matches the GitHub digest; source archive (b41596dc…) equals `git archive v0.2.10`; release Web equals the tagged source; vendor-web.patch applies with no offsets; native patch is only the version stamp (tddworks/baguette#122 and #123 merged upstream)",
+        "LTO build on Xcode 27.1: --version 0.2.10; real-simulator smoke 17/17 (iPhone 18 Pro iOS 27.0, iPhone Duo iOS 27.1); 30 open/close 3D cycles leave serve at 293 MB",
+        "Official v0.2.8 release archive (498328d1…) matches the GitHub asset digest; the source archive (f0fe577b…) equals `git archive v0.2.8`; release Web resources are byte-identical to the tagged source; vendor-web.patch applies with context and no fuzz",
+        "vendor-native.patch (device set for every simctl call, tddworks/baguette#122; 3D scene freed on close and models loaded once, tddworks/baguette#123; version stamp) on v0.2.8: the full upstream Swift suite passes (2536 tests in 305 suites, Swift 6.4, Xcode 27.1)",
+        "LTO build on Xcode 27.1 (27A9269): --version reports 0.2.8; node .tests/baguette/real-simulator-smoke.mjs --foldable passed 17/17 in a throwaway device set (iPhone 18 Pro on iOS 27.0, iPhone Duo on iOS 27.1): boot, flat H.264 and MJPEG frames, describe-ui, screenshot, tap/swipe/press, keyboard helper, private-set clipboard round trip, shake, status bar, rotation, hinge read and open/close, 3D frames",
+        "Before the device-set patch, POST /simulators/:udid/shake and GET /simulators/:udid/status-bar returned 500 for a private-set device; after it both succeed",
+        "3D stream memory: 30 open/close cycles leave serve at 233 MB with the patch (v0.2.8 unpatched: 1032 MB); flat streams plateau near 66 MB",
+        "Disconnect stress on 0.2.7 with iOS 27.1: about 25 minutes of three concurrent loops opening and dropping flat and 3D streams (clean close and TCP reset) did not crash the server",
+        "Idle cost measured against an idle iPhone Duo: flat MJPEG sends no frames, flat H.264 ~45 fps (+~5% CPU), 3D ~+10% CPU; set_fps 2 throttles both flat and 3D sockets",
+        "vendor-inventory.json matches all 103 packaged upstream files and is now checked by a plugin test",
+        "Plugin Node tests pass (81), including: blocked plugin/bakery/farm/device-twin/HTTP-input/CarPlay routes; hidden-page stream throttling; orphaned serve reaping and the idle memory recycle; private-set clipboard writes without devicectl",
+        "Headless Chrome against the real proxy and a booted private-set iPad Air 11 (iOS 27.0): the redesigned controller renders Cindy chrome with the live handheld screen, contain-fit with corner radius, light and dark; no console errors. iPhone Duo (iOS 27.1) renders the 3D stage under the same chrome (first 3D frame did not arrive within the headless budget; stream behavior is unchanged upstream code)",
+        "Settings page variants (devices, empty with one-tap creation, paused, English, dark) rendered in headless Chrome against a mocked host channel"
       ],
       "notVerified": [
-        "0.1.23 package has not been installed in Cindy or tested with newly booted simulators; the prior stop requirement remains in force. 0.1.22 installed Beta acceptance remains recorded below; review changes have targeted fault-injection and isolated UI coverage",
-        "Prior native Cindy capture/pointer limitation remains; no new claim of native sidebar screenshot acceptance"
+        "The 0.1.24 package has been installed only in a development Cindy build (task page and management view observed there); production or Beta installation remains the PR device-verification gate",
+        "Xcode 26 integration remains unverified",
+        "3D memory with the patch was measured on the iPhone Duo only; other 3D models are covered by upstream unit tests",
+        "Hidden-page throttling was verified by socket-level measurement and unit tests, not by watching CPU while switching Cindy sidebar tabs"
       ],
       "previousReleaseVerification": {
         "date": "2026-10-13",
-        "pluginVersion": "0.1.22",
+        "pluginVersion": "0.1.23",
         "baguette": "0.2.0",
-        "status": "installed-beta-sidebar-devices-verified",
+        "status": "review-regressions-verified-without-device-start",
         "passed": [
-          "Isolated browser exercised sidebar creation without boot, renaming, compatible runtime filtering, sequential device switching in the same preview, failure states, and 340px mobile layout",
-          "Device-manager regression tests verify exclusive switching, source shutdown confirmation, persisted app context, application-bundle-only reuse, paused/foreign target rejection, and truthful failure state",
-          "Installed 0.1.22 in production Cindy 0.1.104 Beta; all 125 tracked package files match installed content",
-          "Actual Cindy sidebar form creates iPhone 18 Pro and leaves it Shutdown, then renames it without changing its identity",
-          "Real runtime incompatibility found and fixed: version ranges alone allowed iPhone 18 Pro with the Duo-only iOS 27.1 runtime; catalog and create preflight now use supportedDeviceTypes",
-          "Actual sidebar switches Duo to iPhone 18 Pro and back; each source is confirmed Shutdown before target boot, and preview changes to the target in the same tab",
-          "Offline UIKit test app installed only on Duo follows the switch and displays on both runtimes; accessibility trees and native iPhone screenshot confirm the app is running",
-          "A test-only source data marker remains on Duo after the round trip and is absent from iPhone; application bundle reuse does not copy app data",
-          "Real H.264 preview and controls rendered in isolated headless capture; device app output and target model visible",
-          "Sidebar Shut down device confirms both test devices Shutdown; run permission restored to false with 15-minute idle default",
-          "49 targeted regression tests passed"
+          "53 targeted tests passed, including successful boot followed by bootstatus timeout after an empty idle cleanup: polling does not renew and later idle shutdown still executes",
+          "Damaged JSON and unreadable settings path preserve device status and user shutdown; startup and settings writes remain blocked; incomplete shutdown remains explicit and repaired settings reload",
+          "Actual Node/core device listing and stop-all with an isolated damaged settings file confirm the already-stopped private devices remain Shutdown; no device was started",
+          "Actual settings.js/main.js/runtime executed in isolated headless browser with two fault-fixture devices: blocked startup/settings, working single/all shutdown, 340px layout and file repair",
+          "Tool descriptions in all four locales disclose sequential device switch and automatic app install potentially replacing the target app with the same bundleId"
         ],
         "notVerified": [
-          "Cindy desktop pointer and screenshot capture are unavailable (CUA_UNAVAILABLE / UnknownVizError); actual sidebar DOM controls were exercised instead, with a separate headless live preview capture",
-          "Exhaustive app compatibility between different iOS versions; apps requiring a newer runtime may not launch on older target devices"
+          "0.1.23 package has not been installed in Cindy or tested with newly booted simulators; the prior stop requirement remains in force. 0.1.22 installed Beta acceptance remains recorded below; review changes have targeted fault-injection and isolated UI coverage",
+          "Prior native Cindy capture/pointer limitation remains; no new claim of native sidebar screenshot acceptance"
         ],
         "previousReleaseVerification": {
-          "date": "2026-10-12",
-          "pluginVersion": "0.1.21",
+          "date": "2026-10-13",
+          "pluginVersion": "0.1.22",
           "baguette": "0.2.0",
-          "status": "installed-beta-controls-and-idle-verified",
+          "status": "installed-beta-sidebar-devices-verified",
           "passed": [
-            "Packaged candidate installed and exercised on a real Apple Silicon Mac running Cindy 0.1.104 Beta; all 123 tracked plugin files match the installed package",
-            "Actual Cindy settings page boots the existing private Duo; switching operation off shuts it down and persists the disabled setting",
-            "Installed Agent boot is rejected with RUNTIME_DISABLED after the user switch is off; enabling the switch leaves the device shut down",
-            "Cold settings page wakes the logic page without a preceding Agent tool call; delayed listener startup is covered by read-only status retries",
-            "Dark-theme settings contrast checked in actual Cindy; isolated browser layout at 340px and 520px and setting persistence passed",
-            "Actual Duo viewer at 150 percent accepts a pointer click on General and opens the corresponding Settings screen; top shutdown controls stay visible",
-            "Viewer shutdown button reports confirmed Shutdown, ends the live stream, and preserves the existing simulator data",
-            "Transport keepalive was observed to renew idle every 30 seconds and fixed; trusted pointer input renews the timer while socket traffic does not",
-            "39 targeted tests and 23 repository contract/localization/provisioning/publish tests passed",
-            "Real uninterrupted 15-minute idle trial with a live video viewer and repeated status polling: deadline stayed constant, last-minute warning appeared, device became Shutdown and simulator, viewer and hinge-monitor processes exited without a shutdown command"
+            "Isolated browser exercised sidebar creation without boot, renaming, compatible runtime filtering, sequential device switching in the same preview, failure states, and 340px mobile layout",
+            "Device-manager regression tests verify exclusive switching, source shutdown confirmation, persisted app context, application-bundle-only reuse, paused/foreign target rejection, and truthful failure state",
+            "Installed 0.1.22 in production Cindy 0.1.104 Beta; all 125 tracked package files match installed content",
+            "Actual Cindy sidebar form creates iPhone 18 Pro and leaves it Shutdown, then renames it without changing its identity",
+            "Real runtime incompatibility found and fixed: version ranges alone allowed iPhone 18 Pro with the Duo-only iOS 27.1 runtime; catalog and create preflight now use supportedDeviceTypes",
+            "Actual sidebar switches Duo to iPhone 18 Pro and back; each source is confirmed Shutdown before target boot, and preview changes to the target in the same tab",
+            "Offline UIKit test app installed only on Duo follows the switch and displays on both runtimes; accessibility trees and native iPhone screenshot confirm the app is running",
+            "A test-only source data marker remains on Duo after the round trip and is absent from iPhone; application bundle reuse does not copy app data",
+            "Real H.264 preview and controls rendered in isolated headless capture; device app output and target model visible",
+            "Sidebar Shut down device confirms both test devices Shutdown; run permission restored to false with 15-minute idle default",
+            "49 targeted regression tests passed"
           ],
           "notVerified": [
-            "Exhaustive optional viewer features and Xcode 26 integration"
+            "Cindy desktop pointer and screenshot capture are unavailable (CUA_UNAVAILABLE / UnknownVizError); actual sidebar DOM controls were exercised instead, with a separate headless live preview capture",
+            "Exhaustive app compatibility between different iOS versions; apps requiring a newer runtime may not launch on older target devices"
           ],
           "previousReleaseVerification": {
-            "date": "2026-09-26",
+            "date": "2026-10-12",
+            "pluginVersion": "0.1.21",
             "baguette": "0.2.0",
-            "status": "installed-beta-duo-core-verified",
+            "status": "installed-beta-controls-and-idle-verified",
             "passed": [
-              "Official release SHA-256 matches GitHub asset digest",
-              "Version and hinge help run with Xcode 27.0",
-              "Nine existing Web patches migrated without rejected hunks",
-              "Packaged candidate installed with Cindy forge installer on a real Apple Silicon Mac",
-              "Actual Cindy sidebar renders Duo closed at 0 degrees and unfolded at 130 degrees",
-              "Guest sensor reports actual hinge angles; screen and app layout switch",
-              "Touch navigates Settings and focuses its search field",
-              "Unicode paste renders Duo测试 once in the Settings search field",
-              "Keyboard release completes without restarting the app",
-              "44 targeted upstream Swift tests including custom-set subprocess and renamed-model regressions",
-              "25 plugin tests"
+              "Packaged candidate installed and exercised on a real Apple Silicon Mac running Cindy 0.1.104 Beta; all 123 tracked plugin files match the installed package",
+              "Actual Cindy settings page boots the existing private Duo; switching operation off shuts it down and persists the disabled setting",
+              "Installed Agent boot is rejected with RUNTIME_DISABLED after the user switch is off; enabling the switch leaves the device shut down",
+              "Cold settings page wakes the logic page without a preceding Agent tool call; delayed listener startup is covered by read-only status retries",
+              "Dark-theme settings contrast checked in actual Cindy; isolated browser layout at 340px and 520px and setting persistence passed",
+              "Actual Duo viewer at 150 percent accepts a pointer click on General and opens the corresponding Settings screen; top shutdown controls stay visible",
+              "Viewer shutdown button reports confirmed Shutdown, ends the live stream, and preserves the existing simulator data",
+              "Transport keepalive was observed to renew idle every 30 seconds and fixed; trusted pointer input renews the timer while socket traffic does not",
+              "39 targeted tests and 23 repository contract/localization/provisioning/publish tests passed",
+              "Real uninterrupted 15-minute idle trial with a live video viewer and repeated status polling: deadline stayed constant, last-minute warning appeared, device became Shutdown and simulator, viewer and hinge-monitor processes exited without a shutdown command"
             ],
             "notVerified": [
-              "Xcode 26 integration regression",
-              "Exhaustive optional viewer features and prolonged disconnect recovery"
+              "Exhaustive optional viewer features and Xcode 26 integration"
             ],
             "previousReleaseVerification": {
-              "date": "2026-09-16",
-              "xcode": "27.0 27A266a",
-              "runtime": "iOS 27.0",
-              "baguette": "0.1.98",
+              "date": "2026-09-26",
+              "baguette": "0.2.0",
+              "status": "installed-beta-duo-core-verified",
               "passed": [
-                "environment",
-                "create_device",
-                "boot",
-                "launch Settings",
-                "describe_ui",
-                "tap General",
-                "screenshot",
-                "Unicode paste",
-                "Home",
-                "shutdown",
-                "reboot",
-                "Cindy-style require bootstrap",
-                "JSON-RPC environment",
-                "5 isolation and error-handling tests",
-                "0.1.1 viewer HTTP page and JPEG screenshot",
-                "0.1.1 viewer shutdown closes port",
-                "4 sidebar bridge tests",
-                "0.1.3: three real H264 connect/disconnect cycles each caused native SIGABRT; supervisor recovered on same URL each time",
-                "0.1.3: stream reconnect and deliberate stop cancellation test"
+                "Official release SHA-256 matches GitHub asset digest",
+                "Version and hinge help run with Xcode 27.0",
+                "Nine existing Web patches migrated without rejected hunks",
+                "Packaged candidate installed with Cindy forge installer on a real Apple Silicon Mac",
+                "Actual Cindy sidebar renders Duo closed at 0 degrees and unfolded at 130 degrees",
+                "Guest sensor reports actual hinge angles; screen and app layout switch",
+                "Touch navigates Settings and focuses its search field",
+                "Unicode paste renders Duo测试 once in the Settings search field",
+                "Keyboard release completes without restarting the app",
+                "44 targeted upstream Swift tests including custom-set subprocess and renamed-model regressions",
+                "25 plugin tests"
               ],
               "notVerified": [
-                "installed Cindy ghost_call end-to-end",
-                "install_app on a newly built project",
-                "heal and swipe integration",
-                "0.1.1 installed plugin sidebar render"
+                "Xcode 26 integration regression",
+                "Exhaustive optional viewer features and prolonged disconnect recovery"
               ],
-              "knownIssues": [
-                "Baguette 0.1.98 native serve still SIGABRTs on stream disconnect in this Xcode 27 environment; bounded restart mitigates this rather than fixing upstream.",
-                "Sidebar preview is session-scoped; call open_viewer in a new session."
-              ]
+              "previousReleaseVerification": {
+                "date": "2026-09-16",
+                "xcode": "27.0 27A266a",
+                "runtime": "iOS 27.0",
+                "baguette": "0.1.98",
+                "passed": [
+                  "environment",
+                  "create_device",
+                  "boot",
+                  "launch Settings",
+                  "describe_ui",
+                  "tap General",
+                  "screenshot",
+                  "Unicode paste",
+                  "Home",
+                  "shutdown",
+                  "reboot",
+                  "Cindy-style require bootstrap",
+                  "JSON-RPC environment",
+                  "5 isolation and error-handling tests",
+                  "0.1.1 viewer HTTP page and JPEG screenshot",
+                  "0.1.1 viewer shutdown closes port",
+                  "4 sidebar bridge tests",
+                  "0.1.3: three real H264 connect/disconnect cycles each caused native SIGABRT; supervisor recovered on same URL each time",
+                  "0.1.3: stream reconnect and deliberate stop cancellation test"
+                ],
+                "notVerified": [
+                  "installed Cindy ghost_call end-to-end",
+                  "install_app on a newly built project",
+                  "heal and swipe integration",
+                  "0.1.1 installed plugin sidebar render"
+                ],
+                "knownIssues": [
+                  "Baguette 0.1.98 native serve still SIGABRTs on stream disconnect in this Xcode 27 environment; bounded restart mitigates this rather than fixing upstream.",
+                  "Sidebar preview is session-scoped; call open_viewer in a new session."
+                ]
+              },
+              "cindy": {
+                "version": "0.1.93",
+                "channel": "Beta"
+              },
+              "xcode": "27.1 beta (27A9269)",
+              "runtime": "iOS 27.1 (24A94401)"
             },
             "cindy": {
-              "version": "0.1.93",
+              "version": "0.1.104",
               "channel": "Beta"
             },
             "xcode": "27.1 beta (27A9269)",
-            "runtime": "iOS 27.1 (24A94401)"
+            "runtime": "iOS 27.1 (24A94401)",
+            "idleTrial": {
+              "lastInputUtc": "2026-10-12T14:12:45.313Z",
+              "deadlineUtc": "2026-10-12T14:27:45.313Z",
+              "observedShutdownUtc": "2026-10-12T14:28:09.045Z",
+              "observationIntervalSeconds": 30,
+              "videoAndStatusPollingKeptActive": true,
+              "deadlineStable": true,
+              "finalState": "Shutdown",
+              "deviceDataPreserved": true
+            }
           },
           "cindy": {
             "version": "0.1.104",
             "channel": "Beta"
           },
           "xcode": "27.1 beta (27A9269)",
-          "runtime": "iOS 27.1 (24A94401)",
-          "idleTrial": {
-            "lastInputUtc": "2026-10-12T14:12:45.313Z",
-            "deadlineUtc": "2026-10-12T14:27:45.313Z",
-            "observedShutdownUtc": "2026-10-12T14:28:09.045Z",
-            "observationIntervalSeconds": 30,
-            "videoAndStatusPollingKeptActive": true,
-            "deadlineStable": true,
-            "finalState": "Shutdown",
-            "deviceDataPreserved": true
-          }
-        },
-        "cindy": {
-          "version": "0.1.104",
-          "channel": "Beta"
-        },
-        "xcode": "27.1 beta (27A9269)",
-        "runtimes": [
-          "iOS 27.1 (Duo)",
-          "iOS 27.0 (iPhone 18 Pro)"
-        ]
+          "runtimes": [
+            "iOS 27.1 (Duo)",
+            "iOS 27.0 (iPhone 18 Pro)"
+          ]
+        }
       }
+    },
+    "userConfirmedDeviceVerification": {
+      "date": "2026-10-23",
+      "pluginVersion": "0.1.57",
+      "buildCommit": "9a91dda103fe04d5b8c4a83aa41cf2f22facd917",
+      "confirmedBy": "Dash",
+      "result": "User confirmed real-device testing in the task; recorded in PR #199. Cindy version/channel not supplied; not inferred."
     }
-  },
-  "userConfirmedDeviceVerification": {
-    "date": "2026-10-23",
-    "pluginVersion": "0.1.57",
-    "buildCommit": "9a91dda103fe04d5b8c4a83aa41cf2f22facd917",
-    "confirmedBy": "Dash",
-    "result": "User confirmed real-device testing in the task; recorded in PR #199. Cindy version/channel not supplied; not inferred."
   }
 }
