@@ -41,10 +41,11 @@ test('Android press dispatches the complete shared contract and rejects iOS-only
   const agent=require(path.join(A,'agent.cjs')).createAgent({root:await temp(t),devices:{adb:async(d,args)=>commands.push(args)}});
   const manifest=JSON.parse(await fs.readFile('baguette-simulator/ghost.json','utf8'));
   const buttons=manifest.tools.find(t=>t.name==='press').parameters.properties.button.enum;
+  for(const button of ['up','down','left','right','select','menu','play-pause','digital-crown','back','shake'])assert.ok(buttons.includes(button),`retained Apple/Android button: ${button}`);
   const keys={home:'GoHome',back:'GoBack',lock:'Power',power:'Power','volume-up':'AudioVolumeUp','volume-down':'AudioVolumeDown','app-switcher':'AppSwitch','swipe-to-app-switcher':'AppSwitch','swipe-to-home':'GoHome'};
   for(const button of [...buttons,'invalid']){
     inputs.length=commands.length=0;
-    if(['action','pull-down-to-lock-screen','invalid'].includes(button)){
+    if(!keys[button]&&!['shake','release-input','pull-down-to-notification-center'].includes(button)){
       await assert.rejects(agent.press({udid:id,endpoint},{button}),e=>e.code==='INVALID_ARGUMENT'&&e.execution==='not_executed');
       assert.equal(inputs.length+commands.length,0);continue;
     }
@@ -244,13 +245,59 @@ test('state changes retain executed outcome when the resulting screen is unavail
   const actions=[],setState=require(path.join(A,'state.cjs')).createState({devices:{adb:async(d,args)=>actions.push(args)},agent:{frame:async()=>{throw Object.assign(Error('No frame'),{code:'SCREEN_UNAVAILABLE'});}}});
   const result=await setState({udid:id},{appearance:'dark'});assert.equal(actions.length,1);assert.equal(result.execution,'executed');assert.equal(result.observationError.code,'SCREEN_UNAVAILABLE');
 });
-test('Android rotation changes physical pose and lets activities choose their display orientation',async t=>{
+test('Android rotation changes physical pose without changing either orientation-lock setting',async t=>{
   const poses=[],commands=[],endpoint=await emulator(t,(s,h,body)=>{assert.ok(h[':path'].endsWith('/setPhysicalModel'));poses.push(schema.lookupType('PhysicalModelValue').decode(body.subarray(5)));send(s,'Empty',{});});
   const state=require(path.join(A,'state.cjs')).createState({devices:{adb:async(d,args)=>commands.push(args)},agent:{frame:async()=>({screen:{rotation:0}})}});
-  for(const orientation of ['portrait','landscape-left','portrait-upside-down','landscape-right'])assert.equal((await state({endpoint},{orientation})).execution,'executed');
-  assert.deepEqual(poses.map(p=>p.value.data),[[0,0,0],[0,0,90],[0,0,180],[0,0,270]]);
+  for(const locked of [0,1]){
+    const before=commands.length;
+    for(const orientation of ['portrait','landscape-left','portrait-upside-down','landscape-right'])assert.equal((await state({endpoint},{orientation})).execution,'executed');
+    assert.equal(commands.length,before,`accelerometer_rotation=${locked} must never be written`);
+  }
+  assert.deepEqual(poses.map(p=>p.value.data),Array(2).fill([[0,0,0],[0,0,90],[0,0,180],[0,0,270]]).flat());
   assert.ok(poses.every(p=>p.target===1&&p.interpolation===1));
-  assert.deepEqual(commands,Array.from({length:4},()=>['shell','settings','put','system','accelerometer_rotation','1']));
+  assert.deepEqual(commands,[]);
+});
+test('Android shake read/validation failures do not send sensor or pose restoration writes',async t=>{
+ for(const mode of ['pose-rpc','sensor-rpc','pose-status','sensor-status','pose-shape','sensor-shape']){
+  const calls=[],endpoint=await emulator(t,(s,h)=>{
+   const name=h[':path'].split('/').at(-1);calls.push(name);assert.ok(name.startsWith('get'));
+   const pose=name==='getPhysicalModel',prefix=pose?'pose':'sensor';
+   send(s,pose?'PhysicalModelValue':'SensorValue',{target:pose?1:0,status:mode===prefix+'-status'?1:0,value:{data:mode===prefix+'-shape'?[0]:[0,0,1]}},{status:mode===prefix+'-rpc'?'13':'0'});
+  });
+  const agent=require(path.join(A,'agent.cjs')).createAgent({devices:{}});
+  await assert.rejects(agent.press({endpoint},{button:'shake'}),e=>e.execution==='not_executed');
+  assert.deepEqual(calls,mode==='pose-rpc'?['getPhysicalModel']:['getPhysicalModel','getSensor']);
+ }
+});
+
+test('Android scroll_to retains every completed swipe across subsequent observation and input failures',async()=>{
+ const vm=require('node:vm'),source=await fs.readFile(path.join(A,'agent.cjs'),'utf8');
+ const cases=[...[0,1,2].flatMap(n=>['SCREEN_CHANGED','ANDROID_GRPC_FAILED','TIME_BUDGET_EXHAUSTED'].map(code=>({n,code}))),{n:1,code:'OBSERVATION_FAILED',plain:true},{n:1,code:'INPUT_FAILED',input:true},{n:2,missing:true},{n:1,success:true}];
+ for(const c of cases){
+  let completed=0;const writes=[];
+  const rpc=async(_endpoint,method,value)=>{
+   if(method==='getScreenshot'){
+    if(!c.input&&!c.success&&!c.missing&&completed===c.n)throw Object.assign(Error(c.code),{code:c.code,...(!c.plain?{execution:'not_executed'}:{})});
+    return {format:{width:108,height:240},image:image()};
+   }
+   assert.equal(method,'sendTouch');writes.push(value);
+   if(c.input&&completed===c.n&&value.touches.some(t=>t.pressure))throw Object.assign(Error(c.code),{code:c.code,execution:'unknown'});
+   if(value.touches.length===1&&value.touches[0].pressure===0)completed++;
+   return {};
+  };
+  const devices={adb:async(_d,args)=>({stdout:args.includes('dumpsys')?'Viewport INTERNAL: displayId=0, orientation=0':`<?xml version="1.0"?><hierarchy rotation="0"><node bounds="[1,1][40,30]" text="Visible" resource-id="${c.success&&completed===c.n?'target':'other'}" clickable="true" enabled="true"/></hierarchy>`})};
+  const context={module:{exports:{}},__dirname:A,Buffer,Date,setTimeout:fn=>{queueMicrotask(fn);},require:n=>n==='./grpc.cjs'?{rpc}:require(n.startsWith('.')?path.resolve(A,n):n)};
+  vm.runInNewContext(source,context);const agent=context.module.exports.createAgent({devices});
+  const action=agent.gesture({udid:id,endpoint:{},model:{width:108,height:240,density:160}},{kind:'scroll_to',id:'target',max_swipes:2,duration:.01,observe:'none'});
+  if(c.success){const r=await action;assert.equal(r.execution,'executed');assert.equal(r.swipes,c.n);}
+  else await assert.rejects(action,e=>{
+   assert.equal(e.code,c.missing?'ELEMENT_NOT_FOUND':c.code);assert.equal(e.swipes,c.n);
+   assert.equal(e.execution,c.input?'unknown':c.n?'executed':'not_executed');
+   if(c.n)assert.match(e.message,new RegExp(`${c.n} swipe\\(s\\) completed`));
+   return true;
+  });
+  assert.equal(completed,c.n);if(!c.n)assert.equal(writes.length,0);
+ }
 });
 for(const mode of ['success','first-sample','last-sample','sensor-restore','pose-restore','both-restore'])test(`Android shake restores acceleration and pose: ${mode}`,async t=>{
   const poses=[],samples=[],endpoint=await emulator(t,(s,h,body)=>{

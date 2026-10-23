@@ -11,7 +11,6 @@ function createState({devices,agent}){
       // Rotate the physical device, letting Android respect each activity's
       // orientation. A forced user_rotation plus a sensor override leaves
       // stale upside-down activity surfaces in Launcher transitions.
-      setting('orientation','system','accelerometer_rotation',1);
       operations.push({name:'orientation',run:()=>rpc(d.endpoint,'setPhysicalModel',{target:1,value:{data:[0,0,index*90]},interpolation:1},{deadline:p._deadline})});
     }
     if(p.posture!==undefined)throw fail('This Android phone/tablet has no hinge. Choose orientation instead.');

@@ -1,18 +1,24 @@
 {
   "date": "2026-10-24",
-  "pluginVersion": "0.2.15",
+  "pluginVersion": "0.2.16",
   "baguette": "0.2.10",
-  "status": "rebased-vision-android-source-verified-package-acceptance-pending",
+  "status": "platform-contract-and-input-evidence-source-verified-package-acceptance-pending",
   "baseCommit": "e13abcd2caad2f83a66ed7b1716312ed4145eae8",
   "passed": [
     "Rebased onto main e13abcd (#199). TV/Vision native helpers, platform-stage, vision-stage, spatial and trackpad implementation files are byte-identical to main. Android review fixes retained.",
     "79 targeted controller/model/core/create-sheet/manifest/localization checks passed. Cross-platform tests cover iOS/Android handheld routing, Home, both rotation buttons and modified-arrow shortcuts versus TV/Vision, plus English/Chinese creation sheets with exact per-platform runtimes.",
     "Full repository gate including binary dependencies: 385/388 passed. The same three Bash 3 bad-substitution failures reproduced on clean new main e13abcd (publishing tests 11/14). No unrelated workflow edits.",
     "Real API36 Android source viewer rendered the live handheld frame, completed both rotation directions and Home, retained Back/clipboard/import/record controls, and reported no page errors. Only the private test device was started; restored to Shutdown after validation. This is source/browser verification, not Beta packaged acceptance.",
-    "Vendor inventory passed; generated OCR resources restored byte-identically after rebase. No new SDK downloads, external network endpoints, permissions or native binary changes introduced by integration."
+    "Vendor inventory passed; generated OCR resources restored byte-identically after rebase. No new SDK downloads, external network endpoints, permissions or native binary changes introduced by integration.",
+    "0.2.16: Android/contract/localization targeted checks 93/93; final Android cases 66/66. Full gate including binary dependencies 387/390, with only the same three Bash 3 baseline failures on unchanged main e13abcd.",
+    "TV/Vision press parameter enum restored as the union of upstream buttons and Android back/shake. Android rejects all foreign buttons before input; four-language descriptions include the complete declared enum.",
+    "Shake read/status/shape preflight failures send zero sensor/pose writes and retain not_executed. Existing first/last sample and either/both cleanup failure tests still retain unknown and restore both values.",
+    "scroll_to keeps completed swipe counts and execution across later screen-change, connection, budget and plain observation failures. Failed later input remains unknown; first-read failures stay not_executed; target-found and target-missing cases retain progress. No new retry or recovery mechanism.",
+    "Real API36: after confirming each test lock setting has settled, four physical orientations preserve accelerometer_rotation=0 and =1. Original lock setting and portrait/Home restored; the private test device returned to Shutdown. No other Apple device or installed Cindy was changed.",
+    "Binary package offline fixtures: 21 Python tests completed, 1 opt-in live case skipped. The existing ZIP source-copy loop omits directory entries before collecting dependencies. The same final 256-entry cap and source/expanded/archive limits remain: 256 regular entries pass, 257 fail. Source bytes, dependency bytes, executable modes and final path validation remain covered."
   ],
   "notVerified": [
-    "0.2.15 packaged acceptance on production/Beta Cindy is pending. Dash confirmed 0.2.14 on Beta; that historical attestation does not cover this rebased package.",
+    "0.2.16 packaged acceptance on production/Beta Cindy is pending. Dash confirmed 0.2.14 on Beta; that historical attestation does not cover this rebased package.",
     "No other iOS/tvOS/visionOS device was started or stopped for this integration. Upstream real-device evidence remains recorded separately.",
     "Android Windows/Linux physical-host acceptance remains pending."
   ],
@@ -454,5 +460,12 @@
       "confirmedBy": "Dash",
       "result": "User confirmed real-device testing in the task; recorded in PR #199. Cindy version/channel not supplied; not inferred."
     }
+  },
+  "supersededVerificationPackage": {
+    "pluginVersion": "0.2.15",
+    "buildCommit": "81b972857d72fa42c679d8a1047db79141176b93",
+    "localForgeSha256": "2a977fd0db719129976f8383a3735cb18dae2e74661f4ac4fab4258e3b0327ad",
+    "acceptance": "Not confirmed; superseded by 0.2.16 after technical review.",
+    "ciPackaging": "Failed because directory entries were counted before collection (258 raw entries, 211 regular files)."
   }
 }

@@ -90,8 +90,14 @@ function createAgent({root,devices,run}){
   async function gesture(d,p){
     if(p.kind==='scroll_to'){
       const maximum=number(p.max_swipes,'max_swipes',1,30,10);let performed=0;
-      for(let i=0;i<=maximum;i++){const found=await find(d,p);if(found.element&&found.element.frame[1]>=0&&found.element.frame[1]+found.element.frame[3]<=found.ui.screen.height)return after(d,p,{udid:d.udid,execution:performed?'executed':'not_executed',element:found.element,swipes:performed});if(i<maximum){await gesture(d,{...p,kind:'swipe',direction:p.direction||'up',observe:'none'});performed++;}}
-      throw fail('ELEMENT_NOT_FOUND','The element was not found after scrolling. Take a screenshot.',performed?'executed':'not_executed');
+      try{
+        for(let i=0;i<=maximum;i++){const found=await find(d,p);if(found.element&&found.element.frame[1]>=0&&found.element.frame[1]+found.element.frame[3]<=found.ui.screen.height)return after(d,p,{udid:d.udid,execution:performed?'executed':'not_executed',element:found.element,swipes:performed});if(i<maximum){await gesture(d,{...p,kind:'swipe',direction:p.direction||'up',observe:'none'});performed++;}}
+        throw fail('ELEMENT_NOT_FOUND','The element was not found after scrolling. Take a screenshot.',performed?'executed':'not_executed');
+      }catch(e){
+        e.swipes=performed;
+        if(performed){if(e.execution!=='unknown')e.execution='executed';e.message=`${performed} swipe(s) completed. ${e.message} Observe the current screen before continuing; do not replay the scroll request.`;}
+        throw e;
+      }
     }
     const f=await frame(d,p),screen=f.screen;
     if(seen.has(d.udid)&&seen.get(d.udid)!==JSON.stringify(screen))throw fail('SCREEN_CHANGED','The Android screen changed size or orientation. Observe it again before using coordinates.');
@@ -157,10 +163,15 @@ function createAgent({root,devices,run}){
     const keys={home:'GoHome',back:'GoBack',lock:'Power',power:'Power','volume-up':'AudioVolumeUp','volume-down':'AudioVolumeDown','app-switcher':'AppSwitch','swipe-to-app-switcher':'AppSwitch','swipe-to-home':'GoHome'};
     if(!keys[p.button]&&!['shake','release-input','pull-down-to-notification-center'].includes(p.button))throw fail('INVALID_ARGUMENT','This Android device has no such hardware button.');
     number(p.duration,'duration',0,10,0);
+    // Reads and validation cannot have shaken the device. Keep them outside
+    // the existing mutation/restore try so failures retain not_executed.
+    let pose,gravity;
+    if(p.button==='shake'){
+      pose=await call(d,'getPhysicalModel',{target:1},p);gravity=await call(d,'getSensor',{target:0},p);
+      if(pose.status!==0||gravity.status!==0||pose.value?.data?.length!==3||gravity.value?.data?.length!==3)throw fail('SENSOR_UNAVAILABLE','Cannot confirm Android orientation before shaking.');
+    }
     try{
     if(p.button==='shake'){
-      const pose=await call(d,'getPhysicalModel',{target:1},p),gravity=await call(d,'getSensor',{target:0},p);
-      if(pose.status!==0||gravity.status!==0||pose.value?.data?.length!==3||gravity.value?.data?.length!==3)throw fail('SENSOR_UNAVAILABLE','Cannot confirm Android orientation before shaking.');
       try{for(let i=0;i<6;i++){const data=[...gravity.value.data];data[0]+=i%2?18:-18;await call(d,'setSensor',{target:0,value:{data}},p);await sleep(60,p._deadline);}}
       finally{
         try{await call(d,'setSensor',{target:0,value:gravity.value},{_deadline:Date.now()+3000});}
