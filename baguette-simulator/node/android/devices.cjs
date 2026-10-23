@@ -79,7 +79,11 @@ function createDevices({root,sdk,run,children}){
       await fs.writeFile(path.join(directory,'config.ini'),Object.entries(config).map(([k,v])=>`${k}=${v}`).join('\n')+'\n',{mode:0o600});
       await fs.writeFile(path.join(avds,avdName+'.ini'),`avd.ini.encoding=UTF-8\npath=${directory}\ntarget=android-${image.version}\n`,{mode:0o600});
       await fs.writeFile(file(udid),JSON.stringify(d),{flag:'wx',mode:0o600});
-    }catch(e){await fs.rm(directory,{recursive:true,force:true});await fs.rm(path.join(avds,avdName+'.ini'),{force:true});throw e;}
+    }catch(e){
+      const cleanupErrors=[];
+      for(const target of [directory,path.join(avds,avdName+'.ini'),file(udid)])try{await fs.rm(target,{recursive:true,force:true});}catch(error){cleanupErrors.push(error.message);}
+      e.execution='unknown';e.message+=' Device '+udid+(cleanupErrors.length?' creation rollback was incomplete: '+cleanupErrors.join('; '):' creation failed after writing files; rollback completed. Inspect devices before retrying.');throw e;
+    }
     return {udid,name,runtime:p.runtime,platform:'android',execution:'executed'};
   }
   async function boot(p){
@@ -90,12 +94,13 @@ function createDevices({root,sdk,run,children}){
       const port=await freePort(),logs=await fs.open(path.join(d.directory,'emulator.log'),'w',0o600);
       const env={...process.env,ANDROID_AVD_HOME:avds,ANDROID_EMULATOR_HOME:root,ANDROID_HOME:path.dirname(path.dirname(local.emulator)),ANDROID_SDK_ROOT:path.dirname(path.dirname(local.emulator))};
       const child=spawn(local.emulator,['-avd',d.avdName,'-no-window','-no-boot-anim','-no-snapshot','-no-audio','-grpc',String(port),'-grpc-use-token','-no-metrics','-camera-back','none','-camera-front','none'],{env,stdio:['ignore',logs.fd,logs.fd],windowsHide:true});
-      await logs.close();children.add(child);processes.set(d.udid,child);started=true;
+      children.add(child);processes.set(d.udid,child);started=true;
       child.on('error',()=>{processes.delete(d.udid);children.delete(child);});child.on('exit',()=>{processes.delete(d.udid);children.delete(child);});
+      try{await logs.close();}catch(e){e.execution='unknown';throw e;}
     }
     const deadline=p._deadline??Date.now()+105000;
     while(Date.now()<deadline-1000){
-      ep=await endpoint(d);
+      try{ep=await endpoint(d);}catch(e){if(started)e.execution='unknown';throw e;}
       if(ep){try{const r=await adb(d,['shell','getprop','sys.boot_completed'],{deadline,timeout:3000});if(r.stdout==='1')return {udid:d.udid,state:'Booted',platform:'android',execution:started?'executed':'not_executed'};}catch{}}
       if(started&&!processes.has(d.udid))throw fail('ANDROID_BOOT_FAILED','Android Emulator stopped during startup. Check hardware virtualization and the device emulator.log; retry after correcting the environment.','unknown');
       await sleep(500);
@@ -107,30 +112,42 @@ function createDevices({root,sdk,run,children}){
       const child=processes.get(d.udid);
       if(!child)return {udid:d.udid,state:'Shutdown',execution:'not_executed'};
       // Only a child launched by this worker can be stopped before discovery.
+      try{
       child.kill('SIGTERM');const until=Date.now()+5000;
       while(processes.has(d.udid)&&Date.now()<until)await sleep(100);
       if(processes.has(d.udid)){child.kill('SIGKILL');for(let i=0;i<20&&processes.has(d.udid);i++)await sleep(100);}
       if(processes.has(d.udid))throw fail('STOP_UNCONFIRMED','The starting emulator has not confirmed shutdown. Refresh devices.','unknown');
       return {udid:d.udid,state:'Shutdown',execution:'executed'};
+      }catch(e){e.execution='unknown';throw e;}
     }
     try{await rpc(d.endpoint,'setVmState',{state:5},{deadline:Date.now()+10000});}catch{/* Shutdown closes its own connection; confirm below. */}
-    const until=Date.now()+30000;while(Date.now()<until){if(!await endpoint(d))return {udid:d.udid,state:'Shutdown',execution:'executed'};await sleep(250);}
+    const until=Date.now()+30000;while(Date.now()<until){try{if(!await endpoint(d))return {udid:d.udid,state:'Shutdown',execution:'executed'};}catch(e){e.execution='unknown';throw e;}await sleep(250);}
     throw fail('STOP_UNCONFIRMED','Android shutdown was requested but has not completed. Refresh device state.','unknown');
   }
   async function manage(method,p){
     const d=await target(p,false);
     if(method==='rename_device'){
       if(typeof p.name!=='string'||!p.name.trim()||p.name.length>80||/[\x00-\x1f\x7f]/.test(p.name))throw fail('INVALID_ARGUMENT','Use a device name of 1–80 characters.');
-      const {endpoint:_,...saved}=d;saved.name=p.name.trim();await fs.writeFile(file(d.udid),JSON.stringify(saved),{mode:0o600});return {udid:d.udid,name:saved.name,execution:'executed'};
+      const {endpoint:_,...saved}=d;saved.name=p.name.trim();try{await fs.writeFile(file(d.udid),JSON.stringify(saved),{mode:0o600});}catch(e){e.execution='unknown';throw e;}return {udid:d.udid,name:saved.name,execution:'executed'};
     }
-    await shutdown(p);
-    if(method==='delete_device'){
-      await fs.rm(d.directory,{recursive:true,force:true});await fs.rm(path.join(avds,d.avdName+'.ini'),{force:true});await fs.rm(file(d.udid));
-    }else{
-      // Retain the definition; remove only this private AVD's writable data.
-      for(const name of await fs.readdir(d.directory))if(name!=='config.ini')await fs.rm(path.join(d.directory,name),{recursive:true,force:true});
+    const completedSteps=[];let stopped=null,failedStep='shutdown',entry,writeStarted=false;
+    try{
+      stopped=await shutdown(p);completedSteps.push({step:'shutdown',execution:stopped.execution});
+      if(method==='delete_device'){
+        for(const [step,target] of [['remove-avd-directory',d.directory],['remove-avd-ini',path.join(avds,d.avdName+'.ini')],['remove-device-metadata',file(d.udid)]]){
+          failedStep=step;writeStarted=true;await fs.rm(target,{recursive:true,force:true});completedSteps.push({step});
+        }
+      }else{
+        // Retain the definition; remove only this private AVD's writable data.
+        failedStep='list-avd-data';
+        for(const name of (await fs.readdir(d.directory)).sort())if(name!=='config.ini'){
+          failedStep='erase-entry';entry=name;writeStarted=true;await fs.rm(path.join(d.directory,name),{recursive:true,force:true});completedSteps.push({step:failedStep,entry});
+        }
+      }
+      return {udid:d.udid,execution:'executed',completedSteps};
+    }catch(e){
+      return {udid:d.udid,outcome:'partial',execution:writeStarted||stopped?.execution==='executed'?'unknown':e.execution||'not_executed',completedSteps,failedStep,...(entry?{entry}:{}),...(stopped?{shutdown:stopped}:{}),deviceError:{code:e.code||'DEVICE_CHANGE_FAILED',message:e.message,execution:e.execution||'unknown'},nextAction:'Inspect this private device and the completed steps before continuing; do not blindly repeat deletion or erasure.'};
     }
-    return {udid:d.udid,execution:'executed'};
   }
   return {devices,target,adb,create,boot,shutdown,manage,endpoint,owns:id=>UUID.test(id||'')?fs.access(file(id)).then(()=>true,()=>false):Promise.resolve(false),models:MODELS};
 }

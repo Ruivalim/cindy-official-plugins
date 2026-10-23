@@ -179,3 +179,5 @@ Agent 健康性：查看器以真实 HTTP 服务响应判断就绪，不依赖�
 近期使用记录保存在 worker 内存，15 分钟到期，同一任务可同时使用多台设备。长脚本每五分钟用 `device action=activity` 续期，结束用 `device action=release` 释放；释放保留设备与 App 运行。这是使用证据，不是排他预约。普通操作更新记录，设备和状态轮询不更新。重启后记录清空，运行中设备标为未知。
 
 App 内容校验失败时保留 `comparisonError` 与 `verification: unconfirmed`；此时 `matchesLocal: false` 只说明尚未证实一致，不证明构建不同，不应因此重装。
+
+安卓生命周期会保留部分执行证据：启动未确认时返回 `appLaunched: false`、`appTerminated`（null 表示未确认）、`launchError` 和 `execution`。删除/抹除失败保留 `completedSteps`、`failedStep`、`shutdown` 和 `deviceError`，不清空任务或近期 App 记录。先检查实际状态再继续；只有确认启动、仅画面失败时才只重试画面。install/info 的绝对路径按平台使用 iOS 模拟器 `.app` 或安卓 `.apk`。

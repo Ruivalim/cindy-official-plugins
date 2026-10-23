@@ -228,7 +228,7 @@ async function act(action, d, done, extra = {}) {
   message(''); render();
   try {
     const r = await rpc(action, { udid: d.udid, ...extra }, T.timeout);
-    if (r?.ok === false) throw r;
+    if (r?.ok === false || r?.deviceError) throw r;
     if (r.taskBindingError || r.appContextError) message(T.recordFailed, true);
     else if (r.taskStateError) message(T.stateFailed, true);
     else if (done) message(done);

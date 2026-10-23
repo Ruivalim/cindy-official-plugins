@@ -93,10 +93,16 @@ function createApps({root,devices}){
     const id=packageId(p.bundleId);if(p.arguments?.length||p.env&&Object.keys(p.env).length)throw fail('INVALID_ARGUMENT','Android launches its launcher Activity. Process arguments and environment variables apply to iOS only.');
     const resolved=(await devices.adb(d,['shell','cmd','package','resolve-activity','--brief','-a','android.intent.action.MAIN','-c','android.intent.category.LAUNCHER',id],{deadline:p._deadline})).stdout.split('\n').find(l=>/^[\w.]+\/[\w.$]+$/.test(l.trim()));
     if(!resolved)throw fail('APP_NOT_LAUNCHABLE','This Android package has no launcher Activity. Check installation or use a deep link.');
-    if(p.relaunch!==false)await devices.adb(d,['shell','am','force-stop',id],{deadline:p._deadline,mutation:true});
-    const result=await devices.adb(d,['shell','am','start','-W','-n',resolved.trim()],{deadline:p._deadline,mutation:true});
-    if(/Error:|Exception/i.test(result.stdout))throw fail('APP_LAUNCH_FAILED','Android could not launch the Activity. Check app logs.','unknown');
-    return {udid:d.udid,bundleId:id,execution:'executed'};
+    let appTerminated=false;
+    try{
+      if(p.relaunch!==false){appTerminated=null;await devices.adb(d,['shell','am','force-stop',id],{deadline:p._deadline,mutation:true});appTerminated=true;}
+      const result=await devices.adb(d,['shell','am','start','-W','-n',resolved.trim()],{deadline:p._deadline,mutation:true});
+      if(/Error:|Exception/i.test(result.stdout))throw fail('APP_LAUNCH_FAILED','Android could not launch the Activity. Check app logs.','unknown');
+      return {udid:d.udid,bundleId:id,appTerminated,appLaunched:true,execution:'executed'};
+    }catch(e){
+      if(appTerminated===null&&e.execution==='not_executed')appTerminated=false;
+      return {udid:d.udid,bundleId:id,appTerminated,appLaunched:false,outcome:'partial',execution:appTerminated!==false?'unknown':e.execution||'unknown',launchError:{code:e.code||'APP_LAUNCH_FAILED',message:e.message,execution:e.execution||'unknown'},nextAction:'Inspect the App and launchError before continuing; do not blindly repeat launch or force-stop.'};
+    }
   }
   async function bundle(d,p){
     const id=packageId(p.bundleId),paths=(await devices.adb(d,['shell','pm','path',id],{deadline:p._deadline})).stdout.split('\n').filter(l=>l.startsWith('package:')).map(l=>l.slice(8));

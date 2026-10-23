@@ -1080,3 +1080,14 @@ test('Vision Pro maps view points to a spatial ray; TV and spatial drags never s
  await assert.rejects(f.agent.setState(f.device,{appearance:'dark',orientation:'portrait'}),e=>e.code==='UNSUPPORTED_INPUT');
  assert.equal(f.state.calls.length,before);
 });
+test('management never announces a partial Android erase/delete as completed',async()=>{
+  for(const action of ['erase','delete']){
+    const f=pageFixture('manage'),d={udid:A,name:'Phone',state:'Shutdown'};
+    f.page.seed({ok:true,settings:{enabled:true},devices:[d]});
+    const operation=f.page.act(action,d,'operation completed');
+    f.requests[0].resolve({ok:true,udid:A,outcome:'partial',execution:'unknown',completedSteps:[{step:'shutdown'}],failedStep:'erase-entry',deviceError:{code:'EACCES'}});
+    await new Promise(r=>setImmediate(r));assert.notEqual(f.get('message').textContent,'operation completed');assert.ok(f.get('message').textContent.length>0);
+    assert.equal(f.requests[1].action,'manage_state');f.requests[1].resolve({ok:true,settings:{enabled:true},devices:[d]});await operation;
+    assert.equal(f.requests.filter(r=>r.action===action).length,1);
+  }
+});

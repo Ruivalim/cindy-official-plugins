@@ -264,6 +264,7 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
       if (method === 'reveal_screenshot') return dispatch(method, params);
       if (method === 'delete_device' || method === 'erase_device') {
         const result = await dispatch(method, params);
+        if(result.outcome==='partial')return result;
         await manager.updateRecord(result, () => manager.forget(result.udid || params.udid));
         if (method === 'delete_device' && tasks) await taskUpdate(result, () => tasks.forgetDevice(params.udid));
         // The management page refreshes independently after the operation.
@@ -290,9 +291,9 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
       const result = await dispatch(actual, params, deadline);
       if (actual === 'app_uninstall') await manager.updateRecord(result, () => manager.forget(result.udid || params.udid, params.bundleId));
       if (actual === 'boot' || actual === 'open_viewer' || (actual === 'launch_app' && result?.viewer?.ready)) viewerClosed = false;
-      if(actual==='launch_app')await manager.updateRecord(result, () => manager.remember(params.udid,params.bundleId));
+      if(actual==='launch_app'&&result?.appLaunched!==false)await manager.updateRecord(result, () => manager.remember(params.udid,params.bundleId));
       // Starting, opening or launching on a device from a task gives that task the device.
-      if (tasks && validSession(sessionOf(params)) && ['boot','open_viewer','launch_app'].includes(actual) && result?.ok !== false) {
+      if (tasks && validSession(sessionOf(params)) && ['boot','open_viewer','launch_app'].includes(actual) && result?.ok !== false && result?.appLaunched!==false) {
         await taskUpdate(result, () => tasks.bind(sessionOf(params), params.udid));
       }
       if (result?.ok!==false) tasks?.activity?.(sessionOf(params),params.udid,now());

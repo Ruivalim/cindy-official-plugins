@@ -39,7 +39,8 @@ function createAndroid({root,run,children}){
     if(method==='app_install'||method==='install_app')return apps.install(d,p);
     if(method==='app_bundle')return apps.bundle(d,p);
     if(method==='launch_app'){
-      const result=await apps.launch(d,p);result.appLaunched=true;
+      const result=await apps.launch(d,p);
+      if(!result.appLaunched)return result;
       if(p.showViewer!==false)try{result.viewer=await viewer.open(d.udid,p._locale);}catch(e){result.viewer={ready:false,previewOpened:false,error:e.message};result.outcome='partial';result.nextAction='Retry viewer action=open; do not relaunch the App.';}
       if(p.screenshot)try{const {_modelImages,...shot}=await agent.screenshot(d,p);result.screenshot=shot;if(_modelImages)result._modelImages=_modelImages;}catch(e){result.screenshot={error:e.message};}
       return result;

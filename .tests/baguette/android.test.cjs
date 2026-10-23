@@ -278,3 +278,91 @@ test('capture rechecks the display after its first stream frame before executing
   const result=await require(path.join(A,'capture.cjs')).capture({d:{udid:id,endpoint,model:{width:108,height:240,density:160}},p:{seconds:.5,action:{tool:'press'}},root:await temp(t),agent:{frame:async()=>({screen:{rotation:reads++?1:0}})},perform:async()=>{actions++;return {execution:'executed'};}});
   assert.equal(result.captureError.code,'SCREEN_CHANGED');assert.equal(result.execution,'not_executed');assert.equal(actions,0);
 });
+
+async function privateAndroid(t){
+  const root=await temp(t),runtime='android:android-36:google_apis:arm64-v8a';
+  const sdk={inspect:async()=>({ready:true,images:[{identifier:runtime,directory:path.join(root,'image'),abi:'arm64-v8a',version:'36'}]})};
+  const devices=require(path.join(A,'devices.cjs')).createDevices({root,sdk,run:async()=>{throw Error('Unexpected host command');},children:new Set()});
+  const created=await devices.create({name:'Lifecycle fixture',runtime,deviceType:'android:phone'}),d=await devices.target({udid:created.udid},false);
+  await fs.writeFile(path.join(d.directory,'one.img'),'one');await fs.writeFile(path.join(d.directory,'two.img'),'two');
+  return {root,devices,d};
+}
+test('device removal reports each completed step and preserves records when a later deletion fails',async t=>{
+  for(const action of ['delete_device','erase_device'])for(let failure=0;failure<(action==='delete_device'?3:2);failure++)await t.test(action+' step '+failure,async t=>{
+    const {devices,d}=await privateAndroid(t),remove=fs.rm;let writes=0;
+    const spy=t.mock.method(fs,'rm',async(target,options)=>{if(String(target).startsWith(path.dirname(d.directory))){if(writes++===failure)throw Object.assign(Error('disk denied'),{code:'EACCES'});}return remove(target,options);});
+    const result=await devices.manage(action,{udid:d.udid});spy.mock.restore();
+    assert.equal(result.outcome,'partial');assert.equal(result.execution,'unknown');assert.equal(result.completedSteps.length,failure+1);assert.equal(writes,failure+1);assert.equal(result.deviceError.code,'EACCES');
+    assert.equal(result.shutdown.state,'Shutdown');assert.equal(await devices.owns(d.udid),true,'partial changes retain device identity');
+    if(action==='erase_device')assert.ok(await fs.stat(path.join(d.directory,'config.ini')));
+  });
+});
+test('a completed shutdown remains visible when the subsequent AVD listing fails',async t=>{
+  const {devices,d}=await privateAndroid(t);let running=true;
+  const endpoint=await emulator(t,s=>{running=false;send(s,'Empty',{});}),name='pid_'+process.pid+'.ini',read=fs.readFile,list=fs.readdir;
+  t.mock.method(fs,'readFile',async(file,...args)=>path.basename(String(file))===name?`avd.id=${d.avdName}\navd.dir=${d.directory}\ngrpc.port=${endpoint.port}\ngrpc.token=test-capability\nport.serial=5554\n`:read(file,...args));
+  const spy=t.mock.method(fs,'readdir',async(dir,...args)=>{
+    if(String(dir).endsWith(path.join('avd','running')))return running?[name]:[];
+    if(String(dir)===d.directory)throw Object.assign(Error('cannot list'),{code:'EACCES'});
+    return list(dir,...args);
+  });
+  const result=await devices.manage('erase_device',{udid:d.udid});spy.mock.restore();
+  assert.equal(result.execution,'unknown');assert.equal(result.failedStep,'list-avd-data');assert.equal(result.shutdown.execution,'executed');assert.deepEqual(result.completedSteps,[{step:'shutdown',execution:'executed'}]);
+});
+test('new-device rollback and rename failures never claim a disk write was not executed',async t=>{
+  const {devices,d}=await privateAndroid(t),write=fs.writeFile;
+  const spy=t.mock.method(fs,'writeFile',async(file,...args)=>{
+    if(String(file).endsWith('config.ini'))throw Object.assign(Error('config denied'),{code:'EACCES'});
+    if(String(file).endsWith(d.udid+'.json'))throw Object.assign(Error('rename denied'),{code:'EACCES'});
+    return write(file,...args);
+  });
+  await assert.rejects(devices.create({name:'Failed fixture',runtime:d.runtime,deviceType:d.deviceType}),e=>e.execution==='unknown'&&/rollback completed/.test(e.message));
+  await assert.rejects(devices.manage('rename_device',{udid:d.udid,name:'Changed'}),e=>e.execution==='unknown');spy.mock.restore();
+});
+test('App relaunch preserves force-stop evidence across later budget and connection failures',async()=>{
+  const {createApps}=require(path.join(A,'apps.cjs'));
+  for(const relaunch of [undefined,false])for(const code of ['TIME_BUDGET_EXHAUSTED','COMMAND_FAILED']){
+    const apps=createApps({devices:{adb:async(d,args)=>{
+      if(args.includes('resolve-activity'))return {stdout:'test.example/.Main'};
+      if(args.includes('force-stop'))return {stdout:''};
+      throw Object.assign(Error('start unavailable'),{code,execution:code==='TIME_BUDGET_EXHAUSTED'?'not_executed':'unknown'});
+    }}});
+    const result=await apps.launch({udid:id},{bundleId:'test.example',relaunch});
+    assert.equal(result.appTerminated,relaunch!==false);assert.equal(result.appLaunched,false);assert.equal(result.outcome,'partial');assert.equal(result.launchError.code,code);
+    assert.equal(result.execution,relaunch===false&&code==='TIME_BUDGET_EXHAUSTED'?'not_executed':'unknown');
+  }
+});
+test('partial launch and destruction do not change successful App records or task bindings',async t=>{
+  const root=await temp(t),file=path.join(root,'settings.json'),record=file+'.apps.json';let binds=0,forgets=0;
+  await fs.writeFile(record,JSON.stringify({[id]:'test.previous'}));
+  const partial={udid:id,execution:'unknown',outcome:'partial',appLaunched:false,appTerminated:true,launchError:{code:'TIME_BUDGET_EXHAUSTED'}};
+  const runtime=require('../../baguette-simulator/node/runtime.cjs').createRuntime({settingsFile:file,dispatch:async()=>partial,tasks:{bind:async()=>{binds++;},forgetDevice:async()=>{forgets++;},activity(){}}});
+  for(const method of ['launch_app','delete_device','erase_device'])assert.equal((await runtime.request(method,{udid:id,bundleId:'test.next',session_context:{session_id:id}})).outcome,'partial');
+  assert.equal(binds,0);assert.equal(forgets,0);assert.deepEqual(JSON.parse(await fs.readFile(record)),{[id]:'test.previous'});
+});
+test('Android launch adaptation preserves a partial App result and never opens a preview for it',async()=>{
+  const partial={udid:id,execution:'unknown',outcome:'partial',appLaunched:false,appTerminated:true},source=await fs.readFile(path.join(A,'index.cjs'),'utf8');let opens=0;
+  const modules={
+    './sdk.cjs':{createSdk:()=>({})},'./devices.cjs':{createDevices:()=>({target:async()=>({udid:id})})},
+    './agent.cjs':{createAgent:()=>({})},'./apps.cjs':{createApps:()=>({launch:async()=>partial})},
+    './state.cjs':{createState:()=>({})},'./viewer.cjs':{createViewer:()=>({open:async()=>{opens++;}})}
+  },context={module:{exports:{}},require:name=>modules[name]||require(name)};
+  require('node:vm').runInNewContext(source,context);
+  const android=context.module.exports.createAndroid({root:'/fixture',children:new Set()});
+  const result=await android.dispatch('launch_app',{udid:id,bundleId:'test.example'});assert.equal(result.appLaunched,false);assert.equal(result.appTerminated,true);assert.equal(opens,0);
+});
+
+test('successful device removal/erase and App launch still produce confirmed outcomes',async t=>{
+  for(const method of ['erase_device','delete_device']){
+    const {devices,d}=await privateAndroid(t),result=await devices.manage(method,{udid:d.udid});
+    assert.equal(result.execution,'executed');assert.equal(result.outcome,undefined);
+    if(method==='erase_device'){assert.deepEqual(await fs.readdir(d.directory),['config.ini']);assert.equal(await devices.owns(d.udid),true);}
+    else assert.equal(await devices.owns(d.udid),false);
+  }
+  const {createApps}=require(path.join(A,'apps.cjs'));
+  for(const relaunch of [true,false]){
+    const calls=[],apps=createApps({devices:{adb:async(d,args)=>{calls.push(args);return {stdout:args.includes('resolve-activity')?'test.example/.Main':'Status: ok'};}}});
+    const result=await apps.launch({udid:id},{bundleId:'test.example',relaunch});assert.equal(result.appLaunched,true);assert.equal(result.appTerminated,relaunch);assert.equal(result.execution,'executed');
+    assert.equal(calls.some(args=>args.includes('force-stop')),relaunch);
+  }
+});

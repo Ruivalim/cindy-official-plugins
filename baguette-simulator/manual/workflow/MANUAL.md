@@ -57,7 +57,7 @@ AI 空间操作沿用 `gesture`：
 
 与 iOS 共用同一组工具、设备管理和任务侧栏；先按 `platform` 选择设备。安卓环境缺失时，让用户在插件设置查看组件大小与 SDK 许可后确认安装，不代替接受许可。支持 Mac、Windows x64、Linux x64；系统需硬件虚拟化，构建仍遵循项目流程。
 
-安卓使用 `environment` 的 Android Phone/Tablet 与 `android:` runtime 创建私有设备。用 Gradle/项目脚本构建单个 `.apk`，`app install` 传绝对路径，轮询 job 到完成，再 `app info appPath` 检查 `matchesLocal`。`bundleId` 为 Android package ID；启动参数/env 只适用于 iOS。相同 APK 跳过，其余整包重装；不支持 AAB/split APK。切换只改变选择，不启停设备、不启动或搬运 App。
+安卓使用 `environment` 的 Android Phone/Tablet 与 `android:` runtime 创建私有设备。用 Gradle/项目脚本构建单个 `.apk`，`app install` 传绝对路径，轮询 job 到完成，再 `app info appPath` 检查 `matchesLocal`。`bundleId` 为 Android package ID；启动参数/env 只适用于 iOS。相同 APK 跳过，其余整包重装；不支持 AAB/split APK。切换只改变选择，不启停设备、不启动或搬运 App。安卓启动未确认时 appLaunched=false，检查 appTerminated（null 表示停止未确认）、launchError 与 execution；不能把 App 已停止后的失败当作未执行。删除/抹除的部分结果保留 completedSteps、failedStep、shutdown 与 deviceError，不清空任务和近期 App 记录；检查实际状态后再继续。
 
 截图与输入统一为看到的视图点；Android 横屏已在触摸层转换，勿再手动旋转。无障碍树不可用时用本地英文/简体中文 OCR；其他文字用截图判断。Unicode 粘贴，逐键输入只支持 ASCII；touch 方法需要聚焦输入框及可用粘贴菜单。`press back` 是安卓返回，`shake` 模拟摇动。安卓没有 iOS 的键盘记录清理。
 
