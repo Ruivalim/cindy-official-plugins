@@ -1,8 +1,8 @@
 {
   "date": "2026-10-24",
-  "pluginVersion": "0.2.12",
+  "pluginVersion": "0.2.13",
   "baguette": "0.2.10",
-  "status": "android-log-contract-regressions-source-verified",
+  "status": "android-temporary-state-cleanup-source-verified",
   "passed": [
     "Repository plugin/contract/localization/provisioning/publishing suite: 283/286 passed; the same three Bash 3 bad-substitution failures reproduce on clean origin/main be48e71e80867bfc1d29c73f8fba5d5bd7835b75.",
     "Android API 36 on Apple Silicon: real Settings scroll via viewer wheel; bidirectional Unicode clipboard including selected-text copy; Ctrl-wheel two-finger pinch changes guest Chrome visual viewport scale from 1 to 2.56.",
@@ -17,10 +17,12 @@
     "Real Android API 36: launch of the existing test App with relaunch=false reports appLaunched=true and appTerminated=false; returned to Home afterwards. No real device was erased or deleted in this round.",
     "0.2.11 platform-contract convergence: Android/page RPC/contract/localization 78/78 passed; full suite including binary packaging 305/308, with only the same three Bash 3 baseline failures on unchanged origin/main 1c35c36. Complete Android press enum dispatch is covered, including side-effect-free rejection of iOS-only action/lock-screen pull-down, notification command, key aliases, release and shake. Shared creation-sheet tests cover Chinese/English, mixed/single-platform entry, backend errors, platform fallbacks, explicit retry, success and catalog failures without replay.",
     "0.2.12 log contract: targeted Android/contract/localization checks 73/73; complete gate including binary packaging 307/310, with only the same three Bash 3 failures on unchanged origin/main 1c35c36. Fixed-time cases cover the 61-120 second startup-error window, boundary timestamps, default warning level, explicit regex/level/time/limit, main/crash selection, exact current PID, absent process evidence, query failures and info/debug log waits. Complete vendor inventory passes.",
-    "Real Android API 36 read-only checks: existing test App logs return lastSeconds=120/level=default; absent test process returns processRunning=false with historical evidence explicitly not checked; unscoped errors with crashes=false read only main and report the source cap. No guest device, App or installed Cindy plugin was mutated in this round."
+    "Real Android API 36 read-only checks: existing test App logs return lastSeconds=120/level=default; absent test process returns processRunning=false with historical evidence explicitly not checked; unscoped errors with crashes=false read only main and report the source cap. No guest device, App or installed Cindy plugin was mutated in this round.",
+    "0.2.13 convergence: targeted Android/iOS Agent/contract/localization checks 102/102; full suite including binary packaging 323/326, with only the same three Bash 3 baseline failures on unchanged origin/main 1c35c36. Four-language log contract distinguishes ordinary iOS Default messages from Android warning+ without changing iOS behavior. Shake restores sensor and pose after success, first/last sample failure and either/both cleanup failures. OCR fault injection covers constructor, stream, postMessage, reject, error, exit, timeout, synchronous/asynchronous termination failure, busy overlap and late replies; the same module recovers on its next call.",
+    "Real Android API 36: shake succeeded and subsequent accelerometer/physical-pose values exactly matched their pre-shake readings (maximum deltas both 0). Real OCR Worker completed on the current normalized screenshot and returned 8 elements. No installed Cindy plugin was changed."
   ],
   "notVerified": [
-    "The 0.2.12 package has not been installed in stable production/Beta or the isolated development Cindy; only 0.2.7/0.2.8 have earlier development installation evidence. Source/real-emulator checks do not replace packaged-client acceptance; minCindyVersion remains 0.1.116.",
+    "The 0.2.13 package has not been installed in stable production/Beta or the isolated development Cindy; only 0.2.7/0.2.8 have earlier development installation evidence. Source/real-emulator checks do not replace packaged-client acceptance; minCindyVersion remains 0.1.116.",
     "Android Windows/Linux physical-host acceptance remains pending; SDK discovery and platform choices have unit coverage only.",
     "No new iOS real-device acceptance was performed in this Android parity round. Shared behavior is covered by repository tests; historical iOS verification below applies only to the stated old releases.",
     "Continuous video export is a user-viewer feature: silent WebM, up to five minutes/128 MiB, save before leaving the viewer. Agent capture remains a contact-sheet workflow."

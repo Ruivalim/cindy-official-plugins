@@ -265,6 +265,7 @@ test('logs returns the app lines, without colour codes, and match sees subsystem
  const device={udid:'00000000-0000-4000-8000-000000000001'};
  const all=await agent.logs(device,{bundleId:'com.xd.cindy',crashes:false});
  assert.equal(all.total,2);assert.equal(all.process,'Cindy');
+ assert.equal(all.level,'default');assert.ok(all.lines.some(line=>line.includes('loaded')),'iOS default retains ordinary Default messages');
  assert.ok(!all.lines[0].includes('\u001b'));assert.match(all.lines[0],/\[error\] com\.facebook\.react\.log\/native: Unable to resolve module x/);
  assert.equal((await agent.logs(device,{bundleId:'com.xd.cindy',crashes:false,match:'react\\.log'})).total,1);
 });

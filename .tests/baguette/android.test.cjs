@@ -52,7 +52,7 @@ test('Android press dispatches the complete shared contract and rejects iOS-only
     if(keys[button])assert.deepEqual(inputs,[keys[button]]);
     else if(button==='pull-down-to-notification-center')assert.deepEqual(commands,[['shell','cmd','statusbar','expand-notifications']]);
     else if(button==='release-input')assert.deepEqual(inputs,['sendTouch','Control','Shift','Alt','Meta']);
-    else {assert.equal(button,'shake');assert.deepEqual(inputs,[...Array(6).fill('setSensor'),'setPhysicalModel']);}
+    else {assert.equal(button,'shake');assert.deepEqual(inputs,[...Array(7).fill('setSensor'),'setPhysicalModel']);}
   }
   for(const locale of ['zh-CN','en','ja','ko']){
     const d=JSON.parse(await fs.readFile(`baguette-simulator/locales/${locale}.json`,'utf8')).tools.press.description;
@@ -227,17 +227,49 @@ test('Android rotation changes physical pose and lets activities choose their di
   assert.ok(poses.every(p=>p.target===1&&p.interpolation===1));
   assert.deepEqual(commands,Array.from({length:4},()=>['shell','settings','put','system','accelerometer_rotation','1']));
 });
-for(const broken of [false,true])test(`Android shake restores the original physical orientation after ${broken?'failure':'success'}`,async t=>{
+for(const mode of ['success','first-sample','last-sample','sensor-restore','pose-restore','both-restore'])test(`Android shake restores acceleration and pose: ${mode}`,async t=>{
   const poses=[],samples=[],endpoint=await emulator(t,(s,h,body)=>{
     const name=h[':path'].split('/').at(-1);
     if(name==='getPhysicalModel')return send(s,'PhysicalModelValue',{target:1,value:{data:[0,0,90]}});
     if(name==='getSensor')return send(s,'SensorValue',{target:0,value:{data:[9.81,0,0]}});
-    if(name==='setPhysicalModel'){poses.push(schema.lookupType('PhysicalModelValue').decode(body.subarray(5)));return send(s,'Empty',{});}
-    assert.equal(name,'setSensor');samples.push(schema.lookupType('SensorValue').decode(body.subarray(5)));send(s,'Empty',{}, {status:broken?'13':'0'});
+    if(name==='setPhysicalModel'){poses.push(schema.lookupType('PhysicalModelValue').decode(body.subarray(5)));return send(s,'Empty',{}, {status:['pose-restore','both-restore'].includes(mode)?'13':'0'});}
+    assert.equal(name,'setSensor');const sample=schema.lookupType('SensorValue').decode(body.subarray(5));samples.push(sample);
+    const restoring=sample.value.data[0]===Math.fround(9.81),broken=restoring?['sensor-restore','both-restore'].includes(mode):(mode==='first-sample'&&samples.length===1)||(mode==='last-sample'&&samples.length===6);
+    send(s,'Empty',{}, {status:broken?'13':'0'});
   });
   const agent=require(path.join(A,'agent.cjs')).createAgent({root:await temp(t),devices:{}}),action=agent.press({endpoint},{button:'shake'});
-  if(broken)await assert.rejects(action,e=>e.execution==='unknown');else assert.equal((await action).execution,'executed');
-  assert.equal(samples.length,broken?1:6);assert.ok(samples.every(s=>s.value.data[1]===0));assert.equal(poses.length,1);assert.deepEqual(poses[0].value.data,[0,0,90]);assert.equal(poses[0].interpolation,1);
+  if(mode!=='success')await assert.rejects(action,e=>e.execution==='unknown');else assert.equal((await action).execution,'executed');
+  assert.equal(samples.length,mode==='first-sample'?2:7);assert.ok(samples.every(s=>s.value.data[1]===0));assert.deepEqual(samples.at(-1).value.data,[Math.fround(9.81),0,0]);
+  assert.equal(poses.length,1,'pose restore is attempted even if sensor restore fails');assert.deepEqual(poses[0].value.data,[0,0,90]);assert.equal(poses[0].interpolation,1);
+});
+
+test('OCR releases its one busy owner after every settle path and ignores late replies',async t=>{
+  const vm=require('node:vm'),{EventEmitter}=require('node:events'),source=await fs.readFile(path.join(A,'ocr.cjs'),'utf8');
+  for(const mode of ['success','construct','resume','postMessage','reject','error','exit','timeout','terminate-throw','terminate-reject','blocked'])await t.test(mode,async()=>{
+    const workers=[];let attempts=0,timer,clears=0;
+    class Worker extends EventEmitter{
+      constructor(){super();this.attempt=++attempts;if(mode==='construct'&&this.attempt===1)throw Error('raw startup detail');workers.push(this);
+        this.stdout=this.stderr={resume:()=>{if(mode==='resume'&&this.attempt===1)throw Error('raw stream detail');}};this.stops=0;}
+      postMessage(m){
+        if(this.attempt===1&&m.action==='load'){
+          if(mode==='postMessage')throw Error('raw postMessage detail');
+          if(mode==='blocked'){this.unblock=()=>this.reply(m);return;}
+          if(['error','exit','timeout','reject'].includes(mode)){queueMicrotask(()=>mode==='timeout'?timer():mode==='reject'?this.emit('message',{jobId:m.jobId,status:'reject'}):this.emit(mode,Error('raw worker detail')));return;}
+        }
+        queueMicrotask(()=>this.reply(m));
+      }
+      reply(m){this.emit('message',{jobId:'wrong-job',status:'reject'});this.emit('message',{jobId:m.jobId,status:'resolve',data:m.action==='recognize'?{tsv:'header\n5\t1\t1\t1\t1\t1\t10\t20\t30\t40\t90\tReady'}:{}});}
+      terminate(){this.stops++;if(this.attempt===1){if(mode==='terminate-throw')throw Error('raw terminate detail');if(mode==='terminate-reject')return Promise.reject(Error('raw terminate detail'));}return Promise.resolve(0);}
+    }
+    const module={exports:{}};vm.runInNewContext(source,{module,__dirname:A,Uint8Array,require:name=>name==='node:worker_threads'?{Worker}:name==='../budget.cjs'?{commandBudget:()=>({timeout:1000})}:require(name),setTimeout:fn=>{timer=fn;return fn;},clearTimeout:()=>{clears++;}});
+    const {recognize}=module.exports,first=recognize(Buffer.alloc(1),2);
+    if(mode==='blocked'){await assert.rejects(recognize(Buffer.alloc(1),2),e=>e.code==='OCR_BUSY');workers[0].unblock();}
+    if(['success','blocked'].includes(mode))assert.equal((await first)[0].label,'Ready');
+    else await assert.rejects(first,e=>e.code==='OCR_FAILED'&&e.execution==='not_executed'&&/screenshot/i.test(e.message)&&!e.message.includes('raw'));
+    assert.ok(clears>0);for(const worker of workers)assert.equal(worker.stops,1,'termination has one owner even on timeout');
+    for(const worker of workers){worker.emit('message',{jobId:'1',status:'resolve',data:{}});worker.emit('error',Error('late error'));worker.emit('exit',0);}
+    const next=await recognize(Buffer.alloc(1),2);assert.equal(next[0].label,'Ready');assert.deepEqual(Array.from(next[0].frame),[5,10,15,20]);
+  });
 });
 
 test('state progress preserves every completed step within a partially applied field',async()=>{
@@ -298,7 +330,7 @@ test('Android log defaults, explicit filters and crash buffers share one bounded
   const capped=await agent.logs(d,{});assert.equal(capped.lines.length,150);assert.equal(capped.truncated,true);
   for(const locale of ['zh-CN','en','ja','ko']){
     const desc=JSON.parse(await fs.readFile(`baguette-simulator/locales/${locale}.json`,'utf8')).tools.logs.description;
-    for(const term of ['120','150','3000','PID','processRunning=false','crashes=false'])assert.ok(desc.includes(term),`${locale}: ${term}`);
+    for(const term of ['120','150','3000','PID','processRunning=false','crashes=false','Default'])assert.ok(desc.includes(term),`${locale}: ${term}`);
   }
 });
 

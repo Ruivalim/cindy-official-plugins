@@ -161,7 +161,10 @@ function createAgent({root,devices,run}){
       const pose=await call(d,'getPhysicalModel',{target:1},p),gravity=await call(d,'getSensor',{target:0},p);
       if(pose.status!==0||gravity.status!==0||pose.value?.data?.length!==3||gravity.value?.data?.length!==3)throw fail('SENSOR_UNAVAILABLE','Cannot confirm Android orientation before shaking.');
       try{for(let i=0;i<6;i++){const data=[...gravity.value.data];data[0]+=i%2?18:-18;await call(d,'setSensor',{target:0,value:{data}},p);await sleep(60,p._deadline);}}
-      finally{await call(d,'setPhysicalModel',{target:1,value:pose.value,interpolation:1},{_deadline:Date.now()+3000});}
+      finally{
+        try{await call(d,'setSensor',{target:0,value:gravity.value},{_deadline:Date.now()+3000});}
+        finally{await call(d,'setPhysicalModel',{target:1,value:pose.value,interpolation:1},{_deadline:Date.now()+3000});}
+      }
     }
     else if(p.button==='release-input'){await release(d);for(const key of ['Control','Shift','Alt','Meta'])await call(d,'sendKey',{key,eventType:1},p);}
     else if(p.button==='pull-down-to-notification-center')await devices.adb(d,['shell','cmd','statusbar','expand-notifications'],{deadline:p._deadline,mutation:true});

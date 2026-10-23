@@ -157,6 +157,8 @@ capture action={"tool":"tap","args":{"text":"登录"}} seconds=2 fps=12
 
 ## 8. 日志与崩溃
 
+iOS 的 `level=default` 包含普通 Default 消息，不表示警告及以上；安卓的 default 才是 W/警告及以上，原始 logcat 与进程范围限制见「安卓先读」。
+
 - `logs bundleId=… level=error`：最近的错误与故障；`match` 是不区分大小写的 JavaScript 正则（不支持 `(?i)` 写法），匹配整行（时间、类型、subsystem/category 与正文）；`last_seconds` 控制时间窗。`logs` 查已记录的历史，`wait_for log=` 等之后新出现的行。
 - React Native、Expo 开发版的 `console.warn`/`console.error` 显示在 Metro 终端和 App 内的提示条里，不一定进系统日志。
 - 默认附带本设备上该进程最近的崩溃摘要：异常类型、原因、崩溃线程调用栈。读取失败或预算不足时保留日志，返回 `crashesError`（`code`、`message`），不返回 `crashes: []`；后者只表示检查完成但未找到匹配报告。`crashes=false` 跳过诊断。App 闪退、白屏、卡在启动页时先看这里。

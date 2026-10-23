@@ -5,7 +5,7 @@
   "name": "设备模拟器",
   "description": "独立的 iPhone、iPad 与安卓模拟器，共用任务侧栏画面、设备管理和操作工具。默认闲置 15 分钟关机并保留数据。iOS 需要 macOS 15+、Apple Silicon、Xcode 与 iOS runtime；安卓支持 Mac、Windows x64、Linux x64，设置页引导确认下载大小与许可后安装环境。iOS 基于 Baguette（Apache-2.0）。",
   "whenToUse": "iOS 与安卓模拟器、App 安装启动、真实触摸、截图和界面检查、等待与录制变化、设备状态和日志排查。先 devices 选择设备，按手册验证结果。",
-  "version": "0.2.12",
+  "version": "0.2.13",
   "kind": "chip",
   "entry": "main.js",
   "icon": "assets/icon.png",
@@ -878,7 +878,7 @@
     },
     {
       "name": "logs",
-      "description": "读取最近日志，last_seconds 默认 120 秒，limit 默认 150 行，level 默认 default（警告及以上），另支持 error/info/debug；match 为正则。iOS 默认附带本设备该进程的崩溃摘要；诊断失败保留日志并返回 crashesError，crashes=false 跳过诊断。安卓仅返回最多最新 3000 条 logcat 记录中过滤出的原始行，默认 main+crash buffer，crashes=false 只读 main；不生成 iOS 崩溃摘要。安卓 bundleId/process 只筛选当前精确 PID，退出/重启前的历史日志及崩溃不在检查范围；进程不存在时 processRunning=false。空日志不能证明没有崩溃；需历史证据时显式不指定进程读取设备日志再检查。",
+      "description": "读取最近日志，last_seconds 默认 120 秒，limit 默认 150 行，level 默认 default，另支持 error/info/debug；match 为正则。iOS 的 default 包含普通 Default 消息，不是警告阈值；默认附带本设备该进程的崩溃摘要；诊断失败保留日志并返回 crashesError，crashes=false 跳过诊断。安卓的 default 才表示警告及以上；仅返回最多最新 3000 条 logcat 记录中过滤出的原始行，默认 main+crash buffer，crashes=false 只读 main；不生成 iOS 崩溃摘要。安卓 bundleId/process 只筛选当前精确 PID，退出/重启前的历史日志及崩溃不在检查范围；进程不存在时 processRunning=false。空日志不能证明没有崩溃；需历史证据时显式不指定进程读取设备日志再检查。",
       "parameters": {
         "type": "object",
         "properties": {
