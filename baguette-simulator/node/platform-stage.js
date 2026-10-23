@@ -23,6 +23,9 @@
     return inputQueue;
   };
   const vision=!tv&&globalThis.createVisionStage?globalThis.createVisionStage({canvas,api:(...args)=>parent.cindySim.api(...args),message:text=>{errorUntil=Date.now()+8000;message(text);},onError:inputError,onCancel:()=>{inputEpoch++;},zh}):null;
+  const press=button=>input(()=>parent.cindySim.api('press',{button}));
+  // Parent toolbar/shortcuts share this page's gesture ordering and cancellation.
+  globalThis.cindyPlatform={press};
   const keyboardInput=action=>{
     const accepts=()=>!vision||vision.acceptsKeyboard();
     if(accepts())return input(()=>{if(accepts())return action();});
@@ -42,7 +45,7 @@
     if(start.moved||Math.hypot(start.x-event.clientX,start.y-event.clientY)>8){if(!tv)message(zh?'当前支持点击和长按，暂不支持空间拖动。':'Tap and hold are supported; spatial dragging is not yet available.');return;}
     const r=canvas.getBoundingClientRect(),x=(event.clientX-r.left)/r.width,y=(event.clientY-r.top)/r.height;
     if(x<0||x>1||y<0||y>1)return;
-    if(tv){input(()=>parent.cindySim.api('press',{button:'select'}));return;}
+    if(tv){press('select');return;}
     if(p.get('platform')!=='visionOS')return;
     const duration=Math.max(0.1,Math.min(10,(Date.now()-start.at)/1000));
     input(()=>parent.cindySim.api('tap',{x,y,duration}));
@@ -50,7 +53,7 @@
   canvas.addEventListener('contextmenu', event => {
     if(!tv)return;
     event.preventDefault(); down=null; canvas.focus();
-    input(()=>parent.cindySim.api('press',{button:'back'}));
+    press('back');
   });
   // A wheel stream is one native Siri Remote contact, not repeated arrow keys.
   // Keep the latest absolute point while a request is in flight: displacement

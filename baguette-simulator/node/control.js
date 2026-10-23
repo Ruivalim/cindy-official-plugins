@@ -358,10 +358,17 @@
   }
   async function press(button) {
     if (!live()) return;
-    try { await api('press', {button}); } catch (error) { toast(`${t.actionFailed} (${error.code || 'INPUT_FAILED'})`, 'error'); }
+    try {
+      const controller=screen.contentWindow?.cindyPlatform;
+      if(!controller)throw Object.assign(Error('INPUT_NOT_READY'),{code:'INPUT_NOT_READY'});
+      await controller.press(button);
+    } catch (error) { toast(`${t.actionFailed} (${error.code || 'INPUT_FAILED'})`, 'error'); }
   }
   function home() { if (M.platform(state.status?.device) !== 'iOS') return press('home'); if (live() && native('__nativeHome')) activity({ isTrusted: true }); }
   $('tv-remote').addEventListener('click', event => { const button = event.target.closest('[data-remote]'); if (button) press(button.dataset.remote); });
+  for(const node of [$('tv-remote'),$('btn-home')])node.addEventListener('pointerdown',event=>{
+    if(event.button===0&&live()&&M.platform(state.status?.device)!=='iOS')event.preventDefault();
+  }); // Keep device focus: clicking a remote control must not cancel its swipe.
   const visionBar=h('div',{id:'vision-controls',class:'vision-controls',role:'group',hidden:true});
   const visionNames=lang==='zh-CN'?['交互','转向','平移','环绕','前后移动','复位视角','双手缩放与旋转','键盘输入','捕获指针（Esc 退出）','操作说明','录屏']:
     ['Interact','Tilt camera','Pan camera','Orbit camera','Dolly camera','Reset camera','Two-hand scale and rotate','Capture keyboard','Capture pointer (Esc to exit)','Controls help','Record'];
@@ -467,6 +474,8 @@
 
   // ---- keyboard shortcuts (Simulator's) ----
   function shortcut(event) {
+    const inDevice=event.currentTarget===screen.contentWindow||event.target?.ownerDocument===screen.contentDocument;
+    if(live()&&inDevice&&screen.contentWindow?.cindyVision?.acceptsKeyboard())return;
     const remote = {ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Enter: 'select', Escape: 'back', ' ': 'play-pause'};
     if (live() && M.platform(state.status?.device) === 'tvOS' && !event.metaKey && !event.ctrlKey && !event.altKey && remote[event.key]
       && !document.querySelector('dialog[open]') && !openMenu && !['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(event.target?.tagName)) {
