@@ -37,17 +37,63 @@
 +// touch path entirely and lets SafariGestureEventSource own the pinch —
 +// see the note below. Browsers without those events (Chromium) stream the
 +// two real fingers as touch2-* from here instead.
-@@ -16,0 +19,3 @@
+@@ -8,0 +11,10 @@
++  // A lone finger is held back this long before it is sent as touch1-down:
++  // a second finger landing inside the window turns it into a two-finger
++  // gesture and the held touch is dropped, never sent. Without the hold the
++  // first finger of every pinch went out as a complete touch1-down/up (a tap
++  // at its position) right before the touch2-down, which can fire whatever is
++  // under that finger and, when the fingers start close together, sits just
++  // before the pair like the first tap of a double-tap. A move, a lift or the
++  // end of the window sends the held touch first, so drags and taps start
++  // exactly when they did, and only a motionless press is delayed.
++  const SINGLE_HOLD_MS = 100;
+@@ -16,0 +29,3 @@
 +     * @param {() => boolean} [opts.hasSafariGestures]  true when the
 +     *   browser fires gesturestart/change/end (SafariGestureEventSource
 +     *   then owns two-finger pinch).
-@@ -18 +23 @@
+@@ -18 +33 @@
 -    constructor(screen, { overlay, getOrientation, mapClientPoint } = {}) {
 +    constructor(screen, { overlay, getOrientation, mapClientPoint, hasSafariGestures } = {}) {
-@@ -21,0 +27,2 @@
+@@ -21,0 +37,2 @@
 +      this._hasSafariGestures = hasSafariGestures ||
 +          (() => typeof root.GestureEvent !== 'undefined' || 'ongesturestart' in root);
-@@ -54,0 +62,10 @@
+@@ -23,0 +41,7 @@
++    detach() {
++      // A lone touch still held back is dropped, never sent after the detach.
++      if (this._dropHeld) this._dropHeld();
++      this._dropHeld = null;
++      super.detach();
++    }
++
+@@ -27,0 +52 @@
++      let holdTimer = null;
+@@ -28,0 +54,24 @@
++      const clearHold = () => {
++        if (holdTimer !== null) {
++          root.clearTimeout(holdTimer);
++          holdTimer = null;
++        }
++      };
++      this._dropHeld = () => {
++        clearHold();
++        if (state && state.mode === 'pending') state = null;
++      };
++      // Sends a held lone touch (see SINGLE_HOLD_MS) and makes it a streaming one.
++      const startHeld = () => {
++        clearHold();
++        if (!state || state.mode !== 'pending') return;
++        const { point, edge } = state;
++        if (edge) {
++          state = { mode: 'edge-stream', edge };
++          this.screen.touchDown([point], { edge });
++        } else {
++          state = { mode: 'single' };
++          this.screen.touchDown([point]);
++        }
++      };
++
+@@ -54,0 +104,10 @@
 +      // The first two real touch points as wire coordinates.
 +      const pairOf = (touches) => {
 +        const pts = [touches[0], touches[1]].map(
@@ -58,11 +104,12 @@
 +        };
 +      };
 +
-@@ -57,0 +75,22 @@
+@@ -57,0 +117,23 @@
 +        if (all.length >= 2 && !this._hasSafariGestures()) {
 +          // No gesture* events in this browser (Chromium): nothing else
 +          // will drive the pinch, so stream the two real fingers. Lift a
 +          // streaming single touch first, same as the Safari handoff.
++          clearHold();  // a held lone touch was never sent: nothing to lift
 +          if (state && (state.mode === 'single' || state.mode === 'edge-stream')) {
 +            const lift = [{ x: all[0].x, y: all[0].y }];
 +            if (state.mode === 'edge-stream') this.screen.touchUp(lift, { edge: state.edge });
@@ -81,8 +128,23 @@
 +          }
 +          return;
 +        }
-@@ -119,0 +159,16 @@
+@@ -61,0 +144 @@
++          clearHold();
+@@ -91,7 +174,4 @@
+-            if (startEdge) {
+-              state = { mode: 'edge-stream', edge: startEdge };
+-              this.screen.touchDown([point], { edge: startEdge });
+-            } else {
+-              state = { mode: 'single' };
+-              this.screen.touchDown([point]);
+-            }
++            // Held, not sent yet (SINGLE_HOLD_MS): a second finger may follow.
++            clearHold();
++            state = { mode: 'pending', point, edge: startEdge || null };
++            holdTimer = root.setTimeout(startHeld, SINGLE_HOLD_MS);
+@@ -119,0 +200,17 @@
 +        if (state.mode === 'multi-ignored' || state.mode === 'multi-ended') return;
++        if (state.mode === 'pending') startHeld();
 +
 +        if (state.mode === 'multi') {
 +          if (all.length < 2) return;
@@ -98,7 +160,17 @@
 +          return;
 +        }
 +
-@@ -147,0 +203,11 @@
+@@ -147,0 +245,21 @@
++        if (state.mode === 'pending') {
++          // A cancelled lone touch was never sent: nothing to cancel. A lift
++          // is a tap: send the held touch, then lift it below.
++          if (e.type === 'touchcancel') {
++            clearHold();
++            state = null;
++            return;
++          }
++          startHeld();
++        }
 +        if (state.mode === 'multi' || state.mode === 'multi-ignored' || state.mode === 'multi-ended') {
 +          // Pinch ends when the first finger lifts (or on cancel); the
 +          // remaining finger must not start a stray single touch.

@@ -12,7 +12,10 @@ const touch=(x,y)=>({clientX:x,clientY:y});
 // 200x400 CSS px element at the origin showing a 400x800 pt screen (2x).
 function gestureHarness({safari}){
  const clock={t:1000},calls=[];
- const window={};
+ // Fake timers: a held lone touch fires after SINGLE_HOLD_MS of `clock`.
+ const timers=new Map();let nextTimer=1;
+ const window={setTimeout(fn,ms){timers.set(nextTimer,{fn,at:clock.t+ms});return nextTimer++;},clearTimeout(id){timers.delete(id);}};
+ const advance=(ms)=>{clock.t+=ms;for(const [id,t] of [...timers])if(t.at<=clock.t){timers.delete(id);t.fn();}};
  if(safari)window.GestureEvent=function(){};
  const context={window,performance:{now:()=>clock.t}};
  for(const f of ['gestures/attachable-event-source.js','gestures/edge-bands.js','gestures/touch-gesture-source.js','gestures/safari-gesture-event-source.js'])load(context,f);
@@ -22,54 +25,92 @@ function gestureHarness({safari}){
  const B=window.Baguette;
  const touchSource=new B._TouchGestureSource(screen,{getOrientation:()=>'portrait'});touchSource.attach(el);
  const safariSource=new B._SafariGestureEventSource(screen,{});safariSource.attach(el);
- return {el,calls,clock};
+ return {el,calls,clock,advance,touchSource,timers};
 }
 
-test('Chromium: second finger streams touch2 down/move/up and leaves no stray single touch',()=>{
- const {el,calls,clock}=gestureHarness({safari:false});
+test('Chromium: second finger streams touch2 down/move/up and no single touch is ever sent',()=>{
+ const {el,calls,clock,advance}=gestureHarness({safari:false});
  el.fire('touchstart',{touches:[touch(80,150)]});
- assert.deepEqual(calls.map(c=>[c.name,c.n]),[['down',1]]);
+ // the lone finger is held back: nothing yet, so a pinch has no phantom tap at its first finger
+ assert.deepEqual(calls,[]);
+ advance(30);
  el.fire('touchstart',{touches:[touch(80,150),touch(120,150)]});
- // single touch lifted cleanly, then both real fingers go down together
- assert.deepEqual(calls.slice(1).map(c=>[c.name,c.n]),[['up',1],['down',2]]);
- assert.deepEqual(calls[2].fingers,[[160,300],[240,300]]);
+ assert.deepEqual(calls.map(c=>[c.name,c.n]),[['down',2]]);
+ assert.deepEqual(calls[0].fingers,[[160,300],[240,300]]);
+ advance(200); // the held touch's window passes: it was dropped, nothing fires late
+ assert.equal(calls.length,1);
  clock.t+=20;el.fire('touchmove',{touches:[touch(40,150),touch(160,150)]});
- assert.deepEqual(calls[3],{name:'move',n:2,fingers:[[80,300],[320,300]],edge:undefined});
+ assert.deepEqual(calls[1],{name:'move',n:2,fingers:[[80,300],[320,300]],edge:undefined});
  // a move inside the flush window is coalesced, but the next up carries the freshest positions
- el.fire('touchmove',{touches:[touch(20,150),touch(180,150)]});assert.equal(calls.length,4);
+ el.fire('touchmove',{touches:[touch(20,150),touch(180,150)]});assert.equal(calls.length,2);
  el.fire('touchend',{touches:[touch(180,150)],changedTouches:[touch(20,150)]});
- assert.deepEqual(calls[4],{name:'up',n:2,fingers:[[40,300],[360,300]],edge:undefined});
+ assert.deepEqual(calls[2],{name:'up',n:2,fingers:[[40,300],[360,300]],edge:undefined});
  // remaining finger moving / lifting must not become touch1
  clock.t+=20;el.fire('touchmove',{touches:[touch(100,100)]});
  el.fire('touchend',{touches:[],changedTouches:[touch(100,100)]});
- assert.equal(calls.length,5);
+ assert.equal(calls.length,3);
  // state is reset: a new single touch works again
- el.fire('touchstart',{touches:[touch(50,50)]});assert.deepEqual([calls[5].name,calls[5].n],['down',1]);
+ el.fire('touchstart',{touches:[touch(50,50)]});advance(100);assert.deepEqual([calls[3].name,calls[3].n],['down',1]);
 });
 
-test('Chromium: both fingers landing together, cancel, and a pinch that starts from an edge touch',()=>{
- const {el,calls,clock}=gestureHarness({safari:false});
+test('Chromium: a lone finger is sent when it moves, lifts or has been held, never later than before',()=>{
+ const {el,calls,clock,advance}=gestureHarness({safari:false});
+ // drag: the held touch goes out at the first move, at its original position, then the move
+ el.fire('touchstart',{touches:[touch(80,150)]});assert.deepEqual(calls,[]);
+ clock.t+=20;el.fire('touchmove',{touches:[touch(90,150)]});
+ assert.deepEqual(calls.map(c=>[c.name,c.fingers[0]]),[['down',[160,300]],['move',[180,300]]]);
+ el.fire('touchend',{touches:[],changedTouches:[touch(90,150)]});
+ assert.deepEqual(calls.slice(2).map(c=>[c.name,c.fingers[0]]),[['up',[180,300]]]);
+ // tap: down and up come out together at the lift
+ calls.length=0;
+ el.fire('touchstart',{touches:[touch(50,50)]});assert.deepEqual(calls,[]);
+ el.fire('touchend',{touches:[],changedTouches:[touch(50,50)]});
+ assert.deepEqual(calls.map(c=>[c.name,c.fingers[0]]),[['down',[100,100]],['up',[100,100]]]);
+ // press and hold: sent when the window ends
+ calls.length=0;
+ el.fire('touchstart',{touches:[touch(50,50)]});advance(99);assert.deepEqual(calls,[]);
+ advance(1);assert.deepEqual(calls.map(c=>c.name),['down']);
+ // a second finger after the window is a lift of the sent touch, then the pair (as before)
+ el.fire('touchstart',{touches:[touch(50,50),touch(90,50)]});
+ assert.deepEqual(calls.map(c=>[c.name,c.n]),[['down',1],['up',1],['down',2]]);
+});
+
+test('Chromium: cancel, detach and a bottom-edge touch with a held lone finger',()=>{
+ const {el,calls,advance,touchSource,timers}=gestureHarness({safari:false});
+ // cancelled before it was ever sent: nothing to cancel on the device
+ el.fire('touchstart',{touches:[touch(100,200)]});
+ el.fire('touchcancel',{touches:[],changedTouches:[touch(100,200)]});
+ advance(500);assert.deepEqual(calls,[]);
+ // both fingers landing together, then cancel
  el.fire('touchstart',{touches:[touch(60,200),touch(140,200)]});
  assert.deepEqual(calls.map(c=>[c.name,c.n]),[['down',2]]);
  el.fire('touchcancel',{touches:[],changedTouches:[touch(60,200),touch(140,200)]});
  assert.deepEqual(calls.map(c=>[c.name,c.n]),[['down',2],['up',2]]);
- el.fire('touchstart',{touches:[touch(100,395)]}); // bottom edge band
- assert.equal(calls[2].edge,'bottom');
+ // the edge hint of a bottom touch survives the hold
+ calls.length=0;
+ el.fire('touchstart',{touches:[touch(100,395)]});advance(100);
+ assert.deepEqual(calls.map(c=>[c.name,c.edge]),[['down','bottom']]);
  el.fire('touchstart',{touches:[touch(100,395),touch(140,395)]});
- assert.deepEqual(calls.slice(3).map(c=>[c.name,c.n,c.edge]),[['up',1,'bottom'],['down',2,undefined]]);
+ assert.deepEqual(calls.slice(1).map(c=>[c.name,c.n,c.edge]),[['up',1,'bottom'],['down',2,undefined]]);
+ el.fire('touchend',{touches:[],changedTouches:[touch(100,395)]});
+ // a hold still pending when the source is detached never fires
+ calls.length=0;
+ el.fire('touchstart',{touches:[touch(50,50)]});touchSource.detach();
+ assert.equal(timers.size,0);advance(500);assert.deepEqual(calls,[]);
 });
 
 test('Safari: second finger is still left to gesture* — exactly one touch2 sequence, no touch path duplicate',()=>{
  const {el,calls,clock}=gestureHarness({safari:true});
  el.fire('touchstart',{touches:[touch(80,150)]});
  el.fire('touchstart',{touches:[touch(80,150),touch(120,150)]});
- assert.deepEqual(calls.map(c=>[c.name,c.n]),[['down',1],['up',1]]);
+ // no single touch was sent, so none has to be lifted
+ assert.deepEqual(calls,[]);
  el.fire('gesturestart',{clientX:100,clientY:150});
  clock.t+=20;el.fire('touchmove',{touches:[touch(60,150),touch(140,150)]});
  el.fire('gesturechange',{clientX:100,clientY:150,scale:1.5,rotation:0});
  el.fire('touchend',{touches:[],changedTouches:[touch(60,150)]});
  el.fire('gestureend',{clientX:100,clientY:150,scale:1.5,rotation:0});
- assert.deepEqual(calls.slice(2).map(c=>[c.name,c.n]),[['down',2],['move',2],['up',2]]);
+ assert.deepEqual(calls.map(c=>[c.name,c.n]),[['down',2],['move',2],['up',2]]);
 });
 
 function keyboardHarness({safari,pasteOnly=false}){

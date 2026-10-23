@@ -1,9 +1,10 @@
 {
   "date": "2026-10-20",
-  "pluginVersion": "0.1.26",
+  "pluginVersion": "0.1.27",
   "baguette": "0.2.0",
   "status": "viewer-chromium-touch-text-verified-in-headless-chrome-without-simulator",
   "passed": [
+    "0.1.27: Chromium two-finger touch no longer sends a phantom single tap first (node --test, real touch-gesture-source.js against a recording mock screen and fake timers; no simulator booted, no on-device pinch run): a lone finger is held for up to 100 ms and goes out as touch1-down only when it moves, lifts or the window ends; a second finger inside the window sends touch2-down alone (before: touch1-down, touch1-up, touch2-down); cancel or detach while held sends nothing; edge hint, drag, tap and press-and-hold timing are unchanged. Pinch-out on a device is NOT verified by this change",
     "0.1.26: narrow-viewport toolbar (headless Chrome 351×680 style windows 320 / 351 / 402 px wide, no window shown, real sim.html + sim-native.js behind a static harness, iframe parent sends the cindy-gear message): before the fix at 351 the capture chip (Auto) was cut by the pill edge and the ⚙ was off screen; after it, back, name, box, more, screenshot, record, Auto and ⚙ are all inside the pill at 320, 351 and 402 px (screenshots kept under /tmp/preview-t7c-fix-shots, not in the package)",
     "0.1.25: ⚙ merged into the device toolbar in full-screen device layout (headless Chrome via CDP, no window, 402×874 mobile emulation, real sim.html + sim-native.js with stubbed endpoints, no simulator booted): iframe 402×844 below a 30 px strip before, 402×874 after (+30 px, the viewer's own height budget follows); #cindyGear is the last child of the toolbar; a click opens the settings sheet below it; the floating button returns when the framed page has no #cindyGear; the fine-pointer layout is unchanged",
     "node --test of the four repository gate files plus the baguette suite passed, including new cases for Chromium two-finger touch2, Safari no-duplicate hand-off, committed text, IME, sink focus, the US-layout character→key table (all 95 printable ASCII characters against an independent reference), the type bridge action and limits, and the native multi-chord delivery order and failure release",

@@ -206,8 +206,8 @@
   },
   {
     "path": "vendor/baguette/Baguette_Baguette.bundle/Web/baguette/gestures/touch-gesture-source.js",
-    "bytes": 10322,
-    "sha256": "bf4ac805ff6e1474a85d7c38fcebc2764b6dd90f5c468328292b3bdc68607845"
+    "bytes": 12458,
+    "sha256": "0dc876383104d74682ae580ae45c95645b58c13b4a2a76c58afa1fc17fc00fe8"
   },
   {
     "path": "vendor/baguette/Baguette_Baguette.bundle/Web/baguette/gestures/wheel-gesture-source.js",
