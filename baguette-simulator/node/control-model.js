@@ -113,6 +113,7 @@
     const kind = family(device);
     return kind === 'tv' ? 'tvOS' : kind === 'vision' ? 'visionOS' : 'iOS';
   }
+  function handheld(device) { return ['iOS', 'android'].includes(platform(device)); }
 
   /** Corner radius of the live screen, in CSS px, for a portrait screen box of `width` px. */
   function screenRadius(device, width) {
@@ -225,7 +226,7 @@
   /** The percentage the zoom state shows, given the fitted percentage. */
   const zoomPct = (zoom, fitPct) => Math.round(zoom?.mode === 'pct' ? zoom.pct : (fitPct > 0 ? fitPct : 100));
 
-  const api = { STRINGS, strings, controlHelp, runtimeLabel, family, platform, screenRadius, presence, overlay, idleLeft, clock, deviceRows, runtimesFor, defaultChoice, ZOOM_STEPS, zoomStep, zoomFactor, zoomPct };
+  const api = { STRINGS, strings, controlHelp, runtimeLabel, family, platform, handheld, screenRadius, presence, overlay, idleLeft, clock, deviceRows, runtimesFor, defaultChoice, ZOOM_STEPS, zoomStep, zoomFactor, zoomPct };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.CindySimModel = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

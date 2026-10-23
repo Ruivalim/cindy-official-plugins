@@ -397,3 +397,24 @@ test('rectangular TV and Vision zoom uses view points, preserves actual size and
   assert.equal(f.sim.state.fitPct,30);assert.equal(f.dom.byId.frame.style.width,'1944px','screen points exclude the fixed frame padding');
  }
 });
+
+test('Android keeps handheld screen, Home and rotation while TV/Vision retain their stage and input',async()=>{
+ for(const kind of ['iOS','android','tvOS','visionOS']){
+  const device={udid,name:kind,state:'Booted',runtime:kind==='android'?'android:android-36':`${kind}-27-0`,platform:kind==='android'?'android':'ios'};
+  const f=await boot({respond:({action})=>action==='status'?status({device}):{}}),handheld=['iOS','android'].includes(kind),delivered=[];
+  const w=f.dom.byId.screen.contentWindow;
+  w.__nativeHome=()=>delivered.push('home');w.__nativeRotateBy=step=>delivered.push(step);
+  w.cindyPlatform={press:async button=>delivered.push(button)};
+  assert.equal(f.context.CindySimModel.handheld(device),handheld);
+  assert.equal(f.dom.byId.screen.src.includes('/simulators/'),handheld);
+  assert.equal(f.dom.byId.screen.src.includes('/platform-stage.html'),!handheld);
+  assert.equal(f.dom.byId['btn-rotl'].hidden,!handheld);
+  assert.equal(f.dom.byId['btn-rotr'].hidden,!handheld);
+  f.dom.byId['btn-home'].dispatch('click');f.dom.byId['btn-rotl'].dispatch('click');f.dom.byId['btn-rotr'].dispatch('click');
+  const key={key:'ArrowLeft',metaKey:true,target:{tagName:'DIV'},preventDefault(){this.prevented=true;},stopImmediatePropagation(){}};
+  f.dom.document.listeners.keydown[0](key);
+  assert.deepEqual(delivered,handheld?['home',-1,1,-1]:['home']);
+  assert.equal(!!key.prevented,handheld);
+  if(handheld)assert.ok(!f.calls.some(p=>p.action==='viewport'),'handheld geometry comes from its own device page');
+ }
+});

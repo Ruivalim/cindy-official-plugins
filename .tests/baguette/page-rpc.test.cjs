@@ -38,6 +38,23 @@ function fixture(page,{steps=1}={}){
       }}}})};
 }
 
+test('creation families keep Android, iPhone, TV and Vision runtimes separate after upstream integration',async()=>{
+ const types=[{identifier:'android:phone',name:'Android Phone',platform:'android'},
+  {identifier:'t.iPhone-18-Pro',name:'iPhone 18 Pro'},
+  {identifier:'t.Apple-TV',name:'Apple TV'},
+  {identifier:'t.Apple-Vision-Pro',name:'Apple Vision Pro'}];
+ const runtimes=types.map((d,i)=>({identifier:['android:android-36','r.iOS-27-0','r.tvOS-27-0','r.xrOS-27-0'][i],version:'27.0',supportedDeviceTypes:[d.identifier]}));
+ for(const lang of ['en','zh-CN'])for(const [i,family] of ['android','iphone','tv','vision'].entries()){
+  const f=fixture('pages');f.start();f.create({lang,family});await flush();f.tick();await flush();
+  f.finish({ok:true,deviceTypes:types,runtimes});await flush();
+  const selects=f.nodes.filter(n=>n.tag==='select');
+  assert.equal(selects[0].children.length,1);assert.equal(selects[0].children[0].value,runtimes[i].identifier);
+  assert.equal(selects[1].children.length,1);assert.equal(selects[1].children[0].value,types[i].identifier);
+  const title=f.nodes.find(n=>n.tag==='h2').textContent;
+  assert.match(title,i===0?/Android|安卓/:i===1?/iPhone/:i===2?/Apple TV/:/Vision Pro/);
+ }
+});
+
 test('shared create sheet preserves backend errors and uses platform-correct fallbacks without replay',async()=>{
   for(const lang of ['en','zh-CN'])for(const platform of ['android','ios'])for(const family of ['any',platform==='android'?'android':'iphone'])for(const detail of [true,false]){
     const f=fixture('pages',{steps:3});f.start();const pending=f.create({lang,family});await flush();f.tick();await flush();

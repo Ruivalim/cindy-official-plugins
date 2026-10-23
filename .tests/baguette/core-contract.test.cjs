@@ -269,7 +269,7 @@ test('remote trackpad rejects iOS and unowned devices before native input',async
 
 test('native hold timeouts request release and retain unknown outcome, without changing unrelated command termination',async()=>{
  const calls=[];
- const context={module:{exports:{}},__dirname:dir,require(name){
+ const context={module:{exports:{}},__dirname:dir,process:{platform:'darwin',arch:'arm64'},require(name){
   if(name==='./viewer.cjs')return {};
   if(name==='node:child_process')return {execFile(file,args,options,cb){calls.push({file,options});queueMicrotask(()=>cb(Error('timed out'),'',''));return {stdin:{on(){},end(){}}};}};
   return require(name.startsWith('./')?path.join(dir,name):name);

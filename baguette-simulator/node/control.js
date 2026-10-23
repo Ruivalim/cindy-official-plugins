@@ -81,7 +81,7 @@
     // The capability travels in the frame URL: Cindy's panel is not an HTTP
     // origin, so this frame can hold no cookie.
     // The device with its bezel, like Simulator; the guest owns its orientation.
-    screen.src = M.platform(state.status?.device) !== 'iOS'
+    screen.src = !M.handheld(state.status?.device)
       ? `/platform-stage.html?udid=${encodeURIComponent(udid)}&lang=${lang}&platform=${M.platform(state.status?.device)}&cindyViewer=${encodeURIComponent(token || '')}`
       : `/simulators/${encodeURIComponent(udid)}?handheld=0${state.fullToolbar ? '&cindyFull=1' : ''}${token ? `&cindyViewer=${encodeURIComponent(token)}` : ''}${location.hash}`;
     state.viewport = null; state.fitPct = 0; state.pose = null;
@@ -92,14 +92,14 @@
   // Percentages are of actual size (one device point per CSS pixel).
   function stageSize() {
     const bounds = stage.getBoundingClientRect();
-    const css = M.platform(state.status?.device) === 'iOS' ? null : globalThis.getComputedStyle?.(frame);
+    const css = M.handheld(state.status?.device) ? null : globalThis.getComputedStyle?.(frame);
     const insetX = parseFloat(css?.paddingLeft || 0) + parseFloat(css?.paddingRight || 0);
     const insetY = parseFloat(css?.paddingTop || 0) + parseFloat(css?.paddingBottom || 0);
     return {width: Math.max(0,bounds.width - insetX),height: Math.max(0,bounds.height - insetY),insetX,insetY};
   }
   function applyZoom() {
     const { width, height, insetX, insetY } = stageSize();
-    const factor = M.platform(state.status?.device) !== 'iOS' && state.zoom.mode === 'pct' && state.fitPct > 0
+    const factor = !M.handheld(state.status?.device) && state.zoom.mode === 'pct' && state.fitPct > 0
       ? state.zoom.pct / state.fitPct : M.zoomFactor(state.zoom, state.fitPct);
     // Keep the point at the centre of the view in place while the frame grows or shrinks.
     const cx = scroll.scrollWidth > scroll.clientWidth ? (scroll.scrollLeft + scroll.clientWidth / 2) / scroll.scrollWidth : 0.5;
@@ -114,7 +114,7 @@
   async function viewport() {
     if (state.viewport) return state.viewport;
     try {
-      if (M.platform(state.status?.device) !== 'iOS') {
+      if (!M.handheld(state.status?.device)) {
         const v = await api('viewport');
         if (v?.width > 0 && v?.height > 0) state.viewport = { width: v.width, height: v.height };
         return state.viewport;
@@ -131,7 +131,7 @@
   async function measure() {
     let doc; try { doc = screen.contentDocument; } catch { return; }
     const v = await viewport();
-    if (M.platform(state.status?.device) !== 'iOS') {
+    if (!M.handheld(state.status?.device)) {
       const {width,height} = stageSize();
       if (!v || !(width > 0 && height > 0)) return;
       const fit = Math.min(width / v.width, height / v.height) * 100;
@@ -201,9 +201,9 @@
     $('title-sub').textContent = [M.runtimeLabel(device?.runtime), t[p.key]].filter(Boolean).join(' · ');
     $('status').textContent = t[p.key];
     const on = live();
-    const ios = M.platform(device) === 'iOS';
+    const handheld = M.handheld(device);
     $('tools').hidden = !on;
-    $('btn-rotl').hidden = $('btn-rotr').hidden = !ios;
+    $('btn-rotl').hidden = $('btn-rotr').hidden = !handheld;
     $('tv-remote').hidden = !on || M.platform(device) !== 'tvOS';
     visionBar.hidden = !on || M.platform(device) !== 'visionOS';
     stage.dataset.vision = M.platform(device) === 'visionOS' ? 'true' : 'false';
@@ -359,10 +359,10 @@
       await controller.press(button);
     } catch (error) { toast(`${t.actionFailed} (${error.code || 'INPUT_FAILED'})`, 'error'); }
   }
-  function home() { if (M.platform(state.status?.device) !== 'iOS') return press('home'); if (live() && native('__nativeHome')) activity({ isTrusted: true }); }
+  function home() { if (!M.handheld(state.status?.device)) return press('home'); if (live() && native('__nativeHome')) activity({ isTrusted: true }); }
   $('tv-remote').addEventListener('click', event => { const button = event.target.closest('[data-remote]'); if (button) press(button.dataset.remote); });
   for(const node of [$('tv-remote'),$('btn-home')])node.addEventListener('pointerdown',event=>{
-    if(event.button===0&&live()&&M.platform(state.status?.device)!=='iOS')event.preventDefault();
+    if(event.button===0&&live()&&!M.handheld(state.status?.device))event.preventDefault();
   }); // Keep device focus: clicking a remote control must not cancel its swipe.
   const visionBar=h('div',{id:'vision-controls',class:'vision-controls',role:'group',hidden:true});
   const visionNames=lang==='zh-CN'?['交互','转向','平移','环绕','前后移动','复位视角','双手缩放与旋转','键盘输入','捕获指针（Esc 退出）','操作说明','录屏']:
@@ -443,7 +443,7 @@
   const remoteKeys={up:'↑',down:'↓',left:'←',right:'→',select:'Enter',back:'Esc','play-pause':'Space'};
   for(const b of $('tv-remote').querySelectorAll('[data-remote]'))label(b,b.getAttribute('aria-label'),remoteKeys[b.dataset.remote]);
   function rotate(step) {
-    if (!live() || M.platform(state.status?.device) !== 'iOS') return;
+    if (!live() || !M.handheld(state.status?.device)) return;
     const fn = screen.contentWindow?.__nativeRotateBy ? '__nativeRotateBy' : '__nativeRotate';
     if (!native(fn, step)) return;
     activity({ isTrusted: true });
@@ -477,10 +477,10 @@
       event.preventDefault(); event.stopImmediatePropagation(); if (!event.repeat) press(remote[event.key]); return;
     }
     if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
-    const k = event.key, ios = M.platform(state.status?.device) === 'iOS', action =
+    const k = event.key, handheld = M.handheld(state.status?.device), action =
       (k === '=' || k === '+') ? () => zoomBy(1) : k === '-' ? () => zoomBy(-1) : k === '0' ? () => setZoom({ mode: 'fit' })
         : (k === '1' && state.fitPct) ? () => setZoom({ mode: 'pct', pct: 100 })
-          : (ios && k === 'ArrowLeft') ? () => rotate(-1) : (ios && k === 'ArrowRight') ? () => rotate(1)
+          : (handheld && k === 'ArrowLeft') ? () => rotate(-1) : (handheld && k === 'ArrowRight') ? () => rotate(1)
             : (event.shiftKey && (k === 'h' || k === 'H')) ? home : (!event.shiftKey && (k === 's' || k === 'S')) ? screenshot : null;
     if (!action) return;
     event.preventDefault(); event.stopImmediatePropagation(); action();
