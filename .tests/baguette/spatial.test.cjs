@@ -46,6 +46,30 @@ test('captured pointer preserves every button edge and held buttons during parti
  assert.ok(s.calls.every(p=>p.gesture===s.calls[0].gesture));
  }
 });
+test('captured pointer assigns motion to its original button mask across delayed edges',async()=>{
+ for(const first of [1,2])for(const phase of ['began','changed'])for(const moveEdges of [false,true]){
+  let ack,blocked=false;const s=stage(p=>p.phase===phase&&!blocked?(blocked=true,new Promise(resolve=>ack=resolve)):Promise.resolve());s.lock();
+  s.emit('pointermove',{buttons:0,movementX:10,movementY:-10});await tick();
+  const expected=Array.from({length:4},()=>[0,0]);expected[0]=[10,-10];let mask=0;
+  const send=(name,buttons,dx)=>{expected[mask][0]+=dx;expected[mask][1]-=dx;mask=buttons;s.emit(name,{buttons,button:buttons===2?2:0,movementX:dx,movementY:-dx});};
+  // The same physical sequence is reported either as button events or as
+  // pointermove mask changes. Both preserve motion before AND after each edge.
+  for(const next of [first,3,first===1?2:1,0,first,0]){
+   send('pointermove',mask,11);send('pointermove',mask,12);
+   send(moveEdges?'pointermove':mask&~next?'pointerup':'pointerdown',next,13);
+  }
+  // All-up pointerup ends normally; later input may queue a new contact.
+  ack();await tick();await s.control.finish();
+  const actual=Array.from({length:4},()=>[0,0]);let x=0,y=0,id,previousMask;
+  for(const p of s.calls){
+   if(p.gesture!==id){id=p.gesture;x=0;y=0;previousMask=p.z;}
+   if(p.z!==previousMask){assert.equal(p.x,x,'button edge must precede subsequent movement');assert.equal(p.y,y);}
+   actual[p.z][0]+=(p.x-x)*1000;actual[p.z][1]+=(p.y-y)*1000;x=p.x;y=p.y;previousMask=p.z;
+  }
+  for(let z=0;z<4;z++)for(let i=0;i<2;i++)assert.ok(Math.abs(actual[z][i]-expected[z][i])<1e-7,JSON.stringify({first,phase,moveEdges,z,actual,expected}));
+  assert.equal(s.errors(),0);
+ }
+});
 test('captured pointer retains cumulative displacement beyond nine thousand pixels',async()=>{
  const s=stage(p=>sample(p,Failure));s.lock();s.emit('pointerdown',{buttons:1});await tick();
  for(let i=0;i<100;i++){s.emit('pointermove',{buttons:1,movementX:1200,movementY:-600});await tick();}

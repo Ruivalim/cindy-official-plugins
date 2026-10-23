@@ -23,20 +23,20 @@ globalThis.createVisionStage = function({canvas,api,message,onError,onCancel=()=
  function failed(c){hoverBlocked=true;gameFailed=true;onError();done(c);cancel();}
  async function pump(c){
   if(c.busy||!c.ready||c.finished)return;
-  const pending=c.edges.shift()||c.pending;if(!pending&&!c.ending)return;
-  if(pending===c.pending)c.pending=null;c.busy=true;
+  const pending=c.samples.shift()?.sample;if(!pending&&!c.ending)return;
+  c.busy=true;
   const phase=pending?'changed':'ended',sample=pending||c.sent;
   try{await api('spatial',{...sample,gesture:c.id,phase});c.sent=sample;if(phase==='ended')done(c);}
   catch{failed(c);}
   finally{c.busy=false;if(!c.finished)pump(c);}
  }
  function heartbeat(c){
-  clearTimeout(beat);beat=setTimeout(()=>{if(contact!==c||c.ending||c.finished)return;if(usable()){c.pending||=c.last;pump(c);heartbeat(c);}else finish(true);},250);
+  clearTimeout(beat);beat=setTimeout(()=>{if(contact!==c||c.ending||c.finished)return;if(usable()){update(c,{});heartbeat(c);}else finish(true);},250);
  }
  function begin(value){
   if(!usable())return null;
   const previous=contact;if(previous&&!previous.ending)finish();
-  const c={id:crypto.randomUUID(),last:{z:0,spread:.1,angle:0,aspect:canvas.width/canvas.height||16/9,...value},pending:null,edges:[],ready:false,busy:false,ending:false,finished:false};
+  const c={id:crypto.randomUUID(),last:{z:0,spread:.1,angle:0,aspect:canvas.width/canvas.height||16/9,...value},samples:[],ready:false,busy:false,ending:false,finished:false};
   c.initial={...c.last};c.sent=c.initial;
   c.done=new Promise(resolve=>{c.resolve=resolve;});contacts.add(c);contact=c;
   (previous?.done||Promise.resolve()).then(async()=>{
@@ -48,16 +48,23 @@ globalThis.createVisionStage = function({canvas,api,message,onError,onCancel=()=
  function update(c,value){
   if(!c||c.ending||c.finished)return;
   const previous=c.last;c.last={...c.last,...value};
-  // Motion coalesces, but every mouse button transition stays ordered.
-  if(c.last.mode==='pointer'&&c.last.z!==previous.z){c.edges.push(c.last);c.pending=null;}
-  else c.pending=c.last;
+  // One ordered stream: coalesce only within a button state. Movement on a
+  // transition still belongs to the old mask; the edge has zero displacement.
+  const enqueue=(sample,edge=false)=>{
+   const tail=c.samples.at(-1);
+   if(tail&&!tail.edge&&!edge&&(sample.mode!=='pointer'||tail.sample.z===sample.z))tail.sample=sample;
+   else c.samples.push({sample,edge});
+  };
+  const edge=c.last.mode==='pointer'&&c.last.z!==previous.z;
+  if(edge)enqueue({...c.last,z:previous.z});
+  enqueue(c.last,edge);
   pump(c);
  }
  function finish(discard=false){
   clearTimeout(idleTimer);idleTimer=null;clearTimeout(beat);beat=null;wheel=null;
   const current=contact;
   for(const c of discard?contacts:current?[current]:[]){
-   c.ending=true;if(discard){c.pending=null;c.edges.length=0;c.cancelled=!c.ready;}pump(c);
+   c.ending=true;if(discard){c.samples.length=0;c.cancelled=!c.ready;}pump(c);
   }
   return current?.done||Promise.resolve();
  }
@@ -124,11 +131,12 @@ globalThis.createVisionStage = function({canvas,api,message,onError,onCancel=()=
  function captured(e){
   const buttons=(e.buttons||0)&3;
   clearTimeout(idleTimer);idleTimer=null;
-  if(e.type==='pointerup'&&!buttons){finish();return;}
+  if(e.type==='pointerup'&&!buttons&&(!contact||contact.ending))return;
   if(!contact||contact.ending)begin({mode:'pointer',x:0,y:0,z:(e.buttons||0)&3});
   if(contact?.last.mode!=='pointer')return;
   const dx=Number.isFinite(e.movementX)?e.movementX/1000:0,dy=Number.isFinite(e.movementY)?e.movementY/1000:0;
   update(contact,{x:contact.last.x+dx,y:contact.last.y+dy,z:buttons});
+  if(e.type==='pointerup'&&!buttons){finish();return;}
   if(!buttons)idleTimer=setTimeout(()=>finish(),300);
  }
  document.addEventListener('pointerlockchange',()=>{cancel();keyboard=document.pointerLockElement===canvas;state();});

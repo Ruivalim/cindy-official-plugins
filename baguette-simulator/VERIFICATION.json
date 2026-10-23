@@ -1,9 +1,10 @@
 {
   "date": "2026-10-24",
-  "pluginVersion": "0.1.61",
+  "pluginVersion": "0.1.62",
   "baguette": "0.2.10",
   "status": "vision-controls-review-regressions-verified-package-acceptance-pending",
   "passed": [
+    "0.1.62: 30 controller/spatial regressions passed. One ordered sample queue preserves per-button-mask displacement before each edge and zero-displacement button transitions before subsequent motion. Eight delayed began/changed interleavings cover both first buttons, event/move-reported mask changes, partial/all releases and normal end; the regression failed against 0.1.61 and against an incomplete edge-coalescing implementation. Rebased onto main 1ef61f4 (#204), retaining the old-iPhone Home placement fix. Native source/binaries are unchanged in this round.",
     "0.1.61: 29 browser/controller regression tests passed. TV and Vision cancellation now cover all unfinished contacts and queued discrete input. Pointer tests cover both left/right button orderings, button changes delivered by pointermove, fast edges while an acknowledgement is pending, partial release, cancellation of pending edges, and 120000/-60000 pixel cumulative motion. Six issue/cross-input regressions were first reproduced against the old implementation.",
     "0.1.61 native protocol regression executes the production stream loop with stub HID and a fast clock: 2101 changed samples (2521200/-1260600 pixels), held-mask transitions, final release, malformed-input release, and preserved spatial coordinate/time limits pass. Native pointer offsets use the same finite +/-1e9 limit as Node; the pointer mode is exempt from the spatial 20 s/2000-sample cap while EOF/750 ms/SIGTERM release stays. spatial.m was rebuilt with Xcode 27.1 (27A9269), ad-hoc signed and signature-verified. This is protocol isolation, not new guest or installed-Cindy acceptance.",
     "0.1.60: rebased onto main 8978c1e (#203) and retained its authenticated open-page idle protection, including status failures. The only rebase conflict was manifest metadata; all Vision controls and input/OCR review fixes are retained. Full repository and simulator checks pass 277/280; all three Bash 3 workflow failures reproduce on clean main 8978c1e.",
@@ -18,10 +19,10 @@
     "Browser standard-gamepad fixture drove the real camera through simultaneous translation/elevation/rotation, then stopped at neutral. Physical controller not used.",
     "Native EOF, malformed sample, SIGTERM and 750 ms inactivity released held input and allowed the next spatial tap to acquire the device lock.",
     "Controller checked at 1100 and 320 pixels in light/dark; spatial planner and lifecycle tests cover invalid/deadline inputs, fast clicks, absolute-motion coalescing, mode/depth stability, focus/hidden/page/stream loss, failed input without replay, gamepad neutral/focus gating.",
-    "Repository contract, localization, provisioning, publish and simulator suite: 285/288 pass. The three failures are unchanged Bash 4 lowercase-expansion workflow tests on macOS Bash 3; all three reproduced on clean latest main 8978c1e. No changed-feature test failed."
+    "Repository contract, localization, provisioning, publish and simulator suite: 286/289 pass. The three failures are unchanged Bash 4 lowercase-expansion workflow tests on macOS Bash 3; all three reproduced on clean latest main 1ef61f4. No changed-feature test failed."
   ],
   "notVerified": [
-    "Final 0.1.61 .cindy installation and embedded preview on stable/Beta Cindy are pending. The user-confirmed 0.1.57 acceptance below predates these review fixes and does not attest the changed package.",
+    "Final 0.1.62 .cindy installation and embedded preview on stable/Beta Cindy are pending. The user-confirmed 0.1.57 acceptance below predates these review fixes and does not attest the changed package.",
     "Browser pointer-lock acceptance is not established: the local automated browser could not consistently retain OS foreground focus. Failure reports that limitation; native relative-pointer delivery is independently verified.",
     "Physical game controller, immersive apps, and Xcode/runtime versions other than 27. Orbit uses a fixed one-metre pivot; exact Apple camera sensitivity and hardware input feel are not claimed."
   ],
