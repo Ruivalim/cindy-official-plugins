@@ -26,33 +26,54 @@
     frame.style.width=(landscape?length:length*ratio)+'px';
     frame.style.height=(landscape?length*ratio:length)+'px';
   }
+  // Draw one frame and follow the device pose it was captured in.
+  function paint(image,width,height,nextRotation,nextDeviceRotation){
+    const turned=paintedRotation!==null&&nextDeviceRotation!==paintedRotation;
+    const currentTransform=turned?getComputedStyle(frame).transform:null;
+    if((nextRotation!==rotation||turned)&&pointers.size){extras?.release();epoch++;pointers.clear();dirty=false;input('release').catch(error);}
+    rotation=nextRotation;deviceRotation=nextDeviceRotation;
+    // The stream already follows the physical device. A portrait-locked
+    // activity must not force the whole device frame back to portrait.
+    if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}
+    ctx.drawImage(image,0,0);fit();message.hidden=true;
+    if(turned){
+      let turns=(nextDeviceRotation-paintedRotation+4)%4;
+      if(turns===3)turns=-1;else if(turns===2)turns=-2*Math.sign(lastRotationStep);
+      // Preserve the visible pose across the stream's pixel rotation,
+      // then turn frame and screen together with the iPhone's easing.
+      const from=new DOMMatrix(currentTransform==='none'?undefined:currentTransform).rotate(turns*90);
+      for(const animation of frame.getAnimations())animation.cancel();
+      if(!reducedMotion.matches)frame.animate([{transform:from.toString()},{transform:'none'}],{duration:320,easing:'cubic-bezier(0.32, 0.72, 0, 1)'});
+    }
+    paintedRotation=nextDeviceRotation;
+  }
+  // H.264 (Baguette's AVCC envelope) when WebCodecs works, else PNG. Each
+  // message is [u32 length][display rotation][device rotation][payload].
+  let decoderFailures=0;
   async function stream(){
     while(!closed){
+      let decoder=null;
       try{
-        const r=await fetch(`/android-stream?udid=${encodeURIComponent(udid)}`,{headers:{'X-Cindy-Clipboard':token}});if(!r.ok)throw Error('Disconnected');const reader=r.body.getReader();let buffer=new Uint8Array();
-        for(;;){const {done,value}=await reader.read();if(done)break;const next=new Uint8Array(buffer.length+value.length);next.set(buffer);next.set(value,buffer.length);buffer=next;
-          while(buffer.length>=6){const length=new DataView(buffer.buffer,buffer.byteOffset,4).getUint32(0);if(length>32e6)throw Error('Invalid frame');if(buffer.length<length+6)break;
-            const nextRotation=buffer[4],nextDeviceRotation=buffer[5];const blob=new Blob([buffer.slice(6,6+length)],{type:'image/png'});buffer=buffer.slice(6+length);const bitmap=await createImageBitmap(blob);
-            const turned=paintedRotation!==null&&nextDeviceRotation!==paintedRotation;
-            const currentTransform=turned?getComputedStyle(frame).transform:null;
-            if((nextRotation!==rotation||turned)&&pointers.size){extras?.release();epoch++;pointers.clear();dirty=false;input('release').catch(error);}
-            rotation=nextRotation;deviceRotation=nextDeviceRotation;
-            // The stream already follows the physical device. A portrait-locked
-            // activity must not force the whole device frame back to portrait.
-            canvas.width=bitmap.width;canvas.height=bitmap.height;ctx.drawImage(bitmap,0,0);bitmap.close();fit();message.hidden=true;
-            if(turned){
-              let turns=(nextDeviceRotation-paintedRotation+4)%4;
-              if(turns===3)turns=-1;else if(turns===2)turns=-2*Math.sign(lastRotationStep);
-              // Preserve the visible pose across the stream's pixel rotation,
-              // then turn frame and screen together with the iPhone's easing.
-              const from=new DOMMatrix(currentTransform==='none'?undefined:currentTransform).rotate(turns*90);
-              for(const animation of frame.getAnimations())animation.cancel();
-              if(!reducedMotion.matches)frame.animate([{transform:from.toString()},{transform:'none'}],{duration:320,easing:'cubic-bezier(0.32, 0.72, 0, 1)'});
-            }
-            paintedRotation=nextDeviceRotation;
+        const wanted=typeof VideoDecoder==='function'&&decoderFailures<2?'avcc':'png';
+        const r=await fetch(`/android-stream?udid=${encodeURIComponent(udid)}&format=${wanted}`,{headers:{'X-Cindy-Clipboard':token}});if(!r.ok)throw Error('Disconnected');
+        const poses=new Map();let sequence=0,failure=null;
+        if(/avcc/.test(r.headers.get('content-type')||''))decoder=new VideoDecoder({
+          output:image=>{const pose=poses.get(image.timestamp);poses.delete(image.timestamp);if(pose&&!closed)paint(image,image.displayWidth,image.displayHeight,pose[0],pose[1]);image.close();},
+          error:e=>{failure=e;}});
+        const reader=r.body.getReader();let buffer=new Uint8Array();
+        for(;;){const {done,value}=await reader.read();if(done)break;if(failure)throw failure;const next=new Uint8Array(buffer.length+value.length);next.set(buffer);next.set(value,buffer.length);buffer=next;
+          while(buffer.length>=6){const length=new DataView(buffer.buffer,buffer.byteOffset,4).getUint32(0);if(length<2||length>32e6)throw Error('Invalid frame');if(buffer.length<length+4)break;
+            const pose=[buffer[4],buffer[5]],payload=buffer.slice(6,4+length);buffer=buffer.slice(4+length);
+            if(!decoder){const bitmap=await createImageBitmap(new Blob([payload],{type:'image/png'}));paint(bitmap,bitmap.width,bitmap.height,pose[0],pose[1]);bitmap.close();continue;}
+            if(payload[0]===1){const description=payload.slice(1);decoder.configure({codec:'avc1.'+[...description.slice(1,4)].map(b=>b.toString(16).padStart(2,'0')).join(''),description,optimizeForLatency:true,hardwareAcceleration:'prefer-hardware'});}
+            else if((payload[0]===2||payload[0]===3)&&decoder.state==='configured'){poses.set(sequence,pose);decoder.decode(new EncodedVideoChunk({type:payload[0]===2?'key':'delta',timestamp:sequence++,data:payload.subarray(1)}));}
           }
         }
-      }catch{message.hidden=false;message.textContent=zh?'正在连接设备画面…':'Connecting to device…';}
+      }catch(e){
+        // A failed decoder cannot resume mid-stream; reconnect for a keyframe.
+        if(decoder&&e?.name!=='TypeError')decoderFailures++;
+        message.hidden=false;message.textContent=zh?'正在连接设备画面…':'Connecting to device…';
+      }finally{try{decoder?.close();}catch{}}
       if(!closed)await new Promise(r=>setTimeout(r,500));
     }
   }

@@ -178,3 +178,23 @@ Agent parity reuses shared per-device locks, busy/job results, viewer readiness,
 ## OCR packaging follow-up 0.2.8
 
 The three unchanged portable OCR resources (WASM plus English/Chinese model gzip files) now use the repository's existing `binary-dependencies.json` build-input mechanism instead of contributing to tracked binary totals. Each official npm tarball is pinned by SHA-256 and additionally verified against the lockfile's SHA-512 integrity; each selected member is byte-identical to the 0.2.7 installed resource and the vendor inventory. These resources are shared across platforms, contain no host-native executable, and remain inside the final self-contained `.cindy`. There is no runtime download or new build hook.
+
+## Streaming performance 0.2.23 (2026-10-24)
+
+Measured before and after on the same Mac (M5 Ultra, Xcode 27.1, iOS/tvOS/visionOS 27.0, Emulator 37.1.11, API 36 arm64); the full table and method are in the PR.
+
+`vendor-native.patch` adds three source changes and their tests on top of the version stamp and the 3D background fix. The full upstream suite passes (2555 tests in 306 suites).
+
+- `StreamFrameSchedule`: emissions keep an ideal cadence (previous slot + 1/fps) instead of restarting from each late timer fire; a stream more than one interval behind restarts its cadence rather than bursting. iPhone H.264 at a requested 60 fps went from about 45 to 58 fps.
+- `StreamFrameSchedule` / `StreamFramePump`: optional bounded repeats (`settleRepeats`) with a `settle` delivery for the final repeat and `revive()` to re-send the latest frame once.
+- `AVCCStream`: drops unchanged SimulatorKit surfaces before pacing with the existing `SeedFilter` (rendered 3D screens are not filtered: GPU writes may reuse a surface without a new seed); repeats only six times after a change, the last as a forced keyframe, then sends nothing; a keyframe/snapshot request or a scale change re-sends the latest frame once. An idle iPhone stream went from about 45 fps and 10% CPU to no frames and under 1%. Each WebSocket session still owns its stream, so a new viewer gets an immediate keyframe on a still screen.
+
+Rebuilt with `native/build-baguette.sh` from the same verified v0.2.10 source archive. `vendor/baguette/Baguette` SHA-256 `09550039ec4e03d300502d705698e0958ed637b605a7423fd8b4f46b8e54ca59`, 8,005,840 bytes; HingeControl rebuilt byte-identical. No route, host, download, injected code or `simctl` call changed; Web files are unchanged.
+
+First-party changes:
+
+- `native/android-encoder.m` (new helper, built by `native/build.sh`, ad-hoc signed, arm64): maps one viewer-owned frame file read-only, converts RGB888 to BGRA with Accelerate and encodes H.264 with VideoToolbox (hardware, low-latency rate control, no reordering). Reads commands on stdin, writes length-prefixed frames on stdout. No network, no other file access, never writes the shared file; exits on end of input.
+- `node/android/stream.cjs`: the viewer creates an owner-only temporary directory, sizes the frame file to the longer edge squared ×4 bytes, and asks the emulator to stream RGB888 there (`ImageTransport` MMAP, `file://` URL, explicit size). Emulator 37.1.11 writes pixels only for an explicit size, and a bare path crashed one test emulator with heap corruption, so both are fixed in code. The file is deleted when the stream ends. At most one frame is in flight; a quiet screen ends on a keyframe. Display rotation is polled once a second instead of two adb commands per frame. One encoder failure reconnects; two within a minute switch new streams to PNG.
+- `node/android/grpc.cjs`: adds the `ImageTransport` field and an `unbounded` mode for viewer streams that requires an abort signal (no 30-second restart).
+- `node/android/devices.cjs`: launches with `-gpu host` and retries once with `-gpu auto` if the emulator exits during startup; reports the selected renderer from the emulator log. Before launch it starts adb and copies the user's adb key into the private emulator home, because on a Mac without `~/.android/adbkey` the emulator generated its own key and the device stayed `unauthorized`.
+- `node/platform-stage.js`: Apple TV and Vision Pro use H.264 when WebCodecs exists, MJPEG otherwise or after two decoder failures, and drop to 2 fps while hidden.

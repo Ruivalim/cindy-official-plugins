@@ -135,15 +135,30 @@
     const modifiers=[['control',event.ctrlKey],['shift',event.shiftKey],['option',event.altKey],['command',event.metaKey]].filter(([,on])=>on).map(([key])=>key);
     keyboardInput(async()=>{const response=await fetch('/clipboard',{method:'POST',headers:{'Content-Type':'application/json','X-Cindy-Clipboard':p.get('cindyViewer')},body:JSON.stringify({udid,action:'key',code:event.code,modifiers})});if(!response.ok)throw Error('INPUT_FAILED');});
   });
+  // H.264 like the iPhone page: an idle stream sends nothing, while MJPEG
+  // re-sends whole images whenever the scene renders (Vision Pro renders
+  // continuously). MJPEG remains for engines without WebCodecs and after
+  // repeated decoder failures.
+  let format = FrameDecoder.isHardwareAvailable() ? 'avcc' : 'mjpeg', decoderFailures = 0;
+  // Like viewer-stage.js for iPhone: a hidden page keeps only a trickle.
+  const pace = () => session?.send?.({type:'set_fps',fps:document.hidden?2:60});
+  document.addEventListener('visibilitychange',pace);
   function start() {
     if (stopped) return;
     session?.stop();
-    const url = new URL(StreamSession.buildWSUrl(udid, 'mjpeg', 'v2'));
+    const url = new URL(StreamSession.buildWSUrl(udid, format, 'v2'));
     url.searchParams.set('cindyViewer', p.get('cindyViewer') || '');
     message(zh ? '正在连接画面…' : 'Connecting…');
-    session = new StreamSession({udid, format: 'mjpeg', url: url.href, canvas,
+    const current = session = new StreamSession({udid, format, url: url.href, canvas,
       onSize: (w,h) => {canvas.style.width=`min(100vw, ${100*w/h}vh)`;canvas.style.height='auto';},
+      onOpen: pace,
       onPaint: () => {if(Date.now()>=errorUntil)message('');},
+      // A failed decoder stays closed; reconnect for a fresh keyframe.
+      onLog: (text, isError) => {
+        if (!isError || !/^(decoder|config):/.test(text) || current !== session) return;
+        if (++decoderFailures >= 2) format = 'mjpeg';
+        setTimeout(start, 250);
+      },
       onClose: () => { resetPointer(); if (!stopped) message(zh ? '画面已断开，正在重连…' : 'Reconnecting…'); },
       onError: () => {resetPointer();message(zh ? '画面连接失败，正在重连…' : 'Stream unavailable; reconnecting…');}});
     session.start();

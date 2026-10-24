@@ -5,8 +5,8 @@ const vm=require('node:vm');
 const path=require('node:path');
 const source=fs.readFileSync(path.join(__dirname,'../../baguette-simulator/node/platform-stage.js'),'utf8');
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
-function stage(platform='tvOS',respond=async()=>({ok:true}),withVision=false){
- const events={},windowEvents={},docEvents={},calls=[],status={},timers=new Map();let now=1000,nextTimer=0,stream;
+function stage(platform='tvOS',respond=async()=>({ok:true}),withVision=false,webCodecs=true){
+ const events={},windowEvents={},docEvents={},calls=[],status={},timers=new Map(),sessions=[];let now=1000,nextTimer=0,stream;
  const listen=(target,name,fn)=>(target[name]??=[]).push(fn),fire=(target,name,event)=>{for(const fn of target[name]||[])fn(event);};
  const canvas={width:1920,height:1080,style:{},focus(){},setPointerCapture(){},getBoundingClientRect:()=>({left:0,top:0,width:1920,height:1080}),addEventListener:(name,fn)=>listen(events,name,fn)};
  class Clock extends Date{static now(){return now;}}
@@ -16,12 +16,13 @@ function stage(platform='tvOS',respond=async()=>({ok:true}),withVision=false){
   crypto:require('node:crypto'),setTimeout:(fn,ms)=>{const id=++nextTimer;timers.set(id,{at:now+ms,fn});return id;},clearTimeout:id=>timers.delete(id),
   parent:{document:{getElementById:()=>null},cindySim:{api:async(action,args)=>{calls.push({action,...args});return respond(action,args);}}},
   addEventListener:(name,fn)=>listen(windowEvents,name,fn),
-  StreamSession:class{constructor(options){stream=options;}static buildWSUrl(){return 'ws://127.0.0.1/stream';}start(){}stop(){}},
+  StreamSession:class{constructor(options){stream=options;this.sent=[];sessions.push(this);}static buildWSUrl(udid,format){return 'ws://127.0.0.1/stream?format='+format;}start(){this.send=m=>this.sent.push(m);}stop(){this.stopped=true;}},
+  FrameDecoder:{isHardwareAvailable:()=>webCodecs},
  };
  if(withVision)vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../baguette-simulator/node/vision-stage.js'),'utf8'),context);
  vm.runInNewContext(source,context);
  function emit(name,props={}){const e={button:0,pointerId:1,isPrimary:true,clientX:960,clientY:540,deltaX:0,deltaY:0,deltaMode:0,preventDefault(){this.prevented=true;},...props};fire(events,name,e);return e;}
- return {emit,calls,status,cameraDrag:mode=>context.cindyVision.cameraDrag(mode),choose:value=>context.cindyVision.choose(value),advance:ms=>{now+=ms;},elapse:ms=>{now+=ms;for(const [id,t] of [...timers])if(t.at<=now){timers.delete(id);t.fn();}},windowEvent:name=>fire(windowEvents,name),hide:()=>{context.document.hidden=true;fire(docEvents,'visibilitychange');},show:()=>{context.document.hidden=false;},disconnect:()=>stream.onClose()};
+ return {emit,calls,status,cameraDrag:mode=>context.cindyVision.cameraDrag(mode),choose:value=>context.cindyVision.choose(value),advance:ms=>{now+=ms;},elapse:ms=>{now+=ms;for(const [id,t] of [...timers])if(t.at<=now){timers.delete(id);t.fn();}},windowEvent:name=>fire(windowEvents,name),hide:()=>{context.document.hidden=true;fire(docEvents,'visibilitychange');},show:()=>{context.document.hidden=false;},reveal:()=>{context.document.hidden=false;fire(docEvents,'visibilitychange');},sessions,stream:()=>stream,disconnect:()=>stream.onClose()};
 }
 test('all input kinds share order in discrete/gesture/discrete interleavings without replay or deadlock',async()=>{
  for(const first of ['press','key','paste'])for(const kind of first==='press'?['wheel']:['pointer','wheel','camera'])for(const started of [false,true])for(const outcome of ['success','cancel','failure']){
@@ -208,4 +209,18 @@ test('input failure and queue saturation discard pending operations without repl
   if(mode==='failure')reject(Error('unknown'));else resolve();
   await tick();assert.equal(s.calls.length,1);assert.match(s.status.textContent,/Input not confirmed/);
  }
+});
+test('TV and Vision stream H.264 when WebCodecs exists and fall back to MJPEG after repeated decoder failures',()=>{
+ for(const platform of ['tvOS','visionOS']){
+  const s=stage(platform);assert.equal(s.stream().format,'avcc');assert.match(s.stream().url,/format=avcc/);
+  s.stream().onLog('decode: SOFTWARE fallback',true);s.elapse(300);assert.equal(s.sessions.length,1,'a software decoder warning keeps the stream');
+  s.stream().onLog('decoder: EncodingError',true);s.elapse(300);assert.equal(s.sessions.length,2);assert.equal(s.stream().format,'avcc');assert.ok(s.sessions[0].stopped);
+  s.stream().onLog('decoder: EncodingError',true);s.elapse(300);assert.equal(s.stream().format,'mjpeg');
+  assert.equal(stage(platform,undefined,false,false).stream().format,'mjpeg');
+ }
+});
+test('TV and Vision streams drop to a trickle while hidden and return to 60 fps',()=>{
+ const s=stage('visionOS');s.stream().onOpen();
+ s.hide();s.reveal();
+ assert.equal(JSON.stringify(s.sessions[0].sent),JSON.stringify([{type:'set_fps',fps:60},{type:'set_fps',fps:2},{type:'set_fps',fps:60}]));
 });

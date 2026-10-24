@@ -36,8 +36,8 @@
   },
   {
     "path": "vendor/baguette/Baguette",
-    "bytes": 7989408,
-    "sha256": "91f85d11eae6fcdd08e989efe708f2bf04de31c88d44eccea98cc2875c785384"
+    "bytes": 8005840,
+    "sha256": "09550039ec4e03d300502d705698e0958ed637b605a7423fd8b4f46b8e54ca59"
   },
   {
     "path": "vendor/baguette/Baguette_Baguette.bundle/HingeControl/HingeControl",

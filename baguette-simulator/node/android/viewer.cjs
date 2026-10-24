@@ -41,19 +41,11 @@ function createViewer({devices,agent,root}){
           const udid=u.searchParams.get('udid');if(!opened.has(udid))return reply(404,{error:'Device not opened'});
           await controls.assertEnabled();const d=await devices.target({udid}),cancel=new AbortController();streams.add(cancel);
           res.once('close',()=>{cancel.abort();streams.delete(cancel);});
-          res.writeHead(200,{'Content-Type':'application/octet-stream'});
-          let last=0,processing=null;
-          try{await rpc(d.endpoint,'streamScreenshot',{format:0,width:720,height:1600},{deadline:Date.now()+30000,signal:cancel.signal,onData:image=>{
-            if(processing||Date.now()-last<66||!image.image.length||res.destroyed||res.writableLength>2e6)return;last=Date.now();
-            processing=(async()=>{
-              const rotation=await agent.displayRotation(d,{_deadline:Date.now()+5000});
-              if(cancel.signal.aborted||res.destroyed)return;
-              // Six-byte frame header: PNG length, Android display rotation,
-              // then emulator sensor rotation. The viewer follows the device;
-              // display rotation is retained to reject stale initial touches.
-              const header=Buffer.alloc(6);header.writeUInt32BE(image.image.length);header[4]=rotation;header[5]=image.format.rotation?.rotation||0;res.write(header);res.write(image.image);
-            })().catch(()=>cancel.abort()).finally(()=>{processing=null;});
-          }});}catch{/* The screen reconnects after the bounded stream ends. */}finally{streams.delete(cancel);cancel.abort();await processing;res.end();}return;
+          // Frames carry Android display rotation (to reject stale initial
+          // touches) and emulator device rotation (the viewer follows it).
+          try{await require('./stream.cjs').serve({d,agent,res,signal:cancel.signal,format:u.searchParams.get('format')});}
+          catch{/* The screen reconnects when the stream ends. */}
+          finally{streams.delete(cancel);cancel.abort();if(!res.headersSent)res.writeHead(503);res.end();}return;
         }
         if(req.method!=='POST'||req.headers.origin!==origin||req.headers['x-cindy-clipboard']!==token||!['/control-api','/android-input','/android-file'].includes(u.pathname))return reply(403,{error:'Invalid origin or capability'});
         if(u.pathname==='/android-file'){

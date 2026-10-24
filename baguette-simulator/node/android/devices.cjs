@@ -13,8 +13,29 @@ const MODELS=[
 ];
 function ini(raw){return Object.fromEntries(raw.split(/\r?\n/).map(l=>/^\s*([^#;=]+?)\s*=\s*(.*?)\s*$/.exec(l)).filter(Boolean).map(m=>[m[1],m[2]]));}
 async function freePort(){return new Promise((resolve,reject)=>{const s=net.createServer();s.on('error',reject);s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p));});});}
-function createDevices({root,sdk,run,children}){
-  const avds=path.join(root,'avd'),processes=new Map();
+// adb keeps its signing key in the user's Android directory. The emulator
+// injects the key from ANDROID_EMULATOR_HOME, copying the adb key only when
+// its own copy is missing, so a first boot on a fresh Mac must create the
+// adb key first and later boots must not keep a stale private copy.
+function adbKeyPath(env=process.env){
+  if(env.ANDROID_USER_HOME)return path.join(env.ANDROID_USER_HOME,'adbkey');
+  return path.join(env.ANDROID_SDK_HOME?path.join(env.ANDROID_SDK_HOME,'.android'):path.join(os.homedir(),'.android'),'adbkey');
+}
+function createDevices({root,sdk,run,children,spawn:launchProcess=spawn}){
+  const avds=path.join(root,'avd'),processes=new Map();let hostGpuFailed=false;
+  async function trustAdb(local){
+    try{await run(local.adb,['start-server'],{timeout:15000});}catch{/* The boot loop reports adb failures. */}
+    const user=await fs.readFile(adbKeyPath()).catch(()=>null);if(!user)return;
+    const own=path.join(root,'adbkey');if((await fs.readFile(own).catch(()=>null))?.equals(user))return;
+    const next=own+'.'+randomUUID()+'.tmp';
+    try{await fs.writeFile(next,user,{mode:0o600,flag:'wx'});await fs.rename(next,own);}finally{await fs.rm(next,{force:true});}
+  }
+  // The emulator records the renderer it selected near the start of its log.
+  async function renderer(d){
+    let handle;try{handle=await fs.open(path.join(d.directory,'emulator.log'),'r');const {buffer,bytesRead}=await handle.read(Buffer.alloc(256*1024),0,256*1024,0);
+      const mode=/gles_mode_selected:(\S+)/.exec(buffer.subarray(0,bytesRead).toString('utf8'))?.[1];return mode?(mode==='host'?'gpu':'software'):undefined;
+    }catch{return undefined;}finally{await handle?.close();}
+  }
   const file=id=>{if(!UUID.test(id))throw fail('INVALID_DEVICE','Use an exact device ID returned by this plugin.');return path.join(avds,id.toUpperCase()+'.json');};
   const discovery=[path.join(os.homedir(),'Library/Caches/TemporaryItems/avd/running'),path.join(process.env.XDG_RUNTIME_DIR||path.join(os.homedir(),'.cache'),'avd/running'),path.join(process.env.LOCALAPPDATA||os.tmpdir(),'Temp/avd/running'),path.join(os.tmpdir(),'avd/running')];
   async function metadata(id){try{
@@ -43,7 +64,8 @@ function createDevices({root,sdk,run,children}){
       const d=await metadata(name.slice(0,-5)),ep=await endpoint(d);let state='Shutdown';
       if(ep){try{const {stdout}=await run(local.adb,['-s',ep.serial,'shell','getprop','sys.boot_completed'],{timeout:2000});state=stdout==='1'?'Booted':'Booting';}catch{state='Booting';}}
       else if(processes.get(d.udid)?.exitCode===null)state='Booting';
-      out.push({udid:d.udid,name:d.name,state,platform:'android',runtime:d.runtime,deviceType:d.deviceType,isAvailable:local.images.some(i=>i.identifier===d.runtime)&&!!local.emulator&&!!local.adb});
+      const drawn=state==='Shutdown'?undefined:await renderer(d);
+      out.push({udid:d.udid,name:d.name,state,platform:'android',runtime:d.runtime,deviceType:d.deviceType,isAvailable:local.images.some(i=>i.identifier===d.runtime)&&!!local.emulator&&!!local.adb,...(drawn?{renderer:drawn}:{})});
     }
     return out;
   }
@@ -89,20 +111,32 @@ function createDevices({root,sdk,run,children}){
   async function boot(p){
     const d=await target(p,false),local=await sdk.inspect();let ep=d.endpoint;
     if(!local.ready)throw fail('ANDROID_SETUP_REQUIRED','Open simulator setup to install the Android environment.');
-    let started=false;
-    if(!ep&&!processes.has(d.udid)){
+    let started=false,gpu=null;
+    const launch=async mode=>{
       const port=await freePort(),logs=await fs.open(path.join(d.directory,'emulator.log'),'w',0o600);
       const env={...process.env,ANDROID_AVD_HOME:avds,ANDROID_EMULATOR_HOME:root,ANDROID_HOME:path.dirname(path.dirname(local.emulator)),ANDROID_SDK_ROOT:path.dirname(path.dirname(local.emulator))};
-      const child=spawn(local.emulator,['-avd',d.avdName,'-no-window','-no-boot-anim','-no-snapshot','-no-audio','-grpc',String(port),'-grpc-use-token','-no-metrics','-camera-back','none','-camera-front','none'],{env,stdio:['ignore',logs.fd,logs.fd],windowsHide:true});
-      children.add(child);processes.set(d.udid,child);started=true;
-      child.on('error',()=>{processes.delete(d.udid);children.delete(child);});child.on('exit',()=>{processes.delete(d.udid);children.delete(child);});
+      // Headless `-gpu auto` selects SwiftShader/lavapipe, which renders on
+      // about eleven CPU cores while the screen moves. Host GPU is the
+      // default; `auto` remains the fallback when the host GPU cannot start.
+      const child=launchProcess(local.emulator,['-avd',d.avdName,'-no-window','-gpu',mode,'-no-boot-anim','-no-snapshot','-no-audio','-grpc',String(port),'-grpc-use-token','-no-metrics','-camera-back','none','-camera-front','none'],{env,stdio:['ignore',logs.fd,logs.fd],windowsHide:true});
+      children.add(child);processes.set(d.udid,child);started=true;gpu=mode;
+      child.on('error',()=>{if(processes.get(d.udid)===child)processes.delete(d.udid);children.delete(child);});child.on('exit',()=>{if(processes.get(d.udid)===child)processes.delete(d.udid);children.delete(child);});
       try{await logs.close();}catch(e){e.execution='unknown';throw e;}
+    };
+    if(!ep&&!processes.has(d.udid)){
+      await trustAdb(local);
+      await launch(hostGpuFailed?'auto':'host');
     }
     const deadline=p._deadline??Date.now()+105000;
     while(Date.now()<deadline-1000){
       try{ep=await endpoint(d);}catch(e){if(started)e.execution='unknown';throw e;}
-      if(ep){try{const r=await adb(d,['shell','getprop','sys.boot_completed'],{deadline,timeout:3000});if(r.stdout==='1')return {udid:d.udid,state:'Booted',platform:'android',execution:started?'executed':'not_executed'};}catch{}}
-      if(started&&!processes.has(d.udid))throw fail('ANDROID_BOOT_FAILED','Android Emulator stopped during startup. Check hardware virtualization and the device emulator.log; retry after correcting the environment.','unknown');
+      if(ep){try{const r=await adb(d,['shell','getprop','sys.boot_completed'],{deadline,timeout:3000});if(r.stdout==='1')return {udid:d.udid,state:'Booted',platform:'android',execution:started?'executed':'not_executed',renderer:await renderer(d)};}catch{}}
+      if(started&&!processes.has(d.udid)){
+        // A host without a usable GPU exits during startup. Retry once with
+        // the emulator's own choice and keep that choice for this worker.
+        if(gpu==='host'){hostGpuFailed=true;await launch('auto');continue;}
+        throw fail('ANDROID_BOOT_FAILED','Android Emulator stopped during startup. Check hardware virtualization and the device emulator.log; retry after correcting the environment.','unknown');
+      }
       await sleep(500);
     }
     throw fail('ANDROID_BOOT_TIMEOUT','Android is still starting. Refresh devices before trying to start it again.','unknown');

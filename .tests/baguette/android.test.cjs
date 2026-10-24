@@ -729,3 +729,96 @@ test('successful device removal/erase and App launch still produce confirmed out
     assert.equal(calls.some(args=>args.includes('force-stop')),relaunch);
   }
 });
+test('Android boots on the host GPU, falls back once, and aligns the adb key first',async t=>{
+  const root=await temp(t),runtime='android:android-36:google_apis:arm64-v8a',userHome=path.join(root,'user-android'),previous=process.env.ANDROID_USER_HOME;
+  process.env.ANDROID_USER_HOME=userHome;t.after(()=>{if(previous===undefined)delete process.env.ANDROID_USER_HOME;else process.env.ANDROID_USER_HOME=previous;});
+  const commands=[],launches=[],{EventEmitter}=require('node:events');
+  const sdk={inspect:async()=>({ready:true,emulator:path.join(root,'sdk/emulator/emulator'),adb:path.join(root,'sdk/platform-tools/adb'),images:[{identifier:runtime,directory:path.join(root,'image'),abi:'arm64-v8a',version:'36'}]})};
+  const run=async(file,args)=>{commands.push(args);if(args[0]==='start-server'){await fs.mkdir(userHome,{recursive:true});await fs.writeFile(path.join(userHome,'adbkey'),'adb-private-key');}return {stdout:''};};
+  const spawn=(file,args)=>{const child=new EventEmitter();child.exitCode=null;launches.push(args[args.indexOf('-gpu')+1]);
+    // The host GPU attempt exits during startup; the fallback keeps running.
+    if(launches.length===1)setTimeout(()=>{child.exitCode=1;child.emit('exit',1);},50);
+    t.after(()=>child.emit('exit',0));return child;};
+  const devices=require(path.join(A,'devices.cjs')).createDevices({root,sdk,run,children:new Set(),spawn});
+  const {udid}=await devices.create({name:'GPU fixture',runtime,deviceType:'android:phone'});
+  await fs.writeFile(path.join(root,'adbkey'),'stale-emulator-key');
+  await assert.rejects(devices.boot({udid,_deadline:Date.now()+2500}),e=>e.code==='ANDROID_BOOT_TIMEOUT');
+  assert.deepEqual(launches,['host','auto']);
+  assert.deepEqual(commands[0],['start-server'],'adb creates its key before the emulator copies it');
+  assert.equal(await fs.readFile(path.join(root,'adbkey'),'utf8'),'adb-private-key');
+  const d=await devices.target({udid},false);
+  await fs.writeFile(path.join(d.directory,'emulator.log'),'INFO | emuglConfig_init: vulkan_mode_selected:lavapipe gles_mode_selected:swangle\n');
+  assert.equal((await devices.devices()).find(x=>x.udid===udid).renderer,'software');
+  await fs.writeFile(path.join(d.directory,'emulator.log'),'INFO | emuglConfig_init: vulkan_mode_selected:host gles_mode_selected:host\n');
+  assert.equal((await devices.devices()).find(x=>x.udid===udid).renderer,'gpu');
+});
+function streamFixture(t,{onRequest}={}){
+  const frames=[];let live=null;
+  const ready=emulator(t,(s,h,body)=>{
+    const request=schema.lookupType('ImageFormat').decode(body.subarray(5));onRequest?.(request);
+    s.respond({':status':200,'content-type':'application/grpc'});live=s;
+  });
+  const push=(value)=>{const payload=Buffer.from(schema.lookupType('Image').encode(value).finish()),head=Buffer.alloc(5);head.writeUInt32BE(payload.length,1);live.write(Buffer.concat([head,payload]));};
+  const out=[],res={headers:null,destroyed:false,writableLength:0,writeHead(status,headers){this.status=status;this.headers=headers;},write(b){out.push(Buffer.from(b));return true;},once(){}};
+  const messages=()=>{const all=Buffer.concat(out),list=[];for(let i=0;i+4<=all.length;){const n=all.readUInt32BE(i);list.push(all.subarray(i+4,i+4+n));i+=4+n;}return list;};
+  return {ready,push,res,messages,frames,live:()=>live};
+}
+function fakeEncoder(){
+  const {EventEmitter}=require('node:events'),{PassThrough}=require('node:stream');
+  const child=new EventEmitter(),lines=[];child.stdin=new PassThrough();child.stdout=new PassThrough();
+  let text='';child.stdin.on('data',c=>{text+=c;let i;while((i=text.indexOf('\n'))>=0){lines.push(text.slice(0,i));text=text.slice(i+1);child.emit('line',lines.at(-1));}});
+  child.stdin.on('finish',()=>setImmediate(()=>child.emit('exit',0,null)));
+  const reply=(type,bytes=Buffer.from([0xAA]))=>{const b=Buffer.concat([Buffer.from([type]),bytes]),h=Buffer.alloc(4);h.writeUInt32BE(b.length);child.stdout.write(Buffer.concat([h,b]));};
+  return {child,lines,reply,spawn:()=>child};
+}
+const until=async(check,ms=2000)=>{const end=Date.now()+ms;while(!check()){if(Date.now()>end)throw Error('timed out');await new Promise(r=>setTimeout(r,5));}};
+test('Android H.264 stream keeps one frame in flight, carries rotation and settles on a keyframe',async t=>{
+  const {serve}=require(path.join(A,'stream.cjs'));let request=null;
+  const f=streamFixture(t,{onRequest:r=>{request=r;}}),endpoint=await f.ready,encoder=fakeEncoder(),abort=new AbortController();t.after(()=>abort.abort());
+  const d={udid:id,endpoint,model:{width:1080,height:2400}};
+  const done=serve({d,agent:{displayRotation:async()=>1},res:f.res,signal:abort.signal,format:'avcc',spawnEncoder:encoder.spawn}).catch(e=>e);
+  await until(()=>f.live());
+  assert.equal(request.format,2);assert.equal(request.width,2400);assert.equal(request.height,2400,'an explicit square box: 37.1.11 writes no pixels for 0x0');
+  assert.match(request.transport.handle,/^file:\/\/\//);assert.equal(request.transport.channel,1);
+  assert.match(encoder.lines[0],/^open 23040000 \/.+screen\.raw$/);
+  f.push({format:{width:1080,height:2400,rotation:{rotation:0}}});
+  await until(()=>encoder.lines.length===2);assert.equal(encoder.lines[1],'frame 1080 2400 1');
+  f.push({format:{width:1080,height:2400,rotation:{rotation:0}}});f.push({format:{width:2400,height:1080,rotation:{rotation:1}}});
+  await new Promise(r=>setTimeout(r,30));assert.equal(encoder.lines.length,2,'frames wait while the encoder is busy');
+  encoder.reply(1,Buffer.from([1,0x64,0,0x33]));encoder.reply(2);
+  await until(()=>encoder.lines.length===3);assert.equal(encoder.lines[2],'frame 2400 1080 0','only the newest waiting frame is encoded');
+  encoder.reply(3);
+  await until(()=>encoder.lines.length===4,1000);assert.equal(encoder.lines[3],'frame 2400 1080 1','a quiet screen ends on a keyframe');
+  encoder.reply(2);await new Promise(r=>setTimeout(r,250));assert.equal(encoder.lines.length,4,'then nothing more is encoded');
+  assert.equal(f.res.headers['Content-Type'],'application/x-cindy-android-avcc');
+  const messages=f.messages();
+  assert.deepEqual(messages.map(m=>[m[0],m[1],m[2]]),[[1,0,1],[1,0,2],[1,1,3],[1,1,1],[1,1,2]],'display rotation, device rotation, envelope type; every keyframe carries its description');
+  abort.abort();await done;
+  assert.ok(!require('node:fs').existsSync(path.dirname(encoder.lines[0].split(' ').slice(2).join(' '))),'the shared frame file is removed');
+});
+test('Android PNG stream is unthrottled, unbounded and never runs adb per frame',async t=>{
+  const {serve}=require(path.join(A,'stream.cjs'));
+  const f=streamFixture(t),endpoint=await f.ready,abort=new AbortController();t.after(()=>abort.abort());let polls=0;
+  const done=serve({d:{udid:id,endpoint,model:{width:1080,height:2400}},agent:{displayRotation:async()=>{polls++;return 3;}},res:f.res,signal:abort.signal,format:'png'}).catch(e=>e);
+  await until(()=>f.live());
+  for(let i=0;i<20;i++)f.push({format:{width:108,height:240,rotation:{rotation:2}},image:image()});
+  await until(()=>f.messages().length===20);
+  assert.equal(polls,1,'rotation is polled, not read for each frame');
+  assert.deepEqual([...new Set(f.messages().map(m=>m[0]+','+m[1]))],['3,2']);
+  assert.equal(f.res.headers['Content-Type'],'application/octet-stream');
+  abort.abort();await done;
+});
+test('Android H.264 stream retries one crashed encoder and uses PNG after a second crash',async t=>{
+  const {serve}=require(path.join(A,'stream.cjs'));
+  for(const attempt of [1,2]){
+    const f=streamFixture(t),endpoint=await f.ready,encoder=fakeEncoder(),abort=new AbortController();t.after(()=>abort.abort());
+    const done=serve({d:{udid:id,endpoint,model:{width:1080,height:2400}},agent:{displayRotation:async()=>0},res:f.res,signal:abort.signal,format:'avcc',spawnEncoder:encoder.spawn});
+    await until(()=>f.live());assert.equal(f.res.headers['Content-Type'],'application/x-cindy-android-avcc',`attempt ${attempt} still uses H.264`);
+    encoder.child.emit('exit',null,'SIGSEGV');
+    await assert.rejects(done,/encoder stopped/);
+  }
+  const g=streamFixture(t),second=await g.ready,again=new AbortController();t.after(()=>again.abort());
+  const next=serve({d:{udid:id,endpoint:second,model:{width:1080,height:2400}},agent:{displayRotation:async()=>0},res:g.res,signal:again.signal,format:'avcc',spawnEncoder:()=>{throw Error('must not start');}}).catch(e=>e);
+  await until(()=>g.res.headers);assert.equal(g.res.headers['Content-Type'],'application/octet-stream');
+  again.abort();await next;
+});

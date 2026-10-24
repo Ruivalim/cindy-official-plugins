@@ -52,6 +52,14 @@ iPhone、iPad、Apple TV 和 Vision Pro 共用主屏幕、截图、查看缩放�
 原来的模式。悬停提示说明操作和快捷键，触屏也可打开统一的操作说明，查看当前设备
 支持的输入方式。窄窗口下工具栏换行时，画面会留出对应空间。
 
+## 画面传输
+
+所有设备的实时画面都用 H.264，画面静止时不再发送数据：
+
+- **iPhone、iPad、Apple TV、Vision Pro**：由 Baguette 编码。插件补丁让实际帧率达到请求值（60fps，原先约 45）；画面停止变化后再补发 6 帧、以关键帧收尾，然后停发，画面一变立即恢复。浏览器不支持 WebCodecs 时，Apple TV 与 Vision Pro 改用 MJPEG。页面隐藏时降到 2fps。
+- **安卓**：优先用电脑 GPU 渲染。无窗口模式下 `auto` 会选中 CPU 软件渲染，滑动时占用约 11 个核。GPU 模式启动失败时自动改用软件渲染，`devices` 返回 `renderer: software`，管理页也会标注。Apple Silicon Mac 上，模拟器把原生分辨率像素写入插件私有的共享文件，由 `native/android-encoder` 用 VideoToolbox 编成 H.264，像素不经 gRPC 传输，也不再每帧调用 adb。编码助手异常时自动重连，一分钟内连续两次异常则暂时改用 PNG。Intel Mac、Windows、Linux 以及不支持 WebCodecs 的页面使用不限速 PNG。
+- Agent 的截图、录帧和 OCR 不受影响，仍然读取完整的单帧。
+
 ## Apple TV 与 Vision Pro
 
 可在管理页或任务页新建设备，选择已安装的 tvOS 或 visionOS 运行时（后者标识为
@@ -158,7 +166,7 @@ Node Worker 有当前用户级本机权限。只调用固定可执行文件和�
 
 原生 release 构建使用全程序 LTO 和 Swift -Osize、移除符号并临时签名，确保 Git 中二进制总量符合仓库限制。
 
-在装有 Xcode 的 Apple Silicon Mac 上运行 sh native/build.sh，编译随包 Objective-C 源码并临时签名，不下载依赖；Baguette 和 HingeControl 基于 v0.2.10 重新编译，vendor-native.patch 只改版本号；运行 sh native/build-baguette.sh <已验证的源码压缩包> 可重建，之后运行 node native/inventory.mjs --write。本插件需要的独立设备目录与 3D 内存两处修复已合入上游（tddworks/baguette#122、#123）。运行 node .tests/baguette/real-simulator-smoke.mjs --foldable 可在临时设备目录中用真模拟器检查一次构建。
+在装有 Xcode 的 Apple Silicon Mac 上运行 sh native/build.sh，编译随包 Objective-C 源码并临时签名，不下载依赖；Baguette 和 HingeControl 基于 v0.2.10 重新编译，vendor-native.patch 含版本号、3D 场景释放修复，以及 H.264 帧调度与静止停发（见 VENDOR-REVIEW.md）；native/build.sh 同时编译安卓 H.264 编码助手；运行 sh native/build-baguette.sh <已验证的源码压缩包> 可重建，之后运行 node native/inventory.mjs --write。本插件需要的独立设备目录与 3D 内存两处修复已合入上游（tddworks/baguette#122、#123）。运行 node .tests/baguette/real-simulator-smoke.mjs --foldable 可在临时设备目录中用真模拟器检查一次构建。
 
 运行仓库契约和 .tests/baguette-simulator.test.mjs。审核 VENDOR-REVIEW.md、THIRD-PARTY-LICENSES.txt 和提案 #119：https://github.com/makecindy/cindy-official-plugins/issues/119。首发为空定向受众，不推送全体用户。最终包在合格 Cindy 客户端内的安装验证，必须与直接 Node/原生测试分开记录。
 

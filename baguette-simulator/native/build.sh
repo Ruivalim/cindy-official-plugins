@@ -14,3 +14,7 @@ mv spatial.new spatial
 xcrun clang -fobjc-arc -fblocks -O2 -arch arm64 -mmacosx-version-min=15.0 -framework Foundation trackpad.m -o trackpad
 codesign --force --sign - trackpad
 codesign --verify --strict trackpad
+xcrun clang -fobjc-arc -fblocks -O2 -arch arm64 -mmacosx-version-min=15.0 -framework Foundation -framework VideoToolbox -framework CoreMedia -framework CoreVideo -framework Accelerate android-encoder.m -o android-encoder.new
+codesign --force --sign - android-encoder.new
+codesign --verify --strict android-encoder.new
+mv android-encoder.new android-encoder

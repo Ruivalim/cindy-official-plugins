@@ -21,7 +21,7 @@ const TEXT = {
     opened: 'Opened in the current task.', created: (n) => `Created ${n}.`, erased: 'Erased.', deleted: 'Deleted.', save: 'Save',
     failed: 'Not completed. Refresh to see the actual state.', busy: 'Another simulator operation is running. Try again in a moment.', timeout: 'No response from the simulator service. Reopen this page.', pluginOff: 'The Device Simulator plugin is turned off.',
     readFailed: 'Could not read the devices.', stateFailed: 'Task binding was saved, but its status or screen could not be read. Refresh the task; do not repeat the binding.', recordFailed: 'Device operation completed, but its task or App record was not saved. Check storage before assigning or switching devices; do not repeat the operation.',
-    goToTask: 'Open Simulator Sidebar', latestTask: 'Open the simulator sidebar in the most recently assigned task', noTask: 'No task uses this device. Refresh the device list.', hostUpdate: 'Update Cindy to jump to a task and open its simulator sidebar.',
+    software: 'Software rendering', goToTask: 'Open Simulator Sidebar', latestTask: 'Open the simulator sidebar in the most recently assigned task', noTask: 'No task uses this device. Refresh the device list.', hostUpdate: 'Update Cindy to jump to a task and open its simulator sidebar.',
   },
   'zh-CN': {
     title: '模拟器', search: '搜索', add: '新建设备', newIphone: 'iPhone…', newIpad: 'iPad…', newAndroid: '安卓…', newTv: 'Apple TV…', newVision: 'Vision Pro…',
@@ -40,7 +40,7 @@ const TEXT = {
     opened: '已在当前任务中打开。', created: (n) => `已创建「${n}」。`, erased: '已抹掉。', deleted: '已删除。', save: '保存',
     failed: '操作没有完成，请刷新查看实际状态。', busy: '有其他模拟器操作正在进行，稍后再试。', timeout: '模拟器服务没有响应，请重新打开本页。', pluginOff: '「设备模拟器」插件已停用。',
     readFailed: '没能读取设备。', stateFailed: '任务绑定已保存，但状态或画面未能读取。请刷新任务，不要重复绑定。', recordFailed: '设备操作已完成，但任务绑定或 App 记录未保存。请先检查存储，再分配或切换设备；不要重复设备操作。',
-    goToTask: '打开模拟器侧栏', latestTask: '跳到最近关联的任务并打开模拟器侧栏', noTask: '已没有任务使用这台设备，请刷新设备列表。', hostUpdate: '请更新 Cindy，以支持跳到对应任务并打开模拟器侧栏。',
+    software: '软件渲染', goToTask: '打开模拟器侧栏', latestTask: '跳到最近关联的任务并打开模拟器侧栏', noTask: '已没有任务使用这台设备，请刷新设备列表。', hostUpdate: '请更新 Cindy，以支持跳到对应任务并打开模拟器侧栏。',
   },
 };
 const { rpc, h, locale, GLYPH, createDevice, catalog } = globalThis.CindySimPages;
@@ -125,7 +125,7 @@ function row(d) {
     onkeydown: (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === node) { e.preventDefault(); select(d.udid); } },
     oncontextmenu: (e) => { e.preventDefault(); select(d.udid); deviceMenu(d, null, { x: e.clientX, y: e.clientY }); } }, [
     h('span', { class: 'tile', 'data-on': String(d.state === 'Booted'), html: glyphFor(d) }),
-    h('span', { class: 'row-text' }, [name, h('span', { class: 'row-sub', text: working ? working : `${modelName(d)} · ${usage(d)}` }),
+    h('span', { class: 'row-text' }, [name, h('span', { class: 'row-sub', text: working ? working : `${modelName(d)} · ${usage(d)}${d.renderer === 'software' ? ' · ' + T.software : ''}` }),
       d.tasks ? h('button', { class:'link row-task', type:'button', text:T.goToTask, title:d.tasks > 1 ? T.latestTask : T.goToTask,
         onclick:(e)=>{ e.stopPropagation(); goToTask(d, e.currentTarget); } }) : null]),
     h('span', { class: 'row-os', text: osVersion(d) }),

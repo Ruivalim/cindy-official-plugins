@@ -54,6 +54,14 @@ selected mode. Hover tips explain operations and shortcuts; the shared help
 dialog is also available on touch screens and describes the current device's
 input. Toolbar wrapping reserves space beneath the view on narrow screens.
 
+## Screen streaming
+
+Every device streams H.264 and sends nothing while the screen is still:
+
+- **iPhone, iPad, Apple TV, Vision Pro**: Baguette encodes. The plugin's patch delivers the requested rate (60 fps; previously about 45). Once the screen stops changing it sends six more frames ending on a keyframe, then stops until the pixels change. Apple TV and Vision Pro fall back to MJPEG when the browser lacks WebCodecs. A hidden page drops to 2 fps.
+- **Android**: renders on the Mac's GPU. Headless `auto` selects CPU software rendering, which used about eleven cores while scrolling. If the GPU mode fails to start, the emulator restarts with software rendering, `devices` reports `renderer: software` and the device list shows it. On Apple Silicon the emulator writes native-resolution pixels to a private shared file and `native/android-encoder` encodes them with VideoToolbox; gRPC carries no pixels and no adb command runs per frame. A failed encoder reconnects; two failures within a minute switch new streams to PNG for a while. Intel Macs, Windows, Linux and pages without WebCodecs use unthrottled PNG.
+- Agent screenshots, captures and OCR are unchanged and still read complete single frames.
+
 ## Apple TV and Vision Pro
 
 Create either device in the management view or task tab using an installed tvOS
@@ -172,7 +180,7 @@ Known upstream limitation: stream disconnects can SIGABRT on iOS 27. The supervi
 
 ## Build and verification
 
-Run `sh native/build.sh` on an Apple Silicon Mac with Xcode. This compiles the included Objective-C source and ad-hoc signs the helper. No dependency download. Baguette and HingeControl are rebuilt from v0.2.10 with `vendor-native.patch` (only the version constant); use `sh native/build-baguette.sh <verified-source-archive>` to reproduce the build, then `node native/inventory.mjs --write`. The release build uses whole-program LTO and Swift `-Osize`, strips symbols and ad-hoc signs the host executable to keep tracked binary content below the repository limit. The private device-set and 3D memory fixes this plugin needed were merged upstream (tddworks/baguette#122, #123). `node .tests/baguette/real-simulator-smoke.mjs --foldable` checks a build against real simulators in a throwaway device set.
+Run `sh native/build.sh` on an Apple Silicon Mac with Xcode. This compiles the included Objective-C source and ad-hoc signs the helper. No dependency download. Baguette and HingeControl are rebuilt from v0.2.10 with `vendor-native.patch` (version constant, 3D scene release, and H.264 frame pacing with idle stop; see VENDOR-REVIEW.md); `native/build.sh` also builds the Android H.264 encoder helper; use `sh native/build-baguette.sh <verified-source-archive>` to reproduce the build, then `node native/inventory.mjs --write`. The release build uses whole-program LTO and Swift `-Osize`, strips symbols and ad-hoc signs the host executable to keep tracked binary content below the repository limit. The private device-set and 3D memory fixes this plugin needed were merged upstream (tddworks/baguette#122, #123). `node .tests/baguette/real-simulator-smoke.mjs --foldable` checks a build against real simulators in a throwaway device set.
 
 Run the repository contracts and `.tests/baguette-simulator.test.mjs`. Review VENDOR-REVIEW.md, THIRD-PARTY-LICENSES.txt and the proposal [#119](https://github.com/makecindy/cindy-official-plugins/issues/119). Initial provisioning is an empty targeted audience, not all users. Final package installation in eligible Cindy must be recorded separately from direct Node/native tests.
 

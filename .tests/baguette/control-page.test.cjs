@@ -61,6 +61,7 @@ function attachPlatform(f,platform){
  const child={document:doc,parent:f.context,crypto:require('node:crypto'),Date,Math,Promise,URL,URLSearchParams,location:{search:`?platform=${platform}&udid=${udid}&cindyViewer=token`},fetch:f.context.fetch,
   addEventListener:(name,fn)=>listen(windows,name,fn),setTimeout:(fn,ms)=>{timers.set(++timer,{fn,ms});return timer;},clearTimeout:id=>timers.delete(id),
   StreamSession:class{static buildWSUrl(){return 'ws://127.0.0.1/stream';}start(){}stop(){}},
+  FrameDecoder:{isHardwareAvailable:()=>true},
  };
  child.globalThis=child;doc.defaultView=child;f.dom.byId.screen.contentWindow=child;f.dom.byId.screen.contentDocument=doc;
  if(platform==='visionOS')vm.runInNewContext(fs.readFileSync(path.join(node,'vision-stage.js'),'utf8'),child);
