@@ -52,14 +52,15 @@
   let decoderFailures=0;
   async function stream(){
     while(!closed){
-      let decoder=null;
+      let decoder=null,controller=null;
       try{
         const wanted=typeof VideoDecoder==='function'&&decoderFailures<2?'avcc':'png';
-        const r=await fetch(`/android-stream?udid=${encodeURIComponent(udid)}&format=${wanted}`,{headers:{'X-Cindy-Clipboard':token}});if(!r.ok)throw Error('Disconnected');
+        controller=new AbortController();
+        const r=await fetch(`/android-stream?udid=${encodeURIComponent(udid)}&format=${wanted}`,{headers:{'X-Cindy-Clipboard':token},signal:controller.signal});if(!r.ok)throw Error('Disconnected');
         const poses=new Map();let sequence=0,failure=null;
         if(/avcc/.test(r.headers.get('content-type')||''))decoder=new VideoDecoder({
           output:image=>{const pose=poses.get(image.timestamp);poses.delete(image.timestamp);if(pose&&!closed)paint(image,image.displayWidth,image.displayHeight,pose[0],pose[1]);image.close();},
-          error:e=>{failure=e;}});
+          error:e=>{failure=e;controller.abort();}});
         const reader=r.body.getReader();let buffer=new Uint8Array();
         for(;;){const {done,value}=await reader.read();if(done)break;if(failure)throw failure;const next=new Uint8Array(buffer.length+value.length);next.set(buffer);next.set(value,buffer.length);buffer=next;
           while(buffer.length>=6){const length=new DataView(buffer.buffer,buffer.byteOffset,4).getUint32(0);if(length<2||length>32e6)throw Error('Invalid frame');if(buffer.length<length+4)break;
@@ -73,7 +74,7 @@
         // A failed decoder cannot resume mid-stream; reconnect for a keyframe.
         if(decoder&&e?.name!=='TypeError')decoderFailures++;
         message.hidden=false;message.textContent=zh?'正在连接设备画面…':'Connecting to device…';
-      }finally{try{decoder?.close();}catch{}}
+      }finally{controller?.abort();try{decoder?.close();}catch{}}
       if(!closed)await new Promise(r=>setTimeout(r,500));
     }
   }

@@ -29,12 +29,19 @@ const encoderAvailable=()=>healthy()&&process.platform==='darwin'&&process.arch=
 // Keep display rotation current without blocking frames on adb.
 function rotations({d,agent,signal}){
   let display=null,timer=null;
+  const state={onChange:null,get display(){return display;}};
   const poll=async()=>{
-    try{display=await agent.displayRotation(d,{_deadline:Date.now()+5000});}catch{/* Keep the last known value. */}
+    try{
+      const next=await agent.displayRotation(d,{_deadline:Date.now()+5000});
+      const changed=display!==null&&next!==display;display=next;
+      // A still screen sends no frames, so a turn must be pushed to the page.
+      if(changed)state.onChange?.();
+    }catch{/* Keep the last known value. */}
     if(!signal.aborted)timer=setTimeout(poll,ROTATION_MS);
   };
   signal.addEventListener('abort',()=>clearTimeout(timer),{once:true});
-  return {ready:poll(),get display(){return display;}};
+  state.ready=poll();
+  return state;
 }
 
 async function streamPng({d,res,signal,rotation}){
@@ -56,9 +63,13 @@ async function streamAvcc({d,res,signal,rotation,spawnEncoder=spawn}){
   let latest=null,inflight=null,waiting=false,forceKey=true,lastKey=false,settle=null,output=Buffer.alloc(0),description=null,failed=null;
   const stop=()=>{clearTimeout(settle);encoder.stdin.end();};
   signal.addEventListener('abort',stop,{once:true});
+  // A helper that keeps running but cannot encode (for example no hardware
+  // session) counts as a failure, like one that exits.
+  let skips=0,breakOut;const broken=new Promise((_,reject)=>{breakOut=reject;});broken.catch(()=>{});
+  const fail=error=>{if(failed||signal.aborted)return;encoderFailed();failed=error;stop();breakOut(error);};
   try{
     const handle=await fsp.open(file,'wx',0o600);try{await handle.truncate(bytes);}finally{await handle.close();}
-    const exited=new Promise(resolve=>{encoder.once('exit',(code,sig)=>{if(!signal.aborted){encoderFailed();failed=Error(`Android encoder stopped (${code??sig})`);}resolve();});encoder.once('error',error=>{encoderFailed();failed=error;resolve();});});
+    encoder.once('exit',(code,sig)=>fail(Error(`Android encoder stopped (${code??sig})`)));encoder.once('error',fail);
     encoder.stdin.on('error',()=>{});
     const command=line=>{if(!encoder.stdin.destroyed)encoder.stdin.write(line+'\n');};
     const send=()=>{
@@ -73,6 +84,8 @@ async function streamAvcc({d,res,signal,rotation,spawnEncoder=spawn}){
     };
     const result=(type,payload)=>{
       const frame=inflight;inflight=null;if(!frame)return;
+      skips=type===2||type===3?0:skips+1;
+      if(skips>=10)return fail(Error('Android encoder cannot encode frames'));
       if(type===2||type===3){
         lastKey=type===2;
         const parts=type===2&&description?[description,payload]:[payload];
@@ -91,6 +104,7 @@ async function streamAvcc({d,res,signal,rotation,spawnEncoder=spawn}){
         if(message[0]===1)description=Buffer.from(message);else result(message[0],Buffer.from(message));
       }
     });
+    rotation.onChange=()=>{if(!latest)return;latest.display=rotation.display;latest.fresh=true;forceKey=true;send();};
     command(`open ${bytes} ${file}`);
     await rotation.ready;
     res.writeHead(200,{'Content-Type':'application/x-cindy-android-avcc'});
@@ -99,7 +113,7 @@ async function streamAvcc({d,res,signal,rotation,spawnEncoder=spawn}){
       if(!width||!height||width*height*3>bytes||res.destroyed)return;
       latest={width,height,display:rotation.display??0,device:image.format.rotation?.rotation||0,fresh:true};send();
     }});
-    await Promise.race([frames,exited.then(()=>{if(failed)throw failed;})]);
+    await Promise.race([frames,broken]);
   }finally{
     stop();
     await fsp.rm(dir,{recursive:true,force:true});
@@ -113,4 +127,6 @@ async function serve({d,agent,res,signal,format,spawnEncoder}){
   if(format==='avcc'&&(spawnEncoder?healthy():encoderAvailable()))return streamAvcc({d,res,signal,rotation,spawnEncoder});
   await rotation.ready;return streamPng({d,res,signal,rotation});
 }
-module.exports={serve,encoderAvailable,ENCODER};
+// Tests start each case with a clean failure history.
+const resetFailures=()=>{failures=[];};
+module.exports={serve,encoderAvailable,resetFailures,ENCODER};

@@ -227,7 +227,7 @@ test('capture retains a completed action when the final observation fails',async
 });
 test('Android viewer rotation keeps the portrait body size and caps only a narrow-window overflow',async()=>{
   const listeners={},frame={style:{}},canvas={width:720,height:1600,getContext:()=>({}),addEventListener:()=>{}};
-  const context={URLSearchParams,location:{pathname:'/simulators/'+id,search:''},window:{},
+  const context={URLSearchParams,AbortController,location:{pathname:'/simulators/'+id,search:''},window:{},
     parent:{document:{documentElement:{lang:'en'}}},innerWidth:900,innerHeight:800,
     document:{getElementById:name=>name==='display'?canvas:name==='nativeDeviceFrame'?frame:{}},
     matchMedia:()=>({matches:false}),addEventListener:(name,fn)=>{listeners[name]=fn;},fetch:()=>new Promise(()=>{})};
@@ -773,7 +773,7 @@ function fakeEncoder(){
 }
 const until=async(check,ms=2000)=>{const end=Date.now()+ms;while(!check()){if(Date.now()>end)throw Error('timed out');await new Promise(r=>setTimeout(r,5));}};
 test('Android H.264 stream keeps one frame in flight, carries rotation and settles on a keyframe',async t=>{
-  const {serve}=require(path.join(A,'stream.cjs'));let request=null;
+  const {serve,resetFailures}=require(path.join(A,'stream.cjs'));resetFailures();t.after(resetFailures);let request=null;
   const f=streamFixture(t,{onRequest:r=>{request=r;}}),endpoint=await f.ready,encoder=fakeEncoder(),abort=new AbortController();t.after(()=>abort.abort());
   const d={udid:id,endpoint,model:{width:1080,height:2400}};
   const done=serve({d,agent:{displayRotation:async()=>1},res:f.res,signal:abort.signal,format:'avcc',spawnEncoder:encoder.spawn}).catch(e=>e);
@@ -797,7 +797,7 @@ test('Android H.264 stream keeps one frame in flight, carries rotation and settl
   assert.ok(!require('node:fs').existsSync(path.dirname(encoder.lines[0].split(' ').slice(2).join(' '))),'the shared frame file is removed');
 });
 test('Android PNG stream is unthrottled, unbounded and never runs adb per frame',async t=>{
-  const {serve}=require(path.join(A,'stream.cjs'));
+  const {serve,resetFailures}=require(path.join(A,'stream.cjs'));resetFailures();t.after(resetFailures);
   const f=streamFixture(t),endpoint=await f.ready,abort=new AbortController();t.after(()=>abort.abort());let polls=0;
   const done=serve({d:{udid:id,endpoint,model:{width:1080,height:2400}},agent:{displayRotation:async()=>{polls++;return 3;}},res:f.res,signal:abort.signal,format:'png'}).catch(e=>e);
   await until(()=>f.live());
@@ -809,7 +809,7 @@ test('Android PNG stream is unthrottled, unbounded and never runs adb per frame'
   abort.abort();await done;
 });
 test('Android H.264 stream retries one crashed encoder and uses PNG after a second crash',async t=>{
-  const {serve}=require(path.join(A,'stream.cjs'));
+  const {serve,resetFailures}=require(path.join(A,'stream.cjs'));resetFailures();t.after(resetFailures);
   for(const attempt of [1,2]){
     const f=streamFixture(t),endpoint=await f.ready,encoder=fakeEncoder(),abort=new AbortController();t.after(()=>abort.abort());
     const done=serve({d:{udid:id,endpoint,model:{width:1080,height:2400}},agent:{displayRotation:async()=>0},res:f.res,signal:abort.signal,format:'avcc',spawnEncoder:encoder.spawn});
@@ -821,4 +821,33 @@ test('Android H.264 stream retries one crashed encoder and uses PNG after a seco
   const next=serve({d:{udid:id,endpoint:second,model:{width:1080,height:2400}},agent:{displayRotation:async()=>0},res:g.res,signal:again.signal,format:'avcc',spawnEncoder:()=>{throw Error('must not start');}}).catch(e=>e);
   await until(()=>g.res.headers);assert.equal(g.res.headers['Content-Type'],'application/octet-stream');
   again.abort();await next;
+});
+test('Android H.264 stream treats a helper that only skips frames as failed',async t=>{
+  const {serve,resetFailures}=require(path.join(A,'stream.cjs'));resetFailures();t.after(resetFailures);
+  for(const attempt of [1,2]){
+    const f=streamFixture(t),endpoint=await f.ready,encoder=fakeEncoder(),abort=new AbortController();t.after(()=>abort.abort());
+    const done=serve({d:{udid:id,endpoint,model:{width:1080,height:2400}},agent:{displayRotation:async()=>0},res:f.res,signal:abort.signal,format:'avcc',spawnEncoder:encoder.spawn}).catch(e=>e);
+    await until(()=>f.live());f.push({format:{width:1080,height:2400,rotation:{rotation:0}}});
+    // The helper stays alive but cannot create an encoder session.
+    for(let n=0;n<10;n++){await until(()=>encoder.lines.filter(l=>l.startsWith('frame')).length>n);f.push({format:{width:1080,height:2400,rotation:{rotation:0}}});encoder.reply(0,Buffer.alloc(0));}
+    const error=await done;assert.match(String(error),/cannot encode/,`attempt ${attempt}`);
+  }
+  const g=streamFixture(t),second=await g.ready,again=new AbortController();t.after(()=>again.abort());
+  const next=serve({d:{udid:id,endpoint:second,model:{width:1080,height:2400}},agent:{displayRotation:async()=>0},res:g.res,signal:again.signal,format:'avcc',spawnEncoder:()=>{throw Error('must not start');}}).catch(e=>e);
+  await until(()=>g.res.headers);assert.equal(g.res.headers['Content-Type'],'application/octet-stream');
+  again.abort();await next;
+});
+test('Android H.264 stream re-sends a still frame as a keyframe when display rotation turns',async t=>{
+  const {serve,resetFailures}=require(path.join(A,'stream.cjs'));resetFailures();t.after(resetFailures);
+  const f=streamFixture(t),endpoint=await f.ready,encoder=fakeEncoder(),abort=new AbortController();t.after(()=>abort.abort());
+  let rotation=0;
+  const done=serve({d:{udid:id,endpoint,model:{width:1080,height:2400}},agent:{displayRotation:async()=>rotation},res:f.res,signal:abort.signal,format:'avcc',spawnEncoder:encoder.spawn}).catch(e=>e);
+  await until(()=>f.live());f.push({format:{width:1080,height:2400,rotation:{rotation:0}}});
+  await until(()=>encoder.lines.length===2);encoder.reply(1,Buffer.from([1,0x64,0,0x33]));encoder.reply(2);
+  await new Promise(r=>setTimeout(r,300));
+  rotation=1;// Android locked the activity; the emulator sends no new frame.
+  await until(()=>encoder.lines.length===3,3000);assert.equal(encoder.lines[2],'frame 1080 2400 1');
+  encoder.reply(2);await until(()=>f.messages().length>=4);
+  assert.deepEqual(f.messages().slice(-2).map(m=>[m[0],m[1],m[2]]),[[1,0,1],[1,0,2]],'display rotation 1 (was 0), device rotation 0, description then keyframe');
+  abort.abort();await done;
 });
