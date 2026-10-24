@@ -43,13 +43,26 @@
   function turn(step) {
     const rotate = window.__nativeRotateBy;
     if (typeof rotate !== 'function') return false;
-    settle();
+    // A turn still under way keeps its frame and carries on from the angle it
+    // shows: a new snapshot could still be the old picture, turning too little.
+    const carry = turning && !turning.fading ? turning : null;
+    if (!carry) settle();
     const panel = live(), canvas = panel && panel.canvas;
     const box = canvas && canvas.isConnected ? canvas.getBoundingClientRect() : null;
     const still = !box || !box.width || !box.height || !canvas.width ||
       (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
     const before = panel ? roll(panel) : 0;
     let ghost = null;
+    if (carry) {
+      rotate(step);
+      const more = panel ? ((roll(panel) - before) % 360 + 540) % 360 - 180 : 0;
+      if (!more) return true;
+      carry.total += more;
+      carry.ghost.style.transform = `rotate(${carry.total}deg)`;
+      clearTimeout(carry.timer);
+      carry.timer = setTimeout(carry.land, TURN_MS - FADE_MS / 2);
+      return true;
+    }
     if (!still) {
       ghost = document.createElement('canvas');
       ghost.width = canvas.width; ghost.height = canvas.height;
@@ -68,15 +81,17 @@
     canvas.style.opacity = '0';
     void ghost.offsetWidth;
     ghost.style.transform = `rotate(${delta}deg)`;
-    turning = { ghost, canvas, timer: 0 };
+    turning = { ghost, canvas, timer: 0, total: delta, fading: false, land: null };
     const current = turning;
-    turning.timer = setTimeout(() => {
+    current.land = () => {
       if (turning !== current) return;
+      current.fading = true;
       canvas.style.transition = `opacity ${FADE_MS}ms ease`;
       canvas.style.opacity = '1';
       ghost.style.opacity = '0';
       current.timer = setTimeout(() => { if (turning === current) settle(); }, FADE_MS);
-    }, TURN_MS - FADE_MS / 2);
+    };
+    current.timer = setTimeout(current.land, TURN_MS - FADE_MS / 2);
     return true;
   }
   function background() {

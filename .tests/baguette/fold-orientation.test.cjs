@@ -112,9 +112,21 @@ test('the foldable turns with an animation and reports how its book is rolled',(
  assert.equal(f.canvas.style.opacity,'0','the rolled live stream waits under the turning frame');
  f.timers.splice(0).forEach(fn=>fn());f.timers.splice(0).forEach(fn=>fn());
  assert.equal(f.appended[0].removed,true);assert.equal(f.canvas.style.opacity,undefined,'the live stream is shown once the turn lands');
- f.pose.turn(-1);f.pose.turn(-1);assert.equal(f.pose.roll(),270);
+ f.pose.turn(-1);f.timers.splice(0).forEach(fn=>fn());f.timers.splice(0).forEach(fn=>fn());
+ f.pose.turn(-1);assert.equal(f.pose.roll(),270);
  assert.equal(f.appended.at(-1).style.transform,'rotate(-90deg)','each step takes the short way round');
- assert.equal(f.appended.at(-2).removed,true,'a new turn settles the previous one first');
+ assert.equal(f.appended.at(-2).removed,true,'a landed turn is gone before the next starts');
+ // A second turn before the first lands carries on from the frame already turning,
+ // instead of snapshotting a picture the stream has not repainted yet (it would
+ // turn too little and then jump).
+ f.timers.splice(0).forEach(fn=>fn());f.timers.splice(0).forEach(fn=>fn());
+ const count=f.appended.length,first=f.pose.roll();
+ f.pose.turn(1);f.pose.turn(1);
+ assert.equal(f.appended.length,count+1,'one turning frame serves consecutive turns');
+ assert.equal(f.appended.at(-1).style.transform,'rotate(180deg)');assert.equal(f.appended.at(-1).removed,undefined);
+ assert.equal((first+180)%360,f.pose.roll());
+ f.timers.splice(0).forEach(fn=>fn());f.timers.splice(0).forEach(fn=>fn());
+ assert.equal(f.appended.at(-1).removed,true);assert.equal(f.canvas.style.opacity,undefined);
  // The unfolded panel stands in landscape-left; switching panels is not a turn.
  f.panel.litPanel='secondary';f.panel.interfaceOrientation='landscape-left';assert.equal(f.pose.roll(),0);
  f.panel.interfaceOrientation='portrait';assert.equal(f.pose.roll(),270);
