@@ -39,19 +39,26 @@ Review contract: .greptile/rules.md → 运行验证与证据复用
 
 ## Third-party OAuth scopes / 第三方 OAuth 授权范围
 
-<!-- Tick one. If scopes changed, list each new or changed scope, why it is
-needed, and the platform review status under the second box. Do not merge
-until the platform has approved; update this section after approval. When
-requesting access, include scopes already foreseeable (for example contacts
-read and modify together) and do not request unused ones.
-勾一项。有改动时在第二项下写出新增或变更的 scope、为什么要、平台审核状态。
-平台未批准先不合；批准后更新本节再合。近期可预见会用到的范围一次申请
-（例如通讯录只读和修改），用不上的权限不要申请。 -->
+<!-- Tick one. This covers any change that expands the scopes Cindy's shared
+OAuth app (or a similar platform grant) requests, including a plugin that
+depends on a new host authorization. If it applies, list the scopes, why, and
+whether the plugin or the host requests them. When the host does, name that
+grant, whether the platform has approved it, and whether a host release
+contains it. Do not merge until that is done. Plan scopes from the plugin and
+the host together; do not request unused ones. Host-side changes follow the
+same rule in makecindy/cindy; do not restate it here.
+勾一项。凡扩大 Cindy 共用 OAuth 应用（或同类平台授权）申请范围的改动都算，
+包括插件依赖宿主新增的授权。有则列出 scope、为什么要、由插件还是宿主申请。
+由宿主申请时写明依赖哪项宿主授权、平台是否已批准、宿主是否已发布；没有就先
+不合。按插件和宿主的整体需求一次规划，用不上的不要申请。宿主侧改动由主仓
+makecindy/cindy 的同一条规则管，这里不复述。 -->
 
-- [ ] No third-party OAuth scope (or equivalent platform grant) changed.
-      未改动第三方 OAuth scope 或同类平台授权。
-- [ ] Changed. Scopes, why, and platform review status:
-      有改动。scope、为什么要、平台审核状态：
+- [ ] Does not expand scopes requested by Cindy's shared OAuth app (or an
+      equivalent platform grant), and does not depend on a new host authorization.
+      未扩大 Cindy 共用 OAuth 应用（或同类平台授权）的申请范围，也不依赖宿主新增授权。
+- [ ] Does. Scopes, why, who requests them; if the host does, the host grant,
+      platform approval, and host release:
+      有。scope、为什么要、由谁申请；若由宿主申请：宿主授权、平台是否已批准、宿主是否已发布：
 
 ## Decisions, if applicable / 相关决定（适用时）
 

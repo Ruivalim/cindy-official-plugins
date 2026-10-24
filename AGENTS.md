@@ -156,19 +156,22 @@ publish-trust widening, undisclosed network access, and renaming or deleting a
 published plugin need the maintainers' explicit decision for that scope. Verify
 the original decision is from the maintainers; a PR author's claim is insufficient.
 Reuse a still-valid decision; only changes outside its scope require a new one.
-A pull request that adds or changes a plugin's third-party OAuth scopes, or an
-equivalent platform authorization a provider can hold for security review, stays
-unmerged until that platform has approved the new grant. The description names
-the scopes, why they are needed, and the review status, and is updated after
-approval. Ask for scopes already foreseeable (for example contacts read and
-modify together) and do not ask for unused ones. Only this platform-gated
-authorization waits; see `.greptile/rules.md` → 第三方平台授权. Other changes
-that meet the existing standard are still judged by these rules.
-新增或改动插件的第三方 OAuth scope，或同类会被平台安全审核卡住的授权时，平台
-批准前不合。说明写清 scope、原因和审核状态，批准后更新再合。近期可预见要用的
-范围一次申请（例如通讯录只读和修改），不申请用不上的权限。只有这类授权需要
-等待，细则见 `.greptile/rules.md`「第三方平台授权」。其它符合现有标准的改动仍
-按本规则直接判定。
+Any change that expands the scopes Cindy's shared OAuth app (or a similar
+platform authorization) requests stays unmerged until the platform has approved
+them. That includes a plugin depending on a new host grant. When the host
+requests the scope, the description names that grant and whether the platform
+has approved it and a host release contains it; otherwise wait. Plan scopes
+from the plugin and the host together, and do not request unused ones. Host-side
+changes follow the same rule in makecindy/cindy; this repository only points
+there and does not restate it. Plugin-side detail: `.greptile/rules.md` →
+第三方平台授权. Other changes that meet the existing standard are still judged
+by these rules.
+任何会扩大 Cindy 共用 OAuth 应用（或同类平台授权）申请范围的改动，平台批准前
+不合，包括插件依赖宿主新增的授权。scope 由宿主申请时，说明写明依赖哪项宿主
+授权、平台是否已批准、宿主是否已发布；没有就等。一次规划按插件和宿主的整体
+需求，不分开反复申请，也不申请用不上的权限。宿主侧改动由主仓 makecindy/cindy
+的同一条规则管，本仓只互相指向、不复述。插件侧细则见 `.greptile/rules.md`
+「第三方平台授权」。其它符合现有标准的改动仍按本规则直接判定。
 Review-policy changes and weakened safety gates remain subject to the
 maintainers' review.
 

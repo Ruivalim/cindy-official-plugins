@@ -84,10 +84,12 @@ authors or maintainers may supply it. Green CI does not prove runtime testing.
   standard below need no separate maintainer approval. Real permission,
   credential, or publish-trust widening, undisclosed network access, and
   renaming or deleting a published plugin still need the maintainers' explicit
-  decision for that scope. Adding or changing third-party OAuth scopes (or a
-  similar platform authorization) waits for that platform's approval, recorded
-  in the pull request; other changes that fit the existing standard are still
-  judged directly.
+  decision for that scope. A change that expands Cindy's shared OAuth app (or a
+  similar platform grant), including a plugin that depends on a new host
+  authorization, also waits until that approval is recorded; when the host
+  requests the scope, the host release must be recorded too. Other changes that
+  fit the existing standard are still judged directly. Host-side changes follow
+  the same rule in makecindy/cindy.
 - Before merging, verify the current target and combined result. Retargeting a PR
   requires fresh validation; checks for its previous target are insufficient.
   Merge and public release are separate stages.
@@ -161,11 +163,14 @@ do not edit the generated `dist/maker.js` by hand.
    verification for affected paths; reuse valid evidence for unaffected ones,
    with accurate environments and compatibility limitations. Lowering/removing
    `minCindyVersion` still needs the maintainers' review and old-version evidence.
-   If the change adds or changes third-party OAuth scopes (or a similar platform
-   grant), list the scopes, why, and the platform review status in the pull
-   request, and do not merge until the platform has approved. Include scopes
-   already foreseeable, and do not request unused ones. Only authorization a
-   platform security review can block waits this way.
+   If the change expands the scopes Cindy's shared OAuth app (or a similar
+   platform grant) requests, including a plugin that depends on a new host
+   authorization, list the scopes, why, and who requests them. When the host
+   requests the scope, name that host grant and whether the platform has
+   approved it and a host release contains it; do not merge until both are
+   done. Plan the request from the plugin and the host together, and do not
+   request unused ones. Only this platform-gated authorization waits. Host-side
+   edits follow the same rule in makecindy/cindy; do not restate them here.
 
 Every non-draft PR's **Verify pull request** runs the Server/Desktop contract,
 localization, provisioning, changed-plugin tests and actual dry-run packaging.

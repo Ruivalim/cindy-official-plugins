@@ -105,8 +105,9 @@ The full path from idea to marketplace:
    [review standards](#review-standards). Once checks, effective review, and
    verification are satisfied, already-authorized merge automation may execute
    without another confirmation for routine maintenance. A fitting admission
-   needs no extra decision. Third-party OAuth scope changes still wait for
-   platform approval; see [Review standards](#review-standards).
+   needs no extra decision. Changes that expand Cindy's shared OAuth app,
+   including a plugin that depends on a new host grant, still wait for platform
+   approval; see [Review standards](#review-standards).
 6. **Submit and approve** — merging to `main` submits changed packages to Global
    Plugin Platform. Only approved releases become available to compatible clients;
    rejection leaves the previous approved release in service. CN submission remains
@@ -121,12 +122,16 @@ do not require human approval just because of their paths. Admission and
 audience that fit the standard need no separate maintainer approval; a mismatch
 is a concrete review finding. Real permission, credential, or publish-trust
 widening, undisclosed network access, and renaming or deleting a published
-plugin still need the maintainers' explicit decision. A third-party OAuth scope
-change, or a similar platform authorization, is separate: merge waits until the
-platform has approved it, with the scopes, why, and the review status written in
-the pull request and updated after approval. Request foreseeable scopes together
-and leave unused ones out. Other changes that fit the existing standard are still
-judged directly. Details are in
+plugin still need the maintainers' explicit decision. Any change that expands
+the scopes Cindy's shared OAuth app (or a similar platform authorization)
+requests is separate, including a plugin that depends on a new host grant.
+Merge waits until the platform has approved it. When the host requests the
+scope, the pull request names that grant and whether a host release contains
+it, and waits until both are done. Plan scopes from the plugin and the host
+together, and leave unused ones out. Host-side changes follow the same rule in
+[makecindy/cindy](https://github.com/makecindy/cindy); this repository only
+points there. Other changes that fit the existing standard are still judged
+directly. Details are in
 [第三方平台授权](.greptile/rules.md#第三方平台授权).
 Separate code defects, verification gaps, boundary decisions, and platform
 approval. Four principles:
@@ -180,9 +185,10 @@ approval. Four principles:
       version, results and gaps. No fixed PR checkbox; green CI is not runtime proof
 - [ ] `ghost.json.version` bumped; `provisioning.json` audience matches the
       standard (`all`, or opt-in `{ "emails": [] }`); `author` is the real author
-- [ ] Third-party OAuth scopes (or equivalent platform grants) are unchanged, or
-      the pull request lists each scope, why it is needed, and the platform
-      review status
+- [ ] No expansion of scopes requested by Cindy's shared OAuth app (or an
+      equivalent platform grant), and no dependency on a new host authorization;
+      otherwise the pull request lists the scopes, why, who requests them, and,
+      when the host does, that grant, platform approval, and host release
 - [ ] No credentials, real user data, `node_modules`, or unrelated generated
       files in the diff; fixtures use placeholder domains (`example.test`)
 - [ ] Bundled dependency changes reflected in `THIRD-PARTY-LICENSES.txt`
