@@ -351,13 +351,22 @@ proof of account connection.
    ZIP a working directory: a local credential file can enter the archive. A harness
    packaging uncommitted work must use an explicit reviewed file list. Inspect
    every final archive for expected files, no outer plugin directory, and no
-   credentials; device verification must cover the submitted contents.
-4. Install the final package in a stable production or Beta Cindy build meeting its real
-   minimum, exercise core tools and failures, and check retained capabilities.
-   The Agent does this when authorized operating tools are available; otherwise
-   explicitly hand off the unverified steps. Never falsely check the author's
-   verification box. CI reads the PR attestation; it does not collect device
-   evidence, prove the minimum version correct, or compare migration capabilities.
+   credentials; verification evidence must apply to the submitted contents.
+4. Provide real runtime evidence for affected paths under the
+   [review contract](../.greptile/rules.md#运行验证与证据复用). For installation,
+   migration or tool behavior changes, exercise the relevant package in a Cindy
+   environment meeting its actual requirements, including failure paths and
+   retained capabilities. Record the tested package/source, Cindy version/channel,
+   scenarios, results and gaps. Identify development builds truthfully; they do
+   not establish compatibility with released clients without applicable evidence.
+   Reuse prior evidence only with an explanation of why the full diff from the
+   tested version to the current submission leaves those paths unaffected; an
+   older package's test is not a claim that the latest package was installed.
+   Authors or maintainers may supply evidence. The Agent performs authorized
+   operations when available; otherwise explicitly hand off unverified steps.
+   No fixed verification checkbox is required or read by CI. Green CI does not
+   collect runtime evidence, prove the minimum version correct, or compare
+   migration capabilities.
 
 ## Interpreting documentation and comments
 
