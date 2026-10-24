@@ -102,6 +102,11 @@ svg { display: block; flex: 0 0 auto; }
 .tool:hover:not(:disabled) { background: var(--chip); }
 .tool:active:not(:disabled) { background: var(--hover); transform: scale(.96); }
 .tool[aria-checked="true"], .tool[aria-pressed="true"] { background: var(--chip); color: var(--focus); }
+/* Foldable posture glyphs show the device as it stands, turning with it as the
+   iPhone chrome turns (sim-native.html's rotation curve). */
+#posture svg { transform: rotate(var(--device-roll, 0deg)); transition: transform .32s cubic-bezier(.32, .72, 0, 1); }
+#posture[data-still] svg { transition: none; }
+@media (prefers-reduced-motion: reduce) { #posture svg { transition: none; } }
 .tool-caret { width: 18px; margin-left: -4px; color: var(--text-2); }
 .tool-caret[aria-expanded="true"] { background: var(--chip); }
 @media (max-width: 340px) { .tool { width: 30px; } .tools { gap: 4px; } }

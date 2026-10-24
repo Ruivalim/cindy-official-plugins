@@ -9,10 +9,76 @@
 (function () {
   const panels = new Set();
   let posed = null, hinge = null;
+  const live = () => (posed && panels.has(posed) ? posed : null);
   window.__cindyPose = {
-    get: () => (posed && panels.has(posed) ? hinge : null),
-    set: (degrees) => { if (posed && panels.has(posed)) posed.send({ type: 'set_pose', hingeDegrees: Number(degrees) }); },
+    get: () => (live() ? hinge : null),
+    set: (degrees) => { if (live()) posed.send({ type: 'set_pose', hingeDegrees: Number(degrees) }); },
+    // How far the book is turned clockwise on screen. The server rolls it so the
+    // guest stands the way it is held: the cover upright in portrait, the
+    // unfolded panel in landscape-left.
+    roll: () => (live() ? roll(posed) : null),
+    turn: (step) => turn(step),
   };
+  const CYCLE = ['portrait', 'landscape-left', 'portrait-upside-down', 'landscape-right'];
+  function roll(panel) {
+    const at = CYCLE.indexOf(panel.interfaceOrientation);
+    if (at < 0) return 0;
+    return ((at - (panel.litPanel === 'secondary' ? 1 : 0)) % 4 + 4) % 4 * 90;
+  }
+
+  // The server rolls the book in place at once. Turn it the way the iPhone
+  // chrome turns (sim-native.html's curve): the last frame turns about the
+  // book's centre while the live stream, already rolled, waits underneath and
+  // fades in as the turn lands.
+  const TURN_MS = 320, FADE_MS = 140;
+  let turning = null;
+  function settle() {
+    if (!turning) return;
+    clearTimeout(turning.timer);
+    turning.ghost.remove();
+    turning.canvas.style.removeProperty('opacity');
+    turning.canvas.style.removeProperty('transition');
+    turning = null;
+  }
+  function turn(step) {
+    const rotate = window.__nativeRotateBy;
+    if (typeof rotate !== 'function') return false;
+    settle();
+    const panel = live(), canvas = panel && panel.canvas;
+    const box = canvas && canvas.isConnected ? canvas.getBoundingClientRect() : null;
+    const still = !box || !box.width || !box.height || !canvas.width ||
+      (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    const before = panel ? roll(panel) : 0;
+    let ghost = null;
+    if (!still) {
+      ghost = document.createElement('canvas');
+      ghost.width = canvas.width; ghost.height = canvas.height;
+      try { ghost.getContext('2d').drawImage(canvas, 0, 0); } catch { ghost = null; }
+    }
+    rotate(step);
+    const delta = panel ? ((roll(panel) - before) % 360 + 540) % 360 - 180 : 0;
+    if (!ghost || !delta) return true;
+    ghost.setAttribute('aria-hidden', 'true');
+    ghost.style.cssText = 'position:fixed;margin:0;pointer-events:none;z-index:2147483647;transform-origin:50% 50%;' +
+      `left:${box.left}px;top:${box.top}px;width:${box.width}px;height:${box.height}px;` +
+      `object-fit:${getComputedStyle(canvas).objectFit || 'contain'};` +
+      `transition:transform ${TURN_MS}ms cubic-bezier(0.32,0.72,0,1),opacity ${FADE_MS}ms ease`;
+    document.body.append(ghost);
+    canvas.style.transition = 'none';
+    canvas.style.opacity = '0';
+    void ghost.offsetWidth;
+    ghost.style.transform = `rotate(${delta}deg)`;
+    turning = { ghost, canvas, timer: 0 };
+    const current = turning;
+    turning.timer = setTimeout(() => {
+      if (turning !== current) return;
+      canvas.style.transition = `opacity ${FADE_MS}ms ease`;
+      canvas.style.opacity = '1';
+      ghost.style.opacity = '0';
+      current.timer = setTimeout(() => { if (turning === current) settle(); }, FADE_MS);
+    }, TURN_MS - FADE_MS / 2);
+    return true;
+  }
   function background() {
     const root = document.getElementById('simNativeView');
     const value = root ? getComputedStyle(root).getPropertyValue('--nv-page-bg').trim() : '';

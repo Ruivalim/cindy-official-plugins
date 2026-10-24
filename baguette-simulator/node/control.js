@@ -449,9 +449,12 @@
   for(const b of $('tv-remote').querySelectorAll('[data-remote]'))label(b,b.getAttribute('aria-label'),remoteKeys[b.dataset.remote]);
   function rotate(step) {
     if (!live() || M.platform(state.status?.device) !== 'iOS') return;
+    // A foldable turns through viewer-stage.js, which animates the 3D book.
+    let turned = false; try { turned = screen.contentWindow?.__cindyPose?.turn?.(step) === true; } catch {}
     const fn = screen.contentWindow?.__nativeRotateBy ? '__nativeRotateBy' : '__nativeRotate';
-    if (!native(fn, step)) return;
+    if (!turned && !native(fn, step)) return;
     activity({ isTrusted: true });
+    renderPosture();
     setTimeout(measure, 450);
   }
   $('btn-home').addEventListener('click', home);
@@ -504,11 +507,17 @@
   // viewer-stage.js exposes the 3D stage's hinge (window.__cindyPose); the
   // device page's own picker is hidden in favour of this one.
   const POSES = { shut: 0, open: 130, flat: 180 };
+  // The glyphs turn with the device; the angle accumulates so each step takes the short way round.
+  let glyphTurn = null;
   function renderPosture() {
-    let pose = null; try { pose = screen.contentWindow?.__cindyPose?.get?.() ?? null; } catch {}
+    let pose = null, roll = 0; try { pose = screen.contentWindow?.__cindyPose?.get?.() ?? null; roll = screen.contentWindow.__cindyPose.roll?.() || 0; } catch {}
     const show = live() && pose !== null;
+    const appearing = show && $('posture').hidden;
     $('posture').hidden = !show;
-    if (!show) return;
+    if (!show) { glyphTurn = null; return; }
+    if (appearing || glyphTurn === null) { glyphTurn = roll; $('posture').setAttribute('data-still', ''); }
+    else { glyphTurn += ((roll - glyphTurn) % 360 + 540) % 360 - 180; $('posture').removeAttribute('data-still'); }
+    $('posture').style.setProperty('--device-roll', glyphTurn + 'deg');
     const nearest = Object.entries(POSES).reduce((a, b) => Math.abs(b[1] - pose) < Math.abs(a[1] - pose) ? b : a)[0];
     for (const node of $('posture').querySelectorAll('[data-pose]')) {
       node.setAttribute('aria-checked', String(node.dataset.pose === nearest));

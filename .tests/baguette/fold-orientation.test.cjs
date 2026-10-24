@@ -64,13 +64,88 @@ test('live panel updates remap taps and drags in both directions without resetti
  emit('secondary');assert.deepEqual([tap().x,tap().y],[70,20]);
  assert.equal(panel.interfaceOrientation,'landscape-right');
  emit('bogus');assert.deepEqual([tap().x,tap().y],[70,20]);
- emit('primary');assert.deepEqual([tap().x,tap().y],[20,30]);
- flush();assert.equal(sent.at(-1).orientation,'portrait');assert.equal(vm.runInContext('orientationIndex',context),0);
- // A later camera update must not resurrect the pre-fold manual rotation.
- panel.sendCamera();flush();assert.equal(sent.at(-1).orientation,'portrait');
+ // Folding keeps the book where it is held: the cover stands a quarter turn behind the
+ // unfolded panel (real case: a turned cover unfolded back to an upright book while
+ // the guest kept the turn, so its picture lay sideways in the book).
+ emit('primary');assert.deepEqual([tap().x,tap().y],[80,70]);
+ flush();assert.equal(sent.at(-1).orientation,'portrait-upside-down');assert.equal(vm.runInContext('orientationIndex',context),2);
+ panel.sendCamera();flush();assert.equal(sent.at(-1).orientation,'portrait-upside-down');
  const old=streams.at(-1);await panel.attach(null,null,panel.udid,{});
- old.onText({type:'screen_quad',litPanel:'secondary'});assert.deepEqual([tap().x,tap().y],[20,30]);
- emit('secondary');assert.deepEqual([tap().x,tap().y],[30,80]);
- flush();assert.equal(sent.at(-1).orientation,'landscape-left');assert.equal(vm.runInContext('orientationIndex',context),1);
- emit('primary');assert.deepEqual([tap().x,tap().y],[20,30]);
+ old.onText({type:'screen_quad',litPanel:'secondary'});assert.deepEqual([tap().x,tap().y],[80,70]);
+ emit('secondary');assert.deepEqual([tap().x,tap().y],[70,20]);
+ flush();assert.equal(sent.at(-1).orientation,'landscape-right');assert.equal(vm.runInContext('orientationIndex',context),3);
+ emit('primary');assert.deepEqual([tap().x,tap().y],[80,70]);
+ // An upright book opens and closes upright.
+ vm.runInContext("currentOrientation='portrait';orientationIndex=0",context);
+ emit('secondary');flush();assert.equal(sent.at(-1).orientation,'landscape-left');
+ emit('primary');flush();assert.equal(sent.at(-1).orientation,'portrait');
+});
+
+test('the foldable turns with an animation and reports how its book is rolled',()=>{
+ // Real case: the server rolls the 3D book in place at once, so Duo jumped a quarter
+ // turn while the iPhone chrome turned smoothly; posture glyphs never followed.
+ const make=({reduced=false}={})=>{
+  const appended=[],timers=[];
+  const canvasStyle={removeProperty(k){delete this[k];}};
+  const canvas={isConnected:true,width:800,height:600,style:canvasStyle,getBoundingClientRect:()=>({left:10,top:20,width:400,height:300})};
+  const document={getElementById:()=>null,addEventListener(){},visibilityState:'visible',
+   body:{append:n=>appended.push(n)},
+   createElement:()=>({style:{},setAttribute(){},getContext:()=>({drawImage(){}}),remove(){this.removed=true;}})};
+  const window={matchMedia:q=>({matches:reduced&&/reduce/.test(q),addEventListener(){}})};
+  const context=vm.createContext({window,document,getComputedStyle:()=>({objectFit:'contain',getPropertyValue:()=>''}),Promise,
+   setTimeout:fn=>{timers.push(fn);return timers.length;},clearTimeout(){}});
+  vm.runInContext(fs.readFileSync(path.join(__dirname,'../../baguette-simulator/node/viewer-stage.js'),'utf8'),context);
+  function Sim3DPanel(){}
+  Sim3DPanel.prototype.attach=function(){};Sim3DPanel.prototype.setBackground=function(){};
+  Sim3DPanel.prototype.placePosePicker=function(){};Sim3DPanel.prototype.detach=function(){};
+  window.Sim3DPanel=Sim3DPanel;
+  const panel=new window.Sim3DPanel();panel.attach();panel.canvas=canvas;panel.litPanel='primary';panel.interfaceOrientation=null;
+  panel.placePosePicker({hingeDegrees:0});
+  const cycle=['portrait','landscape-left','portrait-upside-down','landscape-right'];
+  let index=0;window.__nativeRotateBy=step=>{index=(index+step+4)%4;panel.interfaceOrientation=cycle[index];};
+  return {pose:window.__cindyPose,panel,appended,timers,canvas};
+ };
+ const f=make();
+ assert.equal(f.pose.roll(),0);
+ assert.equal(f.pose.turn(1),true);assert.equal(f.pose.roll(),90,'rotate right turns the cover clockwise');
+ assert.equal(f.appended.length,1);assert.equal(f.appended[0].style.transform,'rotate(90deg)');
+ assert.equal(f.canvas.style.opacity,'0','the rolled live stream waits under the turning frame');
+ f.timers.splice(0).forEach(fn=>fn());f.timers.splice(0).forEach(fn=>fn());
+ assert.equal(f.appended[0].removed,true);assert.equal(f.canvas.style.opacity,undefined,'the live stream is shown once the turn lands');
+ f.pose.turn(-1);f.pose.turn(-1);assert.equal(f.pose.roll(),270);
+ assert.equal(f.appended.at(-1).style.transform,'rotate(-90deg)','each step takes the short way round');
+ assert.equal(f.appended.at(-2).removed,true,'a new turn settles the previous one first');
+ // The unfolded panel stands in landscape-left; switching panels is not a turn.
+ f.panel.litPanel='secondary';f.panel.interfaceOrientation='landscape-left';assert.equal(f.pose.roll(),0);
+ f.panel.interfaceOrientation='portrait';assert.equal(f.pose.roll(),270);
+ const still=make({reduced:true});still.pose.turn(1);
+ assert.equal(still.pose.roll(),90);assert.equal(still.appended.length,0,'reduced motion turns at once');
+});
+
+test('an opened foldable starts at the guest orientation and rotation writes the device hold',()=>{
+ // Real cases: reopening the viewer on a turned, unfolded Duo drew it upright while the
+ // guest kept the turn; rotating while unfolded sent the panel orientation as the device
+ // orientation, which the guest's unfolded panel reads a step further on.
+ const native=fs.readFileSync(path.join(web,'sim-native.js'),'utf8');
+ const start=native.slice(native.indexOf('  function startMainView('),native.indexOf('  // Lazy-mounts the AXInspector'));
+ const rotateFrom=native.indexOf('    window.__nativeRotateBy = (step) => {');
+ const rotate=native.slice(rotateFrom,native.indexOf('      // Mirror the rotation in the UI immediately.',rotateFrom))+'};';
+ const make=(litPanel,guest)=>{
+  const posts=[],camera=[];
+  const context={window:{},document:{getElementById:()=>null},encodeURIComponent,fetch:url=>{posts.push(new URL(url,'http://x').searchParams.get('value'));return Promise.resolve();}};
+  vm.createContext(context);
+  vm.runInContext(`let foldable=true,udid='u',currentLitPanel=${JSON.stringify(litPanel)},foldOrientation=${JSON.stringify(guest)},currentOrientation='portrait',orientationIndex=0;
+   const ORIENTATION_CYCLE=['portrait','landscape-left','portrait-upside-down','landscape-right'];function orientationCycle(){return ORIENTATION_CYCLE;}
+   const render3DPanel={setInterfaceOrientation:v=>camera.push(v)};function toggle3D(){}function startSession(){}`+start+rotate,Object.assign(context,{camera}));
+  vm.runInContext('startMainView()',context);
+  return {posts,camera,orientation:()=>vm.runInContext('currentOrientation',context),rotate:s=>context.window.__nativeRotateBy(s)};
+ };
+ const open=make('secondary','portrait-upside-down');
+ assert.equal(open.orientation(),'portrait-upside-down');assert.deepEqual(open.camera,['portrait-upside-down']);
+ open.rotate(1);assert.equal(open.orientation(),'landscape-right');assert.deepEqual(open.posts,['portrait-upside-down'],'the panel reads one step past the device hold');
+ open.rotate(-1);open.rotate(-1);assert.deepEqual(open.posts,['portrait-upside-down','landscape-left','portrait']);
+ const cover=make('primary',null);
+ assert.equal(cover.orientation(),'portrait');cover.rotate(1);assert.deepEqual(cover.posts,['landscape-left'],'the cover shows the device hold as is');
+ assert.equal(make('secondary',null).orientation(),'landscape-left','without a reading the book opens upright');
+ assert.equal(make('secondary','sideways').orientation(),'landscape-left');
 });

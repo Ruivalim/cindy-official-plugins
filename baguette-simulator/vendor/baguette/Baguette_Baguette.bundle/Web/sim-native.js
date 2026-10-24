@@ -406,6 +406,8 @@
     const hinge = deviceMode ? null : await readHinge();
     foldable = !!(hinge && hinge.foldable);
     if (foldable) currentLitPanel = hinge.litPanel || 'primary';
+    // Cindy: the guest's own orientation, so a book left turned opens turned.
+    if (foldable) foldOrientation = hinge.orientation || null;
     if (foldable && isBooted(meta.state)) {
       document.getElementById('nativeDeviceFrame').setAttribute('data-foldable', '');
     }
@@ -851,12 +853,18 @@
    *  screens — so nothing here follows the hinge; the 3D scene does. */
   let foldable = false;
   let currentLitPanel = 'primary';
+  let foldOrientation = null;
 
   function syncLitPanel(panel) {
     if (!foldable || (panel !== 'primary' && panel !== 'secondary') || panel === currentLitPanel) return;
     currentLitPanel = panel;
-    currentOrientation = panel === 'secondary' ? 'landscape-left' : 'portrait';
-    orientationIndex = Math.max(0, orientationCycle().indexOf(currentOrientation));
+    // The unfolded panel stands a quarter turn ahead of the cover (upright
+    // book: cover portrait, panel landscape-left). Folding or unfolding keeps
+    // the book where it is held, as the guest does.
+    const cycle = orientationCycle();
+    const at = Math.max(0, cycle.indexOf(currentOrientation));
+    orientationIndex = (at + (panel === 'secondary' ? 1 : -1) + cycle.length) % cycle.length;
+    currentOrientation = cycle[orientationIndex];
     if (render3DPanel) render3DPanel.setInterfaceOrientation(currentOrientation);
   }
 
@@ -1521,11 +1529,15 @@
       const frame = document.getElementById('nativeDeviceFrame');
       if (frame) frame.setAttribute('data-foldable', '');
       toggle3D({ fixed: true });
-      // The unfolded panel is landscape-left by the guest's choice and
-      // the cover portrait; the rotate button cycles from there.
-      const start = currentLitPanel === 'secondary' ? 'landscape-left' : 'portrait';
+      // Start where the guest stands (the hinge read reports its
+      // orientation), else upright: the unfolded panel landscape-left by
+      // the guest's choice and the cover portrait. The book is rolled to
+      // match, and the rotate button cycles from there.
+      const start = ORIENTATION_CYCLE.includes(foldOrientation) ? foldOrientation
+          : currentLitPanel === 'secondary' ? 'landscape-left' : 'portrait';
       currentOrientation = start;
       orientationIndex = Math.max(0, orientationCycle().indexOf(start));
+      if (render3DPanel) render3DPanel.setInterfaceOrientation(start);
       return;
     }
     startSession(currentFormat());
@@ -2379,8 +2391,14 @@
       if (foldable) {
         currentOrientation = value;
         if (render3DPanel) render3DPanel.setInterfaceOrientation(value);
+        // Cindy: the route sets the device's orientation, which the cover
+        // shows as is and the unfolded panel a step further on (device
+        // portrait reads landscape-left there), so send the hold the panel
+        // orientation stands for.
+        const held = currentLitPanel === 'secondary'
+            ? cycle[(orientationIndex - 1 + cycle.length) % cycle.length] : value;
         const url = '/simulators/' + encodeURIComponent(udid)
-            + '/orientation?value=' + encodeURIComponent(value);
+            + '/orientation?value=' + encodeURIComponent(held);
         fetch(url, { method: 'POST' }).catch(() => { /* best-effort */ });
         return;
       }
