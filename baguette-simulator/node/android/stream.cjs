@@ -33,7 +33,9 @@ function rotations({d,agent,signal}){
   const poll=async()=>{
     try{
       const next=await agent.displayRotation(d,{_deadline:Date.now()+5000});
-      const changed=display!==null&&next!==display;display=next;
+      // The first known value also counts: frames sent before a failed first
+      // poll carried a default of 0.
+      const changed=next!==display;display=next;
       // A still screen sends no frames, so a turn must be pushed to the page.
       if(changed)state.onChange?.();
     }catch{/* Keep the last known value. */}

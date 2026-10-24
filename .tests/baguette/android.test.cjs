@@ -837,6 +837,19 @@ test('Android H.264 stream treats a helper that only skips frames as failed',asy
   await until(()=>g.res.headers);assert.equal(g.res.headers['Content-Type'],'application/octet-stream');
   again.abort();await next;
 });
+test('Android H.264 stream corrects a default rotation once the first failed poll recovers',async t=>{
+  const {serve,resetFailures}=require(path.join(A,'stream.cjs'));resetFailures();t.after(resetFailures);
+  const f=streamFixture(t),endpoint=await f.ready,encoder=fakeEncoder(),abort=new AbortController();t.after(()=>abort.abort());
+  let calls=0;
+  const done=serve({d:{udid:id,endpoint,model:{width:1080,height:2400}},agent:{displayRotation:async()=>{if(++calls===1)throw Error('adb busy');return 3;}},res:f.res,signal:abort.signal,format:'avcc',spawnEncoder:encoder.spawn}).catch(e=>e);
+  await until(()=>f.live());f.push({format:{width:2400,height:1080,rotation:{rotation:1}}});
+  await until(()=>encoder.lines.length===2);encoder.reply(1,Buffer.from([1,0x64,0,0x33]));encoder.reply(2);
+  await until(()=>encoder.lines.length===3,3000);assert.equal(encoder.lines[2],'frame 2400 1080 1');
+  encoder.reply(2);await until(()=>f.messages().length>=4);
+  assert.deepEqual(f.messages().slice(0,2).map(m=>m[0]),[0,0],'frames before recovery carry the default');
+  assert.deepEqual(f.messages().slice(-2).map(m=>[m[0],m[1],m[2]]),[[3,1,1],[3,1,2]]);
+  abort.abort();await done;
+});
 test('Android H.264 stream re-sends a still frame as a keyframe when display rotation turns',async t=>{
   const {serve,resetFailures}=require(path.join(A,'stream.cjs'));resetFailures();t.after(resetFailures);
   const f=streamFixture(t),endpoint=await f.ready,encoder=fakeEncoder(),abort=new AbortController();t.after(()=>abort.abort());
