@@ -105,7 +105,8 @@ The full path from idea to marketplace:
    [review standards](#review-standards). Once checks, effective review, and
    verification are satisfied, already-authorized merge automation may execute
    without another confirmation for routine maintenance. A fitting admission
-   needs no extra decision.
+   needs no extra decision. Third-party OAuth scope changes still wait for
+   platform approval; see [Review standards](#review-standards).
 6. **Submit and approve** — merging to `main` submits changed packages to Global
    Plugin Platform. Only approved releases become available to compatible clients;
    rejection leaves the previous approved release in service. CN submission remains
@@ -120,8 +121,15 @@ do not require human approval just because of their paths. Admission and
 audience that fit the standard need no separate maintainer approval; a mismatch
 is a concrete review finding. Real permission, credential, or publish-trust
 widening, undisclosed network access, and renaming or deleting a published
-plugin still need the maintainers' explicit decision. Separate code defects,
-verification gaps, and those boundary decisions. Four principles:
+plugin still need the maintainers' explicit decision. A third-party OAuth scope
+change, or a similar platform authorization, is separate: merge waits until the
+platform has approved it, with the scopes, why, and the review status written in
+the pull request and updated after approval. Request foreseeable scopes together
+and leave unused ones out. Other changes that fit the existing standard are still
+judged directly. Details are in
+[第三方平台授权](.greptile/rules.md#第三方平台授权).
+Separate code defects, verification gaps, boundary decisions, and platform
+approval. Four principles:
 
 1. **Pure sandbox by default; authorization follows the executor.** Regular
    plugins run in Cindy's isolated sandbox. Whether a plugin tool runs is decided
@@ -172,6 +180,9 @@ verification gaps, and those boundary decisions. Four principles:
       version, results and gaps. No fixed PR checkbox; green CI is not runtime proof
 - [ ] `ghost.json.version` bumped; `provisioning.json` audience matches the
       standard (`all`, or opt-in `{ "emails": [] }`); `author` is the real author
+- [ ] Third-party OAuth scopes (or equivalent platform grants) are unchanged, or
+      the pull request lists each scope, why it is needed, and the platform
+      review status
 - [ ] No credentials, real user data, `node_modules`, or unrelated generated
       files in the diff; fixtures use placeholder domains (`example.test`)
 - [ ] Bundled dependency changes reflected in `THIRD-PARTY-LICENSES.txt`

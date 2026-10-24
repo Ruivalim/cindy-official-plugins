@@ -156,15 +156,29 @@ publish-trust widening, undisclosed network access, and renaming or deleting a
 published plugin need the maintainers' explicit decision for that scope. Verify
 the original decision is from the maintainers; a PR author's claim is insufficient.
 Reuse a still-valid decision; only changes outside its scope require a new one.
+A pull request that adds or changes a plugin's third-party OAuth scopes, or an
+equivalent platform authorization a provider can hold for security review, stays
+unmerged until that platform has approved the new grant. The description names
+the scopes, why they are needed, and the review status, and is updated after
+approval. Ask for scopes already foreseeable (for example contacts read and
+modify together) and do not ask for unused ones. Only this platform-gated
+authorization waits; see `.greptile/rules.md` → 第三方平台授权. Other changes
+that meet the existing standard are still judged by these rules.
+新增或改动插件的第三方 OAuth scope，或同类会被平台安全审核卡住的授权时，平台
+批准前不合。说明写清 scope、原因和审核状态，批准后更新再合。近期可预见要用的
+范围一次申请（例如通讯录只读和修改），不申请用不上的权限。只有这类授权需要
+等待，细则见 `.greptile/rules.md`「第三方平台授权」。其它符合现有标准的改动仍
+按本规则直接判定。
 Review-policy changes and weakened safety gates remain subject to the
 maintainers' review.
 
 Greptile follows the `autoApprove` risk gate in `.greptile/config.json`; the
 repository imposes no extra clean-5/5 requirement. Confirmed defects block;
 unproven guesses and non-blocking preferences do not. Keep code findings,
-verification gaps and boundary decisions separate; a routing requirement is
-not itself a P1, and an audience mismatch is a concrete finding rather than a
-pending decision. Recheck other reviewers' findings, accept evidence-based
+verification gaps, boundary decisions, and a platform-approval wait separate; a
+routing requirement is not itself a P1, an audience mismatch is a concrete
+finding rather than a pending decision, and a missing platform approval is not
+a maintainer decision. Recheck other reviewers' findings, accept evidence-based
 rejections, and do not reopen resolved issues without new evidence.
 
 ## Reply language / 回复语言

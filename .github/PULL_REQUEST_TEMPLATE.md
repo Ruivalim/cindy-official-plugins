@@ -37,6 +37,22 @@ if it was not. Changed behavior still needs its applicable runtime verification.
 Review contract: .greptile/rules.md → 运行验证与证据复用
 -->
 
+## Third-party OAuth scopes / 第三方 OAuth 授权范围
+
+<!-- Tick one. If scopes changed, list each new or changed scope, why it is
+needed, and the platform review status under the second box. Do not merge
+until the platform has approved; update this section after approval. When
+requesting access, include scopes already foreseeable (for example contacts
+read and modify together) and do not request unused ones.
+勾一项。有改动时在第二项下写出新增或变更的 scope、为什么要、平台审核状态。
+平台未批准先不合；批准后更新本节再合。近期可预见会用到的范围一次申请
+（例如通讯录只读和修改），用不上的权限不要申请。 -->
+
+- [ ] No third-party OAuth scope (or equivalent platform grant) changed.
+      未改动第三方 OAuth scope 或同类平台授权。
+- [ ] Changed. Scopes, why, and platform review status:
+      有改动。scope、为什么要、平台审核状态：
+
 ## Decisions, if applicable / 相关决定（适用时）
 
 <!-- For a new plugin or an audience change, state which tier applies:
