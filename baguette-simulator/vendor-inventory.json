@@ -1,5 +1,40 @@
 [
   {
+    "path": "vendor/android/LICENSES.txt",
+    "bytes": 44960,
+    "sha256": "cdf83dab2bfe7cc7fbe973559089de0eadd554c5f3dce8ae24fd925b5ff1f91a"
+  },
+  {
+    "path": "vendor/android/chi_sim.traineddata.gz",
+    "bytes": 1718768,
+    "sha256": "b8a23f10c7de500891eb458a8adc9cc58ab7f242f08b7d149f5e9aea4ad5db7c"
+  },
+  {
+    "path": "vendor/android/deps.cjs",
+    "bytes": 275738,
+    "sha256": "d5753e9570f5a71a95cfc9a11c9e679d5ae6446049cefb429b36df718b504635"
+  },
+  {
+    "path": "vendor/android/eng.traineddata.gz",
+    "bytes": 2952873,
+    "sha256": "45b4cb346724ac1774f1c36f42f182b887bcdb28ebe63e6fff90ac41f3fcff91"
+  },
+  {
+    "path": "vendor/android/ocr-worker.cjs",
+    "bytes": 115257,
+    "sha256": "792741be4dcdd13fa3e0fad1fd68727c35a980840f35a9745bc0183fc374a53a"
+  },
+  {
+    "path": "vendor/android/packages.json",
+    "bytes": 2011,
+    "sha256": "b15e6092f787359f750d44fc0e75edb8b8a245bfaa22653c9144d293448700d2"
+  },
+  {
+    "path": "vendor/android/tesseract-core-lstm.wasm",
+    "bytes": 2855361,
+    "sha256": "66b17df6e20c5329a17ffa9c202a47eaa3e32500b253d4c7f38e7f2bc01457c3"
+  },
+  {
     "path": "vendor/baguette/Baguette",
     "bytes": 7989408,
     "sha256": "91f85d11eae6fcdd08e989efe708f2bf04de31c88d44eccea98cc2875c785384"

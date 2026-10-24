@@ -74,12 +74,16 @@ async function ready(current){
  while(Date.now()<deadline){
   if(current.stopped)throw Error('Viewer stopped');
   if(current.parked)throw current.error;
-  if(current.child&&current.child.exitCode===null&&current.child.signalCode===null&&current.log.includes('listening')){
-   try{await probe(current.base+'/simulators');return current;}catch{}
+  const child=current.child;
+  if(child&&child.exitCode===null&&child.signalCode===null){
+   // Readiness belongs to the live service, not its rolling diagnostic log.
+   // Re-check the child after probing: it may have restarted during the request.
+   try{await probe(current.base+'/simulators');if(!current.stopped&&current.child===child&&child.exitCode===null&&child.signalCode===null)return current;}catch{}
   }
   await new Promise(resolve=>setTimeout(resolve,150));
  }
- throw Error('Viewer startup timed out: '+(current.error?.message||current.log));
+ const detail=current.error?.message||[...new Set(current.log.split('\n').filter(Boolean))].slice(-2).join(' ').slice(-600);
+ throw Error('Viewer service did not become reachable within 12 seconds. Retry viewer action=open; do not relaunch the App. '+detail);
 }
 async function startViewer(binary,deviceSet,children,clipboardAction){
  if(active&&!active.stopped){if(active.starting)return active.starting;if(active.parked)await restartNative(active);return ready(active);}
@@ -150,9 +154,10 @@ async function initializeBridge(server,deviceSet,clipboardAction){
     if(error.code!=='APP_CONTEXT_UNREADABLE')throw error;
     currentAppError={code:error.code,message:error.message};
    }
-   return {...await viewerStatus(server),device:state?.devices.find(d=>d.udid===p.udid),devices:state?.devices,deviceJob:state?.deviceJob,
+   return {viewerPlatform:'ios',...await viewerStatus(server),device:state?.devices.find(d=>d.udid===p.udid),devices:state?.devices,deviceJob:state?.deviceJob,
     currentApp,...(currentAppError?{currentAppError}:{}),settings:state?.settings,idleDeadline:state?.idleDeadline};
   },
+  open:p=>controls.request('open_viewer',{udid:p.udid,_locale:p.locale}),
   catalog:()=>controls.request('viewer_catalog'),
   viewport:p=>controls.request('viewer_screen',{udid:p.udid}),
   create:async p=>{const created=await controls.request('create_device',{name:p.name,deviceType:p.deviceType,runtime:p.runtime});return {ok:true,created,devices:(await controls.status()).devices};},

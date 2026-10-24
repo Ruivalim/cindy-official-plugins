@@ -32,11 +32,11 @@ function fakeDocument(){
  return {document,byId,body,text:n=>[n.textContent,...all(n).map(c=>c.textContent)].join(' ')};
 }
 
-async function boot({respond,abortSignal=AbortSignal}){
+async function boot({respond,abortSignal=AbortSignal,query=''}){
  const dom=fakeDocument();const calls=[];let intervals=[];
  const context={
   document:dom.document,URLSearchParams,URL,AbortSignal:abortSignal,Error,Object,JSON,Math,Date,String,Array,Number,Promise,console,parseFloat,clearTimeout,setTimeout,
-  location:{search:'?udid='+udid,hash:'#cindyClipboard=123.token',href:'http://127.0.0.1:1/control?udid='+udid+'&lang=zh-CN#cindyClipboard=123.token',origin:'http://127.0.0.1:1'},
+  location:{search:'?udid='+udid+query,hash:'#cindyClipboard=123.token',href:'http://127.0.0.1:1/control?udid='+udid+'&lang=zh-CN'+query+'#cindyClipboard=123.token',origin:'http://127.0.0.1:1'},
   history:{replaceState(_s,_t,url){context.location.href=String(url);}},
   ResizeObserver:class{observe(){}},setInterval:fn=>{intervals.push(fn);return intervals.length;},
   fetch:async(_url,opts)=>{const body=JSON.parse(opts.body);calls.push(body);const r=await respond(body,opts);if(r instanceof Error)throw r;if(r?.httpStatus)return {ok:false,status:r.httpStatus,json:async()=>({error:'denied'})};return {ok:true,status:200,json:async()=>r};},
@@ -224,14 +224,14 @@ test('live device loads the handheld screen once; a service generation change al
  assert.equal(calls.filter(c=>c.action==='status').length,2);
 });
 
-test('unreadable App records keep the live screen and controls while only disabling device switching',async()=>{
+test('unreadable App records do not block device selection or live controls',async()=>{
  let damaged=true;
  const {dom,poll,calls}=await boot({respond:()=>status(damaged?{currentApp:null,currentAppError:{code:'APP_CONTEXT_UNREADABLE',message:'unreadable'}}:{currentApp:'test.example.app'})});
  assert.equal(dom.byId.overlay.hidden,true);assert.equal(dom.byId.tools.hidden,false);assert.equal(dom.byId['btn-home'].disabled,false);
  assert.equal(dom.byId.status.textContent,'运行中');assert.equal(dom.byId.screen.loads.length,1);
  dom.byId['device-chip'].dispatch('click');
- assert.match(dom.text(dom.body),/无法读取 App 记录/);
- let rows=dom.body.querySelectorAll('button').filter(b=>b.attrs.role==='menuitemradio');assert.ok(rows.every(b=>b.disabled));
+ assert.doesNotMatch(dom.text(dom.body),/无法读取 App 记录/);
+ let rows=dom.body.querySelectorAll('button').filter(b=>b.attrs.role==='menuitemradio');assert.equal(rows[1].disabled,false);
  damaged=false;await poll();dom.byId['device-chip'].dispatch('click');
  rows=dom.body.querySelectorAll('button').filter(b=>b.attrs.role==='menuitemradio');assert.equal(rows[1].disabled,false);
  assert.equal(dom.byId.screen.loads.length,1,'record repair never restarts or reloads the view');
@@ -254,7 +254,7 @@ test('a shut-down device shows a start button in place of the screen; starting b
  const {dom,calls}=await boot({respond:({action})=>{if(action==='boot'){state='Booted';return {ok:true};}return status({device:{udid,name:'iPhone 17 Pro',state}});}});
  assert.deepEqual(dom.byId.screen.loads,[],'no stream is loaded for a shut-down device');
  assert.match(dom.text(dom.byId.overlay),/iPhone 17 Pro 已关闭/);assert.equal(dom.byId['btn-home'].disabled,true);
- const start=dom.byId.overlay.querySelector('button');assert.equal(start.textContent,'启动设备');
+ const start=dom.byId.overlay.querySelector('button');assert.equal(start.textContent,'打开');
  await start.listeners.click[0]();
  assert.equal(calls.filter(c=>c.action==='boot').length,1);assert.equal(dom.byId.overlay.hidden,true);assert.equal(dom.byId.screen.loads.length,1);
 });
@@ -269,10 +269,10 @@ test('idle countdown card appears only in the last minute and keeps the device a
  assert.equal(calls.filter(c=>c.action==='activity').length,1);assert.equal(dom.byId.dock.querySelector('.idle'),null);
 });
 
-test('switching follows the device job, then adopts the new device without exposing a UDID in the chip',async()=>{
- let job=null,current=udid;
+test('switching waits for its response, then adopts the new device without exposing a UDID in the chip',async()=>{
+ let job=null,current=udid,complete;
  const {dom,poll,calls,context}=await boot({respond:({action,targetUdid})=>{
-  if(action==='switch'){job={id:'j1',sourceUdid:udid,targetUdid,state:'running',phase:'booting'};return {ok:true,job};}
+  if(action==='switch'){job={id:'j1',sourceUdid:udid,targetUdid,state:'running',phase:'preparing'};return new Promise(resolve=>complete=()=>resolve({ok:true,job}));}
   if(action==='status')return status({device:{udid:current,name:current===udid?'iPhone 17 Pro':'iPad',state:'Booted'},deviceJob:job});
   return {ok:true};}});
  dom.byId['device-chip'].dispatch('click');
@@ -280,11 +280,89 @@ test('switching follows the device job, then adopts the new device without expos
  assert.equal(rows.length,2);assert.equal(rows[0].disabled,true,'current running device is not switchable');assert.ok(!dom.text(rows[1]).includes(other.slice(-4)));
  rows[1].listeners.click[0]();await new Promise(r=>setImmediate(r));await poll();
  assert.equal(calls.filter(c=>c.action==='switch')[0].targetUdid,other);
- assert.match(dom.text(dom.byId.overlay),/正在启动 iPad/);
- job={...job,state:'done',phase:'done',activeUdid:other};current=other;await poll();
+ assert.match(dom.text(dom.byId.overlay),/正在切换/);
+ job={...job,state:'done',phase:'done',activeUdid:other};current=other;complete();await new Promise(r=>setImmediate(r));await poll();
  assert.match(context.location.href,new RegExp('udid='+other));assert.equal(dom.byId['chip-name'].textContent,'iPad');
  assert.equal(dom.byId.screen.loads.at(-1),`/simulators/${other}?handheld=0&cindyViewer=token#cindyClipboard=123.token`);
  assert.match(dom.text(dom.byId.dock),/已切换/);
+});
+
+// A shared status job is not a request to change every controller on its source.
+test('only the initiating controller adopts a switch; other tasks, hub and reopened views keep their device',async()=>{
+ let job=null,complete;
+ const respond=({action,targetUdid,udid:id})=>{
+  if(action==='switch'){job={id:'owned-switch',sourceUdid:id,targetUdid,state:'running',phase:'preparing'};return new Promise(resolve=>complete=()=>resolve({ok:true,job}));}
+  const s=status();s.devices[1].state='Booted';
+  return {...s,device:s.devices.find(d=>d.udid===id),deviceJob:job};
+ };
+ const owner=await boot({respond,query:'&task=task-1'});
+ const observers=await Promise.all(['&task=task-2','&embed=hub'].map(query=>boot({respond,query})));
+ const unchanged=()=>{
+  for(const view of observers){
+   assert.equal(view.dom.byId['chip-name'].textContent,'iPhone 17 Pro');
+   assert.equal(view.dom.byId.screen.loads.length,1,'foreign jobs must not blank or replace this screen');
+   assert.equal(view.dom.byId.overlay.hidden,true);
+   assert.equal(new URL(view.context.location.href).searchParams.get('udid'),udid);
+  }
+ };
+ owner.dom.byId['device-chip'].dispatch('click');
+ const row=owner.dom.body.querySelectorAll('button').find(b=>b.attrs.role==='menuitemradio'&&!b.disabled);
+ row.listeners.click[0]();await new Promise(r=>setImmediate(r));
+ assert.equal(owner.calls.find(c=>c.action==='switch').task,'task-1');
+ for(const view of observers)await view.poll();unchanged();
+ job={...job,state:'done',phase:'done',activeUdid:other};
+ complete();await new Promise(r=>setImmediate(r));await owner.poll();for(const view of observers)await view.poll();unchanged();
+ assert.equal(new URL(owner.context.location.href).searchParams.get('udid'),other);
+ const reopened=await boot({respond,query:'&task=task-2'});
+ assert.equal(new URL(reopened.context.location.href).searchParams.get('udid'),udid,'a retained completed job never redirects a newly opened controller');
+ // A later job involving the owner's selected device belongs to another page too.
+ job={id:'foreign-switch',sourceUdid:other,targetUdid:udid,state:'done',activeUdid:udid};
+ await owner.poll();
+ assert.equal(new URL(owner.context.location.href).searchParams.get('udid'),other);
+});
+
+test('a completed switch response survives a late status read and replacement of the shared result',async()=>{
+ let job=null,delay=false,release,complete;
+ const {dom,poll,context}=await boot({respond:({action,targetUdid})=>{
+  if(action==='switch'){job={id:'own',sourceUdid:udid,targetUdid,state:'running',phase:'preparing'};return new Promise(resolve=>complete=result=>resolve({ok:true,job:result}));}
+  const snapshot=status({deviceJob:job});snapshot.devices[1].state='Booted';
+  if(delay){delay=false;return new Promise(resolve=>release=()=>resolve(snapshot));}
+  return snapshot;
+ }});
+ delay=true;const earlier=poll();
+ dom.byId['device-chip'].dispatch('click');
+ dom.body.querySelectorAll('button').find(b=>b.attrs.role==='menuitemradio'&&!b.disabled).listeners.click[0]();
+ await new Promise(r=>setImmediate(r));
+ const own={...job,state:'done',activeUdid:other};
+ job={id:'other-page',sourceUdid:udid,targetUdid:other,state:'done',activeUdid:other};
+ complete(own);await new Promise(r=>setImmediate(r));
+ release();await earlier;
+ await poll();
+ assert.equal(new URL(context.location.href).searchParams.get('udid'),other,'only the direct response decides the selected device');
+ assert.equal(dom.byId.overlay.hidden,true);
+ assert.match(dom.text(dom.byId.dock),/已切换/);
+ assert.doesNotMatch(dom.text(dom.byId.dock),/切换没有完成/);
+});
+
+test('selecting a stopped device never loads its stream or boots until Open is clicked',async()=>{
+ let job=null,targetState='Shutdown';
+ const {dom,poll,calls}=await boot({respond:({action,targetUdid,udid:id})=>{
+  if(action==='switch'){job={id:'select-off',sourceUdid:udid,targetUdid,state:'done',phase:'done',activeUdid:targetUdid};return {ok:true,job};}
+  if(action==='boot'){assert.equal(id,other);targetState='Booted';return {ok:true};}
+  const s=status();s.devices[1].state=targetState;
+  return {...s,device:s.devices.find(d=>d.udid===id),deviceJob:job};
+ }});
+ dom.byId['device-chip'].dispatch('click');
+ const row=dom.body.querySelectorAll('button').find(b=>b.attrs.role==='menuitemradio'&&!b.disabled);
+ row.listeners.click[0]();await new Promise(r=>setImmediate(r));
+ assert.equal(dom.byId['chip-name'].textContent,'iPad');
+ assert.match(dom.text(dom.byId.overlay),/iPad 已关闭/);
+ assert.ok(!dom.byId.screen.loads.some(src=>src.includes(other)),'source status must not load a stopped target');
+ await poll();assert.ok(!calls.some(c=>c.action==='boot'),'polling never starts the target');
+ const open=dom.byId.overlay.querySelector('button');assert.equal(open.textContent,'打开');
+ await open.listeners.click[0]();
+ assert.equal(calls.filter(c=>c.action==='boot').length,1);
+ assert.equal(dom.byId.screen.loads.at(-1),`/simulators/${other}?handheld=0&cindyViewer=token#cindyClipboard=123.token`);
 });
 
 test('a page that outlives its service says how to reopen, then reconnects on its own when the service is back',async()=>{
@@ -317,5 +395,26 @@ test('rectangular TV and Vision zoom uses view points, preserves actual size and
   f.context.getComputedStyle=()=>({paddingLeft:'12px',paddingRight:'12px',paddingTop:'12px',paddingBottom:'64px'});
   f.sim.setZoom({mode:'pct',pct:100});await f.sim.measure();
   assert.equal(f.sim.state.fitPct,30);assert.equal(f.dom.byId.frame.style.width,'1944px','screen points exclude the fixed frame padding');
+ }
+});
+
+test('Android keeps handheld screen, Home and rotation while TV/Vision retain their stage and input',async()=>{
+ for(const kind of ['iOS','android','tvOS','visionOS']){
+  const device={udid,name:kind,state:'Booted',runtime:kind==='android'?'android:android-36':`${kind}-27-0`,platform:kind==='android'?'android':'ios'};
+  const f=await boot({respond:({action})=>action==='status'?status({device}):{}}),handheld=['iOS','android'].includes(kind),delivered=[];
+  const w=f.dom.byId.screen.contentWindow;
+  w.__nativeHome=()=>delivered.push('home');w.__nativeRotateBy=step=>delivered.push(step);
+  w.cindyPlatform={press:async button=>delivered.push(button)};
+  assert.equal(f.context.CindySimModel.handheld(device),handheld);
+  assert.equal(f.dom.byId.screen.src.includes('/simulators/'),handheld);
+  assert.equal(f.dom.byId.screen.src.includes('/platform-stage.html'),!handheld);
+  assert.equal(f.dom.byId['btn-rotl'].hidden,!handheld);
+  assert.equal(f.dom.byId['btn-rotr'].hidden,!handheld);
+  f.dom.byId['btn-home'].dispatch('click');f.dom.byId['btn-rotl'].dispatch('click');f.dom.byId['btn-rotr'].dispatch('click');
+  const key={key:'ArrowLeft',metaKey:true,target:{tagName:'DIV'},preventDefault(){this.prevented=true;},stopImmediatePropagation(){}};
+  f.dom.document.listeners.keydown[0](key);
+  assert.deepEqual(delivered,handheld?['home',-1,1,-1]:['home']);
+  assert.equal(!!key.prevented,handheld);
+  if(handheld)assert.ok(!f.calls.some(p=>p.action==='viewport'),'handheld geometry comes from its own device page');
  }
 });

@@ -30,3 +30,7 @@ import './baguette/platform-stage.test.cjs';
 import './baguette/trackpad.test.cjs';
 import './baguette/spatial.test.cjs';
 import './baguette/native-spatial-protocol.test.cjs';
+import './baguette/agent-health.test.cjs';
+import './baguette/android.test.cjs';
+
+import './baguette/android-parity.test.cjs';

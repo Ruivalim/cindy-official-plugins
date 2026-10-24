@@ -5,6 +5,8 @@ function core(output,failAt=Infinity,macOS="15.0",catalog=[]){
  let polls=0,mutations=0;const commands=[],budgets=[];
  const context={module:{exports:{}},__dirname:dir,process:{platform:'darwin',arch:'arm64'},setTimeout:fn=>fn(),require(name){
   if(name==='./viewer.cjs')return {};
+  // These are Apple host fixtures. Never discover the developer's real AVDs.
+  if(name==='./android/index.cjs')return {createAndroid:()=>({owns:async()=>false,dispatch:async()=>({devices:[]})})};
   if(name==='node:fs/promises')return {mkdir:async()=>{}};
   if(name==='node:child_process')return {execFile(file,args,opts,cb){
    commands.push(file);budgets.push(opts.timeout);let data='',error=null;
@@ -73,7 +75,7 @@ test('heal distinguishes preflight failure from post-restart polling failure',as
 test('macOS minimum is checked before any simulator or bundled binary runs',async()=>{
  for(const version of ['14.7.6','13.6','unknown','']){
   const c=core('',Infinity,version);
-  await assert.rejects(c.dispatch('devices'),e=>e.code==='UNSUPPORTED_OS'&&e.execution==='not_executed');
+  const result=await c.dispatch('devices');assert.equal(result.platformErrors.find(e=>e.platform==='ios').code,'UNSUPPORTED_OS');
   assert.deepEqual(c.commands,['/usr/bin/sw_vers']);
  }
  for(const version of ['15.0','15.7.1','26.0','27.0']){
@@ -267,7 +269,7 @@ test('remote trackpad rejects iOS and unowned devices before native input',async
 
 test('native hold timeouts request release and retain unknown outcome, without changing unrelated command termination',async()=>{
  const calls=[];
- const context={module:{exports:{}},__dirname:dir,require(name){
+ const context={module:{exports:{}},__dirname:dir,process:{platform:'darwin',arch:'arm64'},require(name){
   if(name==='./viewer.cjs')return {};
   if(name==='node:child_process')return {execFile(file,args,options,cb){calls.push({file,options});queueMicrotask(()=>cb(Error('timed out'),'',''));return {stdin:{on(){},end(){}}};}};
   return require(name.startsWith('./')?path.join(dir,name):name);

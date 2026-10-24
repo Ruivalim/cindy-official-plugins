@@ -50,6 +50,46 @@
           ]
         }
       ]
+    },
+    {
+      "name": "android",
+      "version": "7.0.0-data1.0.0",
+      "license": "vendor/android/LICENSES.txt",
+      "assets": [
+        {
+          "url": "https://registry.npmjs.org/tesseract.js-core/-/tesseract.js-core-7.0.0.tgz",
+          "sha256": "ba584355515eaff877552022853c0e71f2cb70466e759d1d6940484929718ee0",
+          "format": "tar.gz",
+          "files": [
+            {
+              "source": "package/tesseract-core-lstm.wasm",
+              "target": "vendor/android/tesseract-core-lstm.wasm"
+            }
+          ]
+        },
+        {
+          "url": "https://registry.npmjs.org/@tesseract.js-data/eng/-/eng-1.0.0.tgz",
+          "sha256": "c9bddf2e2f0a214ac7918f3f4a3caf45e09ce8674fe26662ae7787ac8927f7bb",
+          "format": "tar.gz",
+          "files": [
+            {
+              "source": "package/4.0.0_best_int/eng.traineddata.gz",
+              "target": "vendor/android/eng.traineddata.gz"
+            }
+          ]
+        },
+        {
+          "url": "https://registry.npmjs.org/@tesseract.js-data/chi_sim/-/chi_sim-1.0.0.tgz",
+          "sha256": "850d4a217c87808ef765385cbe5825f4ae99047a49b17e024069ceb663f01c33",
+          "format": "tar.gz",
+          "files": [
+            {
+              "source": "package/4.0.0_best_int/chi_sim.traineddata.gz",
+              "target": "vendor/android/chi_sim.traineddata.gz"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

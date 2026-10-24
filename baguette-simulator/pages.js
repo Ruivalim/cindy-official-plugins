@@ -74,14 +74,14 @@
   // Name · OS Version · Model, like Simulator's: models follow the OS chosen,
   // and the name follows the model until edited.
   const SHEET = {
-    en: { any: 'New device', iphone: 'New iPhone', ipad: 'New iPad', tv: 'New Apple TV', vision: 'New Vision Pro', name: 'Name', os: 'OS Version', model: 'Model', create: 'Create', cancel: 'Cancel', creating: 'Creating…',
-      loading: 'Loading models…', none: 'No compatible runtime installed. Install one in Xcode first.', failed: 'Not created. Check Xcode and try again.' },
-    'zh-CN': { any: '新建设备', iphone: '新建 iPhone', ipad: '新建 iPad', tv: '新建 Apple TV', vision: '新建 Vision Pro', name: '名称', os: '系统版本', model: '机型', create: '创建', cancel: '取消', creating: '正在创建…',
-      loading: '正在读取机型…', none: '没有与此设备兼容的运行时，请先在 Xcode 中安装。', failed: '没有创建成功，请检查 Xcode 后重试。' },
+    en: { any: 'New device', android:'New Android', setup:'Set up Android…', iphone: 'New iPhone', ipad: 'New iPad', tv: 'New Apple TV', vision: 'New Vision Pro', name: 'Name', os: 'OS Version', model: 'Model', create: 'Create', cancel: 'Cancel', creating: 'Creating…',
+      loading: 'Loading models…', none: 'No matching runtime. Set up Android here, or install Apple runtimes in Xcode.', failed: 'Could not create the device. Check the environment and available disk space, then try again.', iosFailed: 'Not created. Check Xcode and try again.' },
+    'zh-CN': { any: '新建设备', android:'新建安卓设备', setup:'安装安卓环境…', iphone: '新建 iPhone', ipad: '新建 iPad', tv: '新建 Apple TV', vision: '新建 Vision Pro', name: '名称', os: '系统版本', model: '机型', create: '创建', cancel: '取消', creating: '正在创建…',
+      loading: '正在读取机型…', none: '没有匹配的系统。可在这里安装安卓环境，Apple 系统请通过 Xcode 安装。', failed: '没有创建成功，请检查运行环境和可用磁盘空间后重试。', iosFailed: '没有创建成功，请检查 Xcode 后重试。' },
   };
   let catalogCache = null;
   async function catalog() { if (!catalogCache) { const c = await rpc('catalog', {}); if (!c?.ok) throw c; catalogCache = c; } return catalogCache; }
-  function createDevice({ family = 'iphone', lang = 'en' } = {}) {
+  function createDevice({ family = 'any', lang = 'en' } = {}) {
     const T = SHEET[lang] || SHEET.en, M = root.CindySimModel;
     return new Promise((resolve) => {
       const nameInput = h('input', { maxlength: '64', autocomplete: 'off', spellcheck: 'false' });
@@ -89,11 +89,12 @@
       const error = h('p', { class: 'sheet-error', role: 'alert' });
       const create = h('button', { class: 'btn cta', type: 'submit', text: T.create, disabled: true });
       const cancel = h('button', { class: 'btn quiet', type: 'button', text: T.cancel });
+      const setup = h('button', {class:'btn quiet',type:'button',text:T.setup,hidden:true});
       const row = (label, control) => h('label', { class: 'sheet-row' }, [h('span', { text: label }), control]);
       const form = h('form', { class: 'sheet', method: 'dialog' }, [
         h('h2', { text: T[family] || T.iphone }),
         h('div', { class: 'sheet-group' }, [row(T.name, nameInput), row(T.os, osSelect), row(T.model, modelSelect)]),
-        error, h('div', { class: 'sheet-actions' }, [cancel, create])]);
+        error, setup, h('div', { class: 'sheet-actions' }, [cancel, create])]);
       const dialog = h('dialog', { class: 'sheet-dialog' }, [form]);
       document.body.append(dialog); dialog.showModal();
       let cat = null, edited = false, done = false;
@@ -101,7 +102,7 @@
       cancel.addEventListener('click', () => finish(null));
       dialog.addEventListener('cancel', (e) => { e.preventDefault(); finish(null); });
       nameInput.addEventListener('input', () => { edited = true; });
-      const models = () => (cat?.deviceTypes || []).filter((d) => family === 'any' || M.family(d) === family);
+      const models = () => (cat?.deviceTypes || []).filter((d) => family === 'any' || (family === 'android' ? M.platform(d) === 'android' : M.platform(d) !== 'android' && M.family(d) === family));
       function fillModels(keep) {
         const runtime = cat.runtimes.find((r) => r.identifier === osSelect.value);
         const usable = models().filter((d) => runtime && M.runtimesFor(cat, d.identifier).some((r) => r.identifier === runtime.identifier));
@@ -114,8 +115,9 @@
       osSelect.addEventListener('change', () => fillModels(modelSelect.value));
       modelSelect.addEventListener('change', syncName);
       error.textContent = T.loading;
-      catalog().then((c) => {
+      function populate(c) {
         cat = c;
+        setup.hidden=(family!=='android'&&family!=='any')||c.platforms?.android?.ready===true;
         const runtimes = c.runtimes.filter((r) => models().some((d) => M.runtimesFor(c, d.identifier).some((v) => v.identifier === r.identifier)))
           .sort((a, b) => String(b.version).localeCompare(String(a.version), undefined, { numeric: true }));
         if (!runtimes.length) { error.textContent = T.none; return; }
@@ -125,7 +127,14 @@
         osSelect.value = best?.runtime || runtimes[0].identifier;
         fillModels(best?.deviceType);
         nameInput.focus(); nameInput.select();
-      }).catch(() => { error.textContent = T.failed; });
+      }
+      function showError(e) {
+        const selected = cat?.deviceTypes?.find(d => d.identifier === modelSelect.value);
+        const apple = selected ? M.platform(selected) !== 'android' : family !== 'android' && family !== 'any';
+        error.textContent = e?.message || (apple ? T.iosFailed : T.failed);
+      }
+      catalog().then(populate).catch(showError);
+      setup.addEventListener('click',async()=>{try{if(await setupAndroid(lang)){catalogCache=null;populate(await catalog());}}catch(e){showError(e);}});
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
         const name = nameInput.value.trim(); if (!name || !modelSelect.value) return;
@@ -134,10 +143,41 @@
           const r = await rpc('create', { name, deviceType: modelSelect.value, runtime: osSelect.value });
           if (!r?.ok) throw r;
           finish({ udid: r.udid, name: r.name || name });
-        } catch { error.textContent = T.failed; create.disabled = false; create.textContent = T.create; }
+        } catch (e) { showError(e); create.disabled = false; create.textContent = T.create; }
       });
     });
   }
 
-  root.CindySimPages = { rpc, h, locale, GLYPH, createDevice, catalog, onPush: (fn) => listeners.add(fn) };
+  async function setupAndroid(lang='en') {
+    const zh=lang==='zh-CN',T={title:zh?'安装安卓环境':'Set up Android',loading:zh?'正在查询可下载的组件…':'Checking available components…',install:zh?'下载并安装':'Download and install',close:zh?'关闭':'Close',accept:zh?'我已阅读并同意以下许可条款':'I have read and accept the licenses below',ready:zh?'安卓环境已就绪':'Android is ready',failed:zh?'安装没有完成。请检查网络和可用磁盘空间后重试。':'Setup did not finish. Check the connection and available disk space, then retry.'};
+    return new Promise(resolve=>{
+      let done=false,ready=false;
+      const status=h('p',{class:'sheet-body',text:T.loading,role:'status'}),content=h('div'),button=h('button',{class:'btn cta',text:T.install,type:'button',disabled:true}),close=h('button',{class:'btn quiet',text:T.close,type:'button'});
+      const dialog=h('dialog',{class:'sheet-dialog android-setup'},[h('div',{class:'sheet'},[h('h2',{text:T.title}),status,content,h('div',{class:'sheet-actions'},[close,button])])]);document.body.append(dialog);dialog.showModal();
+      const finish=()=>{if(done)return;done=true;dialog.close();dialog.remove();catalogCache=null;resolve(ready);};close.onclick=finish;dialog.addEventListener('cancel',e=>{e.preventDefault();finish();});
+      const size=n=>n>=1e9?(n/1e9).toFixed(2)+' GB':(n/1e6).toFixed(1)+' MB';
+      async function track(job){
+        button.hidden=true;
+        const progress=h('progress',{max:1,value:0});content.replaceChildren(progress);
+        while(!done){
+          if(job.state==='done'){ready=true;status.textContent=T.ready;progress.value=1;return;}
+          if(job.state==='failed')throw Error(job.message||T.failed);
+          progress.value=job.total?job.bytes/job.total:0;
+          status.textContent=job.phase==='extracting'?(zh?'正在安装组件…':'Installing components…'):`${job.package||'Android'} · ${Math.round(progress.value*100)}% · ${size(job.bytes||0)} / ${size(job.total||0)} · ${size(job.bytesPerSecond||0)}/s`;
+          await new Promise(r=>setTimeout(r,800));if(done)return;job=await rpc('android_status');if(!job.ok)throw Error(T.failed);
+        }
+      }
+      (async()=>{
+        const current=await rpc('android_status');if(done)return;if(current.state==='running')return track(current);
+        const plan=await rpc('android_plan');if(done)return;if(!plan.ok)throw Error(plan.message||T.failed);
+        if(!plan.packages?.length){ready=true;status.textContent=T.ready;button.hidden=true;return;}
+        status.textContent=zh?`将从 Google 下载 ${size(plan.bytes)}，安装到插件专属目录。请预留至少 ${size(Math.max(plan.bytes*4,10e9))} 磁盘空间。`:`Download ${size(plan.bytes)} from Google into the plugin’s own directory. Keep at least ${size(Math.max(plan.bytes*4,10e9))} of disk space free.`;
+        for(const pkg of plan.packages)content.append(h('p',{class:'sheet-body',text:`${pkg.name} · ${size(pkg.size)}`}));
+        for(const license of plan.licenses)content.append(h('details',{},[h('summary',{text:license.id}),h('pre',{class:'sdk-license',text:license.text})]));
+        const accepted=h('input',{type:'checkbox'});content.append(h('label',{class:'sdk-consent'},[accepted,h('span',{text:T.accept})]));accepted.onchange=()=>{button.disabled=!accepted.checked;};
+        button.onclick=async()=>{button.disabled=true;accepted.disabled=true;try{const job=await rpc('android_install',{planId:plan.id,acceptLicenses:accepted.checked});if(!job.ok)throw Error(job.message||T.failed);await track(job);}catch(e){status.textContent=e.message||T.failed;button.hidden=true;}};
+      })().catch(e=>{status.textContent=e.message||T.failed;button.hidden=true;});
+    });
+  }
+  root.CindySimPages = { rpc, h, locale, GLYPH, createDevice, catalog, setupAndroid, onPush: (fn) => listeners.add(fn) };
 })(globalThis);

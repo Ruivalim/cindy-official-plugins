@@ -13,7 +13,7 @@
 
   // Page state. `status` is the last successful status response; flags are page-local.
   const state = { status: null, lost: false, generation: null, zoom: { mode: 'fit' }, fitPct: 0, fullToolbar: false,
-    recovering: false, stopping: false, switching: false, phase: null, handledJob: null, lastTouch: 0, screenWidth: 0,
+    recovering: false, stopping: false, switching: false, phase: null, lastTouch: 0, screenWidth: 0,
     pose: null, viewport: null };
   // Inside the management view the device list names the device; show a title instead of the switcher.
   const hub = params.get('embed') === 'hub';
@@ -81,7 +81,7 @@
     // The capability travels in the frame URL: Cindy's panel is not an HTTP
     // origin, so this frame can hold no cookie.
     // The device with its bezel, like Simulator; the guest owns its orientation.
-    screen.src = M.platform(state.status?.device) !== 'iOS'
+    screen.src = !M.handheld(state.status?.device)
       ? `/platform-stage.html?udid=${encodeURIComponent(udid)}&lang=${lang}&platform=${M.platform(state.status?.device)}&cindyViewer=${encodeURIComponent(token || '')}`
       : `/simulators/${encodeURIComponent(udid)}?handheld=0${state.fullToolbar ? '&cindyFull=1' : ''}${token ? `&cindyViewer=${encodeURIComponent(token)}` : ''}${location.hash}`;
     state.viewport = null; state.fitPct = 0; state.pose = null;
@@ -92,14 +92,14 @@
   // Percentages are of actual size (one device point per CSS pixel).
   function stageSize() {
     const bounds = stage.getBoundingClientRect();
-    const css = M.platform(state.status?.device) === 'iOS' ? null : globalThis.getComputedStyle?.(frame);
+    const css = M.handheld(state.status?.device) ? null : globalThis.getComputedStyle?.(frame);
     const insetX = parseFloat(css?.paddingLeft || 0) + parseFloat(css?.paddingRight || 0);
     const insetY = parseFloat(css?.paddingTop || 0) + parseFloat(css?.paddingBottom || 0);
     return {width: Math.max(0,bounds.width - insetX),height: Math.max(0,bounds.height - insetY),insetX,insetY};
   }
   function applyZoom() {
     const { width, height, insetX, insetY } = stageSize();
-    const factor = M.platform(state.status?.device) !== 'iOS' && state.zoom.mode === 'pct' && state.fitPct > 0
+    const factor = !M.handheld(state.status?.device) && state.zoom.mode === 'pct' && state.fitPct > 0
       ? state.zoom.pct / state.fitPct : M.zoomFactor(state.zoom, state.fitPct);
     // Keep the point at the centre of the view in place while the frame grows or shrinks.
     const cx = scroll.scrollWidth > scroll.clientWidth ? (scroll.scrollLeft + scroll.clientWidth / 2) / scroll.scrollWidth : 0.5;
@@ -114,7 +114,7 @@
   async function viewport() {
     if (state.viewport) return state.viewport;
     try {
-      if (M.platform(state.status?.device) !== 'iOS') {
+      if (!M.handheld(state.status?.device)) {
         const v = await api('viewport');
         if (v?.width > 0 && v?.height > 0) state.viewport = { width: v.width, height: v.height };
         return state.viewport;
@@ -131,7 +131,7 @@
   async function measure() {
     let doc; try { doc = screen.contentDocument; } catch { return; }
     const v = await viewport();
-    if (M.platform(state.status?.device) !== 'iOS') {
+    if (!M.handheld(state.status?.device)) {
       const {width,height} = stageSize();
       if (!v || !(width > 0 && height > 0)) return;
       const fit = Math.min(width / v.width, height / v.height) * 100;
@@ -201,9 +201,9 @@
     $('title-sub').textContent = [M.runtimeLabel(device?.runtime), t[p.key]].filter(Boolean).join(' · ');
     $('status').textContent = t[p.key];
     const on = live();
-    const ios = M.platform(device) === 'iOS';
+    const handheld = M.handheld(device);
     $('tools').hidden = !on;
-    $('btn-rotl').hidden = $('btn-rotr').hidden = !ios;
+    $('btn-rotl').hidden = $('btn-rotr').hidden = !handheld;
     $('tv-remote').hidden = !on || M.platform(device) !== 'tvOS';
     visionBar.hidden = !on || M.platform(device) !== 'visionOS';
     stage.dataset.vision = M.platform(device) === 'visionOS' ? 'true' : 'false';
@@ -212,7 +212,7 @@
     label($('btn-home'), M.platform(device)==='visionOS'?(lang==='zh-CN'?'主屏幕（数码旋钮）':'Home (Digital Crown)'):t.home, '⇧⌘H'); label($('btn-shot'), `${t.screenshot} · ${shotTo() === 'clipboard' ? t.shotToClipboard : t.shotToDesktop}`, '⌘S'); label($('btn-shot-menu'), t.shotTo);
     label($('btn-rotl'), t.rotateLeft, '⌘←'); label($('btn-rotr'), t.rotateRight, '⌘→');
     label($('zoom-out'), t.zoomOut, '⌘−'); label($('zoom-in'), t.zoomIn, '⌘+'); label($('btn-more'), t.more);
-    $('device-chip').title = s?.currentAppError ? t.appRecordUnreadable : t.devices;
+    $('device-chip').title = t.devices;
     renderPosture();
   }
   function renderOverlay() {
@@ -263,7 +263,13 @@
     try {
       const s = await api('status');
       state.status = s; state.lost = false;
-      trackSwitch(s);
+      // A completed selection may point at a stopped device. Use its own
+      // state immediately, never load its stream using the source's state.
+      if (s.device?.udid !== udid) s.device = s.devices?.find((d) => d.udid === udid);
+      if (!state.switching && s.device?.state === 'Booted' && s.viewerPlatform && (s.device.platform==='android'?'android':'ios')!==s.viewerPlatform) {
+        const opened=await api('open');
+        if(opened.url){const next=new URL(opened.url);for(const key of ['task','embed'])if(params.get(key))next.searchParams.set(key,params.get(key));location.replace(next.href);return;}
+      }
       if (!state.switching && s.device?.state === 'Booted' && s.ready) {
         let unavailable = false; try { unavailable = !!screen.contentDocument?.querySelector('[data-viewer-unavailable]'); } catch {}
         if (state.generation === null || screen.src === 'about:blank' || unavailable) load();
@@ -276,18 +282,6 @@
       if (state.lost !== true && screen.src !== 'about:blank') blank();
     }
     finally { checking = false; render(); }
-  }
-  function trackSwitch(s) {
-    const job = s.deviceJob, relevant = job && (job.sourceUdid === udid || job.targetUdid === udid);
-    if (relevant && job.state === 'running') { state.switching = true; state.phase = job.phase; state.switchTarget = job.targetUdid; if (screen.src !== 'about:blank') blank(); return; }
-    if (relevant && job.id !== state.handledJob && job.state !== 'running') {
-      state.handledJob = job.id; state.switching = false; state.phase = null;
-      if (job.activeUdid && job.activeUdid !== udid) adopt(job.activeUdid);
-      if (job.state === 'done') toast(t.switching.done, 'ok'); else toast(`${t.switching.failed} (${job.errorCode || 'SWITCH_FAILED'})`, 'error');
-      if (job.taskBindingError || job.appContextError) toast(t.switching.recordFailed, 'error');
-      return;
-    }
-    if (!relevant) state.switching = false;
   }
   function adopt(id) {
     udid = id; state.generation = null; state.screenWidth = 0;
@@ -338,6 +332,7 @@
     const to = shotTo();
     try {
       const r = await api('screenshot', { to });
+      if(to==='clipboard'&&r.clipboardPng){const bytes=Uint8Array.from(atob(r.clipboardPng),c=>c.charCodeAt(0));await navigator.clipboard.write([new ClipboardItem({'image/png':new Blob([bytes],{type:'image/png'})})]);}
       if (to === 'clipboard') toast(t.shotCopied, 'ok');
       else toast(t.shotDesktop, 'ok', r.path && { label: t.reveal, run: () => api('reveal', { path: r.path }).catch(() => {}) });
     }
@@ -364,10 +359,10 @@
       await controller.press(button);
     } catch (error) { toast(`${t.actionFailed} (${error.code || 'INPUT_FAILED'})`, 'error'); }
   }
-  function home() { if (M.platform(state.status?.device) !== 'iOS') return press('home'); if (live() && native('__nativeHome')) activity({ isTrusted: true }); }
+  function home() { if (!M.handheld(state.status?.device)) return press('home'); if (live() && native('__nativeHome')) activity({ isTrusted: true }); }
   $('tv-remote').addEventListener('click', event => { const button = event.target.closest('[data-remote]'); if (button) press(button.dataset.remote); });
   for(const node of [$('tv-remote'),$('btn-home')])node.addEventListener('pointerdown',event=>{
-    if(event.button===0&&live()&&M.platform(state.status?.device)!=='iOS')event.preventDefault();
+    if(event.button===0&&live()&&!M.handheld(state.status?.device))event.preventDefault();
   }); // Keep device focus: clicking a remote control must not cancel its swipe.
   const visionBar=h('div',{id:'vision-controls',class:'vision-controls',role:'group',hidden:true});
   const visionNames=lang==='zh-CN'?['交互','转向','平移','环绕','前后移动','复位视角','双手缩放与旋转','键盘输入','捕获指针（Esc 退出）','操作说明','录屏']:
@@ -448,7 +443,7 @@
   const remoteKeys={up:'↑',down:'↓',left:'←',right:'→',select:'Enter',back:'Esc','play-pause':'Space'};
   for(const b of $('tv-remote').querySelectorAll('[data-remote]'))label(b,b.getAttribute('aria-label'),remoteKeys[b.dataset.remote]);
   function rotate(step) {
-    if (!live() || M.platform(state.status?.device) !== 'iOS') return;
+    if (!live() || !M.handheld(state.status?.device)) return;
     // A foldable turns through viewer-stage.js, which animates the 3D book.
     let turned = false; try { turned = screen.contentWindow?.__cindyPose?.turn?.(step) === true; } catch {}
     const fn = screen.contentWindow?.__nativeRotateBy ? '__nativeRotateBy' : '__nativeRotate';
@@ -485,10 +480,10 @@
       event.preventDefault(); event.stopImmediatePropagation(); if (!event.repeat) press(remote[event.key]); return;
     }
     if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
-    const k = event.key, ios = M.platform(state.status?.device) === 'iOS', action =
+    const k = event.key, handheld = M.handheld(state.status?.device), action =
       (k === '=' || k === '+') ? () => zoomBy(1) : k === '-' ? () => zoomBy(-1) : k === '0' ? () => setZoom({ mode: 'fit' })
         : (k === '1' && state.fitPct) ? () => setZoom({ mode: 'pct', pct: 100 })
-          : (ios && k === 'ArrowLeft') ? () => rotate(-1) : (ios && k === 'ArrowRight') ? () => rotate(1)
+          : (handheld && k === 'ArrowLeft') ? () => rotate(-1) : (handheld && k === 'ArrowRight') ? () => rotate(1)
             : (event.shiftKey && (k === 'h' || k === 'H')) ? home : (!event.shiftKey && (k === 's' || k === 'S')) ? screenshot : null;
     if (!action) return;
     event.preventDefault(); event.stopImmediatePropagation(); action();
@@ -553,8 +548,14 @@
   $('btn-more').addEventListener('click', () => {
     const on = live();
     showMenu($('btn-more'), [
-      M.platform(state.status?.device) === 'iOS' ? item(ICON.shake, t.shake, () => native('__nativeShake'), { disabled: !on }) : null,
-      M.platform(state.status?.device) === 'iOS' ? item(ICON.grid, t.appSwitcher, () => native('__nativeAppSwitcher'), { disabled: !on }) : null,
+      ...(state.status?.device?.platform === 'android' ? [item(ICON.key, lang === 'zh-CN' ? '返回' : 'Back', () => native('__nativeBack'), { disabled: !on })] : []),
+      ['iOS','android'].includes(M.platform(state.status?.device)) ? item(ICON.shake, t.shake, () => native('__nativeShake'), { disabled: !on }) : null,
+      ['iOS','android'].includes(M.platform(state.status?.device)) ? item(ICON.grid, t.appSwitcher, () => native('__nativeAppSwitcher'), { disabled: !on }) : null,
+      ...(state.status?.device?.platform === 'android' ? [
+        item(ICON.key, lang === 'zh-CN' ? '复制设备剪贴板' : 'Copy device clipboard', () => native('__nativeCopy'), {disabled:!on}),
+        item(ICON.plus, lang === 'zh-CN' ? '导入 APK、图片或视频…' : 'Import APK, image or video…', () => native('__nativeImport'), {disabled:!on}),
+        item(ICON.camera, screen.contentWindow?.__nativeRecording?.() ? (lang === 'zh-CN' ? '停止录像并保存' : 'Stop recording & save') : (lang === 'zh-CN' ? '开始录像' : 'Start recording'), () => native('__nativeRecord'), {disabled:!on}),
+      ] : []),
       item(ICON.key, t.releaseKeys, release, { disabled: !on }),
       h('div', { class: 'sep' }),
       item(ICON.refresh, t.recover, recover, { disabled: state.recovering || state.switching }),
@@ -569,8 +570,7 @@
     const paused = state.status?.settings?.enabled === false;
     showMenu($('device-chip'), [
       h('div', { class: 'head', text: t.devices }),
-      state.status?.currentAppError ? h('div', { class: 'head', role: 'status', text: t.appRecordUnreadable }) : null,
-      ...rows.map((d) => h('button', { class: 'item', role: 'menuitemradio', 'aria-checked': String(d.current), disabled: paused || !!state.status?.currentAppError || state.switching || !d.available || (d.current && d.tone === 'on'),
+      ...rows.map((d) => h('button', { class: 'item', role: 'menuitemradio', 'aria-checked': String(d.current), disabled: paused || state.switching || !d.available || d.current,
         title: d.current ? t.current : t.switchTo, onclick: () => { closeMenu(); switchTo(d.udid); } }, [
         h('span', { class: 'dot', 'data-tone': d.tone }),
         h('span', { class: 'label' }, [h('span', { text: d.name }), h('span', { class: 'sub', text: d.meta })]),
@@ -582,10 +582,19 @@
   });
   async function switchTo(targetUdid) {
     if (state.switching) return;
-    state.switching = true; state.phase = 'preparing'; state.switchTarget = targetUdid; state.handledJob = null; blank(); render();
+    state.switching = true; state.phase = 'preparing'; state.switchTarget = targetUdid; blank(); render();
     // Inside a task page the switch also moves that task to the new device.
-    try { await api('switch', { targetUdid, ...(params.get('task') ? { task: params.get('task') } : {}) }); }
-    catch (error) { state.switching = false; toast(`${t.switching.failed} (${error.code || 'SWITCH_FAILED'})`, 'error'); }
+    try {
+      const result = await api('switch', { targetUdid, ...(params.get('task') ? { task: params.get('task') } : {}) });
+      // The request returns its final result after selection and task binding.
+      // Shared status jobs belong to other pages and never change this page.
+      const job = result.job;
+      if (job.activeUdid && job.activeUdid !== udid) adopt(job.activeUdid);
+      if (job.state === 'done') toast(t.switching.done, 'ok'); else toast(`${t.switching.failed} (${job.errorCode || 'SWITCH_FAILED'})`, 'error');
+      if (job.taskBindingError || job.appContextError) toast(t.switching.recordFailed, 'error');
+    }
+    catch (error) { toast(`${t.switching.failed} (${error.code || 'SWITCH_FAILED'})`, 'error'); }
+    finally { state.switching = false; state.phase = null; }
     await check();
   }
 

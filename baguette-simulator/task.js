@@ -7,8 +7,8 @@ const TEXT = {
     loading: 'Loading…', connecting: 'Connecting to the screen…',
     closedTitle: 'Screen closed', closedBody: 'The simulator is still running. Open the screen to continue.', open: 'Open screen', opening: 'Opening…',
     noneTitle: 'This task has no simulator yet', noneBody: 'Pick a device for this task or create a new one. Cindy also picks one when it opens the simulator.',
-    use: 'Use', create: 'New device…', creating: 'Creating…', inOther: (n) => n === 1 ? 'used by another task' : `used by ${n} other tasks`,
-    offTitle: (name) => `${name} is off`, offBody: 'Start it to see the screen here. Apps and data are kept.', start: 'Start', starting: 'Starting…', change: 'Use another device',
+    use: 'Use', create: 'New device…', creating: 'Creating…', inOther: (n) => n === 1 ? 'recently used by another task' : `recently used by ${n} other tasks`,
+    offTitle: (name) => `${name} is off`, offBody: 'Start it to see the screen here. Apps and data are kept.', start: 'Open', starting: 'Starting…', change: 'Use another device',
     pausedTitle: 'Simulators are turned off', pausedBody: 'Turn them on in Plugins → Device Simulator to use them here.',
     pluginOff: 'The Device Simulator plugin is turned off.', needXcode: 'Needs full Xcode with the required iOS, tvOS or visionOS runtime installed.',
     failed: 'Not completed. Check the device and try again.', busy: 'Another simulator operation is running. Trying again shortly…', timeout: 'No response from the simulator service. Reopen this tab.',
@@ -18,8 +18,8 @@ const TEXT = {
     loading: '正在读取…', connecting: '正在连接画面…',
     closedTitle: '画面已关闭', closedBody: '模拟器仍在运行，打开画面即可继续。', open: '打开画面', opening: '正在打开…',
     noneTitle: '这个任务还没有模拟器', noneBody: '选一台设备给这个任务用，或新建一台。Cindy 打开模拟器时也会自己选。',
-    use: '用这台', create: '新建设备…', creating: '正在创建…', inOther: (n) => `另有 ${n} 个任务在用`,
-    offTitle: (name) => `${name} 已关闭`, offBody: '启动后画面会显示在这里，App 和数据都保留。', start: '启动', starting: '正在启动…', change: '换一台设备',
+    use: '用这台', create: '新建设备…', creating: '正在创建…', inOther: (n) => `另有 ${n} 个任务近期使用`,
+    offTitle: (name) => `${name} 已关闭`, offBody: '启动后画面会显示在这里，App 和数据都保留。', start: '打开', starting: '正在启动…', change: '换一台设备',
     pausedTitle: '模拟器运行已关闭', pausedBody: '在「插件 → 设备模拟器」里打开开关后即可在这里使用。',
     pluginOff: '「设备模拟器」插件已停用。', needXcode: '需要先安装完整的 Xcode 和对应的 iOS、tvOS 或 visionOS 运行时。',
     failed: '操作没有完成，请核对设备后重试。', busy: '有其他模拟器操作正在进行，稍后自动重试…', timeout: '模拟器服务没有响应，请重新打开这个页签。',
@@ -56,7 +56,7 @@ function deviceList(exclude) {
   if (!rows.length) return null;
   return h('div', { class: 'card' }, rows.map((row) => {
     const d = devices.find((x) => x.udid === row.udid);
-    const others = (d.tasks || 0) - (d.thisTask ? 1 : 0);
+    const others = (d.activeTasks || 0) - (d.thisTaskActive ? 1 : 0);
     return h('div', { class: 'device' }, [
       h('span', { class: 'glyph', html: GLYPH[row.family] }),
       h('div', { class: 'text' }, [h('div', { class: 'name', text: row.name }),

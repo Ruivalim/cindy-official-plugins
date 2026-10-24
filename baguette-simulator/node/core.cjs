@@ -10,11 +10,12 @@ const {deviceId} = require('./device-id.cjs');
 const {platform} = require('./control-model.js');
 const {openViewer,stopViewer,configureControls}=require('./viewer.cjs');
 const BINARY = path.join(__dirname, '../vendor/baguette/Baguette');
-const ROOT = path.join(os.homedir(), 'Library/Application Support/BaguetteCindy');
+const ROOT = process.platform==='darwin'?path.join(os.homedir(), 'Library/Application Support/BaguetteCindy')
+  :path.join(process.platform==='win32'?(process.env.LOCALAPPDATA||path.join(os.homedir(),'AppData/Local')):(process.env.XDG_DATA_HOME||path.join(os.homedir(),'.local/share')),'BaguetteCindy');
 const DEVICE_SET = path.join(ROOT, 'devices');
 const children = new Set();
 const methods = new Set(['environment','devices','create_device','rename_device','app_bundle','boot','shutdown','describe_ui','tap','viewer_screen','viewer_tap','viewer_trackpad','viewer_spatial','swipe','gesture','type_text','press','screenshot','install_app','launch_app','heal','open_viewer','close_viewer','delete_device','erase_device','reveal_screenshot',
-  'wait_for','capture','set_state','logs','app_install','app_install_status','app_info','app_terminate','app_uninstall','open_url']);
+  'import_media','wait_for','capture','set_state','logs','app_install','app_install_status','app_info','app_terminate','app_uninstall','open_url']);
 // Agent operations that only read the device; they never change what is on screen.
 const READ_ONLY = new Set(['describe_ui','screenshot','wait_for','logs','app_info','app_install_status','viewer_screen']);
 class Failure extends Error {
@@ -172,7 +173,30 @@ async function clipboardAction(p) {
  }catch(error){if(inputCompleted&&error.execution==='not_executed')error.execution='unknown';throw error;}
  finally{keyboardBusy.delete(key);}
 }
+let androidImpl;
+function android(){return androidImpl||(androidImpl=require('./android/index.cjs').createAndroid({root:ROOT,run,children}));}
+const appleHost=process.platform==='darwin'&&process.arch==='arm64';
 async function dispatch(method,p={},deadline=Date.now()+110000) {
+  p={...p,_deadline:deadline};
+  if(method.startsWith('android_setup_'))return android().dispatch(method,p);
+  if(!methods.has(method))throw new Failure('UNKNOWN_TOOL','Unknown simulator operation');
+  if(method==='environment'){
+    const results=await Promise.allSettled([appleHost?appleDispatch(method,p,deadline):Promise.resolve(null),android().dispatch(method,p)]);
+    const apple=results[0].status==='fulfilled'?results[0].value:null,other=results[1].status==='fulfilled'?results[1].value:null;
+    return {...(apple||{}),platforms:{ios:apple?{ready:true}:{ready:false,message:results[0].reason?.message||'iOS requires an Apple Silicon Mac with Xcode.'},android:other||{ready:false,message:results[1].reason?.message}},
+      runtimes:[...(apple?.runtimes||[]).map(r=>({...r,platform:'ios'})),...(other?.runtimes||[])],deviceTypes:[...(apple?.deviceTypes||[]).map(d=>({...d,platform:'ios'})),...(other?.deviceTypes||[])],note:'Choose an installed runtime and model from this catalog. Android setup is available in the plugin; iOS runtimes are installed through Xcode.'};
+  }
+  if(method==='devices'){
+    const results=await Promise.allSettled([appleHost?appleDispatch('devices',p,deadline):Promise.resolve({devices:[]}),android().dispatch('devices',p)]);
+    const errors=results.flatMap((r,i)=>r.status==='rejected'?[{platform:i?'android':'ios',code:r.reason.code,message:r.reason.message}]:[]);
+    return {deviceSet:DEVICE_SET,devices:[...(results[0].status==='fulfilled'?results[0].value.devices.map(d=>({...d,platform:'ios'})):[]),...(results[1].status==='fulfilled'?results[1].value.devices:[])],...(errors.length?{platformErrors:errors}:{})};
+  }
+  if(method==='close_viewer'){await Promise.all([stopViewer(),android().viewer.close()]);return {execution:'executed'};}
+  if(method==='reveal_screenshot'&&p.platform==='android')return android().dispatch(method,p);
+  if((method==='create_device'&&p.runtime?.startsWith('android:'))||await android().owns(p.udid))return android().dispatch(method,p);
+  return appleDispatch(method,p,deadline);
+}
+async function appleDispatch(method,p={},deadline=Date.now()+110000) {
   // Core owns the request deadline, including preflight. Nested observation
   // never starts another full budget after a slow boot, launch or input.
   p={...p,_deadline:deadline};
@@ -439,11 +463,11 @@ async function dispatch(method,p={},deadline=Date.now()+110000) {
       for(const [k,v] of Object.entries(p.env)){if(!/^[A-Za-z_][A-Za-z0-9_]{0,100}$/.test(k)||typeof v!=='string'||v.length>4000)throw new Failure('INVALID_ARGUMENT','env names must be identifiers and values strings');env['SIMCTL_CHILD_'+k]=v;}
     }
     agent().forget(device.udid);
-    const launched={udid:device.udid,bundleId:id,...await simCommand(args,{mutation:true,env}),execution:'executed'};
+    const launched={udid:device.udid,bundleId:id,...await simCommand(args,{mutation:true,env}),execution:'executed',appLaunched:true};
     if(p.showViewer===false)return settledShot(device,p,launched);
     let viewer;
     try{viewer={viewer:await deviceViewer(device,p._locale)};}
-    catch(error){viewer={viewer:{previewOpened:false,error:error.message},note:'App launched, but viewer failed. Retry viewer action=open, not launch.'};}
+    catch(error){viewer={outcome:'partial',viewer:{ready:false,previewOpened:false,error:error.message},note:'App launched, but viewer failed. Retry viewer action=open, not launch.'};}
     return settledShot(device,p,{...launched,...viewer});
   }
   if(method==='heal') {
@@ -470,20 +494,22 @@ async function dispatch(method,p={},deadline=Date.now()+110000) {
 function reply(value){process.stdout.write(JSON.stringify(value)+'\n');}
 function shutdown(){ for(const child of children) child.kill('SIGKILL'); process.exit(0); }
 function startWorker() {
-  require('./viewer.cjs').reapOrphans(BINARY,DEVICE_SET);
+  if(appleHost)require('./viewer.cjs').reapOrphans(BINARY,DEVICE_SET);
   // In use = a viewer window is open, or another process names a running device.
   const inUse=async()=>{
-    if(require('./viewer.cjs').viewing())return true;
-    if(appsImpl?.installing())return true;
+    if(require('./viewer.cjs').viewing()||android().viewer.viewing())return true;
+    if(appsImpl?.installing()||android().installing())return true;
     const running=(await dispatch('devices')).devices.filter(d=>d.state!=='Shutdown').map(d=>d.udid);
-    return (await require('./activity.cjs').externalUse(running)).length>0;
+    return process.platform==='win32'?false:(await require('./activity.cjs').externalUse(running)).length>0;
   };
-  const runtime=require('./runtime.cjs').createRuntime({dispatch,settingsFile:path.join(ROOT,'runtime-settings.json'),inUse,viewing:()=>require('./viewer.cjs').viewing(),forgetViewer:()=>require('./viewer.cjs').forgetSession(DEVICE_SET),
-    pendingOperation:udid=>appsImpl?.pending(udid),
-    viewerWanted:()=>require('./viewer.cjs').hasSession(DEVICE_SET),
+  const runtime=require('./runtime.cjs').createRuntime({dispatch,settingsFile:path.join(ROOT,'runtime-settings.json'),inUse,viewing:()=>require('./viewer.cjs').viewing()||android().viewer.viewing()||android().installing(),forgetViewer:()=>{require('./viewer.cjs').forgetSession(DEVICE_SET);android().viewer.forget();},
+    pendingOperation:udid=>android().pending(udid)||appsImpl?.pending(udid),
+    pendingJob:udid=>android().runningFor(udid)||appsImpl?.runningFor(udid),
+    viewerWanted:()=>require('./viewer.cjs').hasSession(DEVICE_SET)||android().viewer.wanted(),
     tasks:require('./tasks.cjs').createTaskBindings(path.join(ROOT,'task-bindings.json')),
-    existingViewerUrl:(udid,locale)=>require('./viewer.cjs').existingViewerUrl(udid,locale)});
+    existingViewerUrl:async(udid,locale)=>await android().owns(udid)?android().viewer.existing(udid,locale):require('./viewer.cjs').existingViewerUrl(udid,locale)});
   configureControls(runtime);
+  android().configure(runtime);
   const timer=setInterval(()=>runtime.checkIdle().catch(error=>process.stderr.write('[baguette-idle] '+(error.code||'FAILED')+'\n')),15000);
   timer.unref();
   const recycle=setInterval(()=>require('./viewer.cjs').recycleIfBloated().catch(()=>{}),60000);
@@ -504,7 +530,7 @@ function startWorker() {
     let request;try{request=JSON.parse(line);}catch{return reply({jsonrpc:'2.0',id:null,error:{code:-32700,message:'Invalid JSON'}});}
     if(request.id===undefined)return;
       try {reply({jsonrpc:'2.0',id:request.id,result:{ok:true,...await runtime.request(request.method,request.params)}});}
-      catch(e){reply({jsonrpc:'2.0',id:request.id,result:{ok:false,errorCode:e.code||'FAILED',message:e.message,execution:e.execution||'not_executed'}});}
+      catch(e){reply({jsonrpc:'2.0',id:request.id,result:{ok:false,errorCode:e.code||'FAILED',message:e.message,execution:e.execution||'not_executed',...(e.busy?{busy:e.busy}:{})}});}
   });
   input.on('close',stop);process.on('SIGTERM',stop);process.on('SIGINT',stop);
 }

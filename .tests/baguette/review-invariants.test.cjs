@@ -66,7 +66,7 @@ test('foreground App info bounds comparison and hashing without imposing its dea
         throw new Failure('COMMAND_FAILED','checksum comparison timed out');
       },sim:async(_args,options)=>{assert.ok(options.timeout<=1000-clock);clock+=100;return {stdout:source};}});
     if(phase==='hash')await assert.rejects(apps.info({udid:A},{appPath:source,_deadline:1000}),e=>e.code==='TIME_BUDGET_EXHAUSTED'&&e.execution==='not_executed');
-    else {const result=await apps.info({udid:A},{appPath:source,_deadline:1000});assert.equal(result.matchesLocal,false);assert.equal(comparing,true);assert.equal(clock,1000);}
+    else {const result=await apps.info({udid:A},{appPath:source,_deadline:1000});assert.equal(result.matchesLocal,false);assert.equal(result.verification,'unconfirmed');assert.equal(result.comparisonError.code,'COMMAND_FAILED');assert.match(result.note,/does not prove a different build/);assert.equal(comparing,true);assert.equal(clock,1000);}
   }
 });
 
@@ -916,14 +916,14 @@ test('explicit viewer close survives task polling and worker restart; an unexpec
   live=false;runtime=make();assert.ok((await runtime.request('task_state',{_task:'task-1'})).viewer);assert.equal(opens,3);
 });
 
-test('launches reuse the shared lock for app records without serializing unrelated device reads',async t=>{
+test('launches on different devices run independently and retain both shared App records',async t=>{
   const {createRuntime}=require(path.join(dir,'runtime.cjs'));const root=await temporary(t),hold=deferred(),started=deferred();
   const settingsFile=path.join(root,'settings.json');
   const dispatch=async(method,p={})=>{if(method==='launch_app'&&p.udid===A){started.resolve();await hold.promise;}return {ok:true};};
   const runtime=createRuntime({settingsFile,dispatch});
   const first=runtime.request('launch_app',{udid:A,bundleId:'test.example.a'});await started.promise;
-  await assert.rejects(runtime.request('launch_app',{udid:B,bundleId:'test.example.b'}),e=>e.code==='BUSY');
-  for(const method of ['app_uninstall','erase_device','delete_device'])await assert.rejects(runtime.request(method,{udid:B,bundleId:'test.example.b'}),e=>e.code==='BUSY');
+  assert.equal((await runtime.request('launch_app',{udid:B,bundleId:'test.example.b'})).ok,true);
+  for(const method of ['app_uninstall','erase_device','delete_device'])assert.equal((await runtime.request(method,{udid:B,bundleId:'test.example.b'})).ok,true);
   assert.deepEqual(await runtime.request('logs',{udid:B}),{ok:true});
   hold.resolve();await first;await runtime.request('launch_app',{udid:B,bundleId:'test.example.b'});
   const reloaded=createRuntime({settingsFile,dispatch});
@@ -1079,4 +1079,15 @@ test('Vision Pro maps view points to a spatial ray; TV and spatial drags never s
  const before=f.state.calls.length;
  await assert.rejects(f.agent.setState(f.device,{appearance:'dark',orientation:'portrait'}),e=>e.code==='UNSUPPORTED_INPUT');
  assert.equal(f.state.calls.length,before);
+});
+test('management never announces a partial Android erase/delete as completed',async()=>{
+  for(const action of ['erase','delete']){
+    const f=pageFixture('manage'),d={udid:A,name:'Phone',state:'Shutdown'};
+    f.page.seed({ok:true,settings:{enabled:true},devices:[d]});
+    const operation=f.page.act(action,d,'operation completed');
+    f.requests[0].resolve({ok:true,udid:A,outcome:'partial',execution:'unknown',completedSteps:[{step:'shutdown'}],failedStep:'erase-entry',deviceError:{code:'EACCES'}});
+    await new Promise(r=>setImmediate(r));assert.notEqual(f.get('message').textContent,'operation completed');assert.ok(f.get('message').textContent.length>0);
+    assert.equal(f.requests[1].action,'manage_state');f.requests[1].resolve({ok:true,settings:{enabled:true},devices:[d]});await operation;
+    assert.equal(f.requests.filter(r=>r.action===action).length,1);
+  }
 });

@@ -127,7 +127,7 @@ test('task binding preserves durable identity through every post-save status and
  }
 });
 
-function logicPage({taskView,preview=async()=>({ok:true}),bindingResult}={}){
+function logicPage({taskView,preview=async()=>({ok:true}),bindingResult,targetResult={ok:true,sessionId:'task-1'}}={}){
  const code=require('node:fs').readFileSync('baguette-simulator/main.js','utf8');
  const buses=new Map();
  class BroadcastChannel{constructor(n){this.name=n;this.onmessage=null;(buses.get(n)||buses.set(n,new Set()).get(n)).add(this);}postMessage(data){for(const p of buses.get(this.name))if(p!==this)queueMicrotask(()=>p.onmessage?.({data}));}}
@@ -135,6 +135,7 @@ function logicPage({taskView,preview=async()=>({ok:true}),bindingResult}={}){
  const cindy={onHostMessage:fn=>handler=fn,request:async()=>({ok:true,context:{locale:'en'}}),send:async p=>sent.push(p),
   preview:async p=>{previews.push(p);return preview(p);},
   node:{request:async r=>{calls.push(r);if(r.method==='device_hold')return {ok:true,result:{running:false}};
+   if(r.method==='task_target')return {ok:true,result:targetResult};
    if(r.method==='task_state')return {ok:true,result:{ok:true,sessionId:r.params._task,device:null,devices:[],viewer:null}};
    if(r.method==='task_bind'&&bindingResult)return {ok:true,result:bindingResult};
    return {ok:true,result:{ok:true,ready:true,url:'http://127.0.0.1:9/control?udid=A&lang=en#cindyClipboard=9.t'}};}}};
@@ -145,6 +146,29 @@ function logicPage({taskView,preview=async()=>({ok:true}),bindingResult}={}){
  return {call:args=>handler({type:'tool-call',tool:'open_viewer',callId:'c',args}),sent,previews,views,calls,page,pushed,replies};
 }
 const settle=()=>new Promise(r=>setTimeout(r,10));
+
+test('jump resolves the latest existing device binding without booting or rebinding',async t=>{
+ const f=await runtimeFixture(t);
+ await f.tasks.bind('older',A,1);await f.tasks.bind('newer',A,2);await f.tasks.bind('other',B,3);
+ assert.equal((await f.runtime.request('task_target',{udid:A.toLowerCase()})).sessionId,'newer');
+ await f.tasks.bind('newer',B,4);
+ assert.equal((await f.runtime.request('task_target',{udid:A})).sessionId,'older');
+ await f.tasks.forgetDevice(A);
+ await assert.rejects(f.runtime.request('task_target',{udid:A}),e=>e.code==='TASK_NOT_BOUND');
+ assert.deepEqual(f.calls,[],'navigation never starts a device or viewer');
+});
+
+test('management jump opens the saved task, never a supplied task, and detects older hosts',async()=>{
+ for(const mode of ['supported','older','no-task','host-failure']){
+  const f=logicPage({targetResult:mode==='no-task'?{ok:false,errorCode:'TASK_NOT_BOUND'}:{ok:true,sessionId:'bound-task'},
+   taskView:async()=>mode==='host-failure'?{ok:false,errorCode:'HOST_NOT_READY'}:{ok:true,sessionId:'bound-task',...(mode==='supported'?{focusRequested:true}:{})}});
+  f.page.postMessage({type:'request',id:'jump',action:'go_to_task',udid:A,sessionId:'wrong-task'});await settle();
+  assert.equal(f.replies[0].result.ok,mode==='supported');
+  assert.deepEqual(f.calls.map(c=>c.method),['task_target']);
+  assert.deepEqual(JSON.parse(JSON.stringify(f.views)),mode==='no-task'?[]:[{sessionId:'bound-task',focus:true}]);
+  if(mode==='older')assert.equal(f.replies[0].result.errorCode,'HOST_UPDATE_REQUIRED');
+ }
+});
 
 test('management binding with failed state notifies the focused task to unload its previous device screen',async()=>{
  const result={ok:true,execution:'executed',sessionId:'task-1',boundUdid:B,taskStateError:{code:'VIEWER_FAILED'}};
@@ -180,22 +204,20 @@ test('completed device operations retain results and expose task record read and
  for(const session of [undefined,'../invalid'])assert.equal((await runtime.request('boot',{udid:A,session_context:{session_id:session}})).taskBindingError,undefined);
 });
 
-test('switch binding errors retain both successful and failed actual device outcomes',async t=>{
- for(const failAt of [null,'shutdown','open_viewer']){
+test('switch binding errors retain selection without changing device power states',async t=>{
+ for(const targetState of ['Shutdown','Booted']){
   const dir=await tmp(t),file=path.join(dir,'bindings.json');await fs.writeFile(file,'{');
-  const devices=[{udid:A,state:'Booted',isAvailable:true},{udid:B,state:'Shutdown',isAvailable:true}];
+  const devices=[{udid:A,state:'Booted',isAvailable:true},{udid:B,state:targetState,isAvailable:true}];
   const runtime=createRuntime({tasks:createTaskBindings(file),settingsFile:path.join(dir,'settings.json'),dispatch:async(m,p={})=>{
    if(m==='devices')return {devices};
-   if(m===failAt)throw Object.assign(Error('failed'),{code:'DEVICE_FAILED'});
-   if(m==='shutdown')devices[0].state='Shutdown';if(m==='boot')devices[1].state='Booted';
-   return {ok:true,url:'screen'};
+   assert.fail('selection must not operate devices: '+m);
   }});
   await runtime.request('viewer_switch',{udid:A,targetUdid:B,task:'task-1'});
   let job;
   for(let i=0;i<100;i++){job=(await runtime.status()).deviceJob;if(job.state!=='running')break;await new Promise(r=>setTimeout(r,2));}
-  assert.equal(job.state,failAt?'failed':'done');assert.equal(job.activeUdid,failAt==='shutdown'?A:B);
-  assert.equal(job.execution,failAt?'unknown':'executed');assert.equal(job.taskBindingError.code,'TASK_BINDINGS_UNREADABLE');
-  if(failAt)assert.equal(job.errorCode,'DEVICE_FAILED');
+  assert.equal(job.state,'done');assert.equal(job.activeUdid,B);
+  assert.equal(job.execution,'executed');assert.equal(job.taskBindingError.code,'TASK_BINDINGS_UNREADABLE');
+  assert.deepEqual(devices.map(d=>d.state),['Booted',targetState]);
   assert.equal(await fs.readFile(file,'utf8'),'{');
  }
 });

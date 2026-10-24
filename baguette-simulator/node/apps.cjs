@@ -74,7 +74,12 @@ function createApps({sim, run, Failure, now = Date.now, rsync = '/usr/bin/rsync'
       executableSha256: installed.executableSha256.slice(0, 16), executableModified: installed.executableModified};
     if (local) {
       const sameExecutable = local.executableSha256 === installed.executableSha256;
-      const changedFiles = sameExecutable ? await differences(await appPath(p.appPath), container, p._deadline).then(lines => lines.length).catch(error => { if (error.code === 'TIME_BUDGET_EXHAUSTED') throw error; return null; }) : null;
+      const changedFiles = sameExecutable ? await differences(await appPath(p.appPath), container, p._deadline).then(lines => lines.length).catch(error => {
+        result.comparisonError = {code:error.code || 'COMPARISON_FAILED', message:error.message};
+        result.verification = 'unconfirmed';
+        result.note = 'Content comparison did not complete. matchesLocal=false does not prove a different build; do not reinstall on this evidence alone.';
+        return null;
+      }) : null;
       result.local = {version: local.version, build: local.build, executableSha256: local.executableSha256.slice(0, 16), executableModified: local.executableModified};
       result.matchesLocal = sameExecutable && local.version === installed.version && local.build === installed.build && changedFiles === 0;
       if (changedFiles) result.changedFiles = changedFiles;
@@ -89,7 +94,7 @@ function createApps({sim, run, Failure, now = Date.now, rsync = '/usr/bin/rsync'
     if (runningFor(device.udid)) throw failure('INSTALL_RUNNING', `An install is still running on this device (job ${runningFor(device.udid).id}). Poll it with app action=install_status.`);
     // Hashing and the multi-GB checksum comparison belong to the same existing
     // job as copying. The caller can poll it while preparation is still busy.
-    const job = {id: crypto.randomUUID().slice(0, 8), udid: deviceId(device.udid), bundleId: null, appPath: source, mode: 'checking', state: 'running', startedAt: now()};
+    const job = {id: crypto.randomUUID().slice(0, 8), udid: deviceId(device.udid), bundleId: null, appPath: source, mode: 'checking', modeReason:'comparing-build', state: 'running', startedAt: now()};
     jobs.set(job.id, job);
     for (const [id, old] of jobs) if (old.state !== 'running' && now() - (old.finishedAt || 0) > 3600000) jobs.delete(id);
     let execution = 'not_executed';
@@ -102,16 +107,22 @@ function createApps({sim, run, Failure, now = Date.now, rsync = '/usr/bin/rsync'
       job.bundleId = local.bundleId;
       const container = p.mode === 'full' || !nativePlatform ? null : await installedAt(device, local.bundleId);
       let mode = 'full';
+      job.modeReason = p.mode === 'full' ? 'requested-full' : 'not-installed';
       if (container) {
         const installed = await identity(container).catch(() => null);
         const changes = installed ? await differences(source, container).catch(() => null) : null;
         const changed = changes?.length ?? Infinity;
         if (changed === 0 && installed.executableSha256 === local.executableSha256 && installed.version === local.version && installed.build === local.build) {
           job.mode = 'unchanged';
+          job.modeReason = 'identical-content';
           return {version: local.version, build: local.build};
         }
         // Registration and signing changes need installd, including nested bundles.
-        if (changed <= SYNC_LIMIT && !changes.some(line => /(?:Info\.plist|embedded\.mobileprovision|_CodeSignature)(?:\/|$)/.test(line))) mode = 'sync';
+        const registrationChanged=changes?.some(line => /(?:Info\.plist|embedded\.mobileprovision|_CodeSignature)(?:\/|$)/.test(line));
+        job.modeReason = !changes ? 'comparison-unavailable' : registrationChanged ? 'registration-or-signature-changed'
+          : changed>SYNC_LIMIT ? 'many-files-changed' : 'few-files-changed';
+        if (changed <= SYNC_LIMIT && !registrationChanged) mode = 'sync';
+        if (changes) job.changedFiles=changed;
       }
       job.mode = mode;
       if (mode === 'sync') {
@@ -123,7 +134,6 @@ function createApps({sim, run, Failure, now = Date.now, rsync = '/usr/bin/rsync'
         await run(rsync, ['-ac', '--delete', source + '/', container + '/'], {timeout: 1800000, mutation: true});
         const after = await identity(container);
         if (after.executableSha256 !== local.executableSha256 || (await differences(source, container)).length) throw failure('INSTALL_UNVERIFIED', 'The synced bundle does not match the build', 'unknown');
-        job.changedFiles = null;
       } else {
         execution = 'unknown';
         await sim(['install', device.udid, source], {timeout: 1800000, mutation: true});
@@ -143,7 +153,8 @@ function createApps({sim, run, Failure, now = Date.now, rsync = '/usr/bin/rsync'
     return describeJob(job);
   }
   function describeJob(job) {
-    const base = {udid: job.udid, bundleId: job.bundleId, job: job.id, mode: job.mode, state: job.state, elapsedSeconds: Math.round(((job.finishedAt || now()) - job.startedAt) / 1000)};
+    const base = {udid: job.udid, bundleId: job.bundleId, job: job.id, mode: job.mode, modeReason:job.modeReason,
+      ...(Number.isFinite(job.changedFiles)?{changedFiles:job.changedFiles}:{}), state: job.state, elapsedSeconds: Math.round(((job.finishedAt || now()) - job.startedAt) / 1000)};
     if (job.state === 'running') return {...base, execution: 'unknown', note: `Still ${job.mode === 'checking' ? 'checking the build' : job.mode === 'sync' ? 'syncing changed files' : 'installing'}. Call app action=install_status job=${job.id} to wait for it; do not start another install.`};
     if (job.state === 'failed') { const error = new Failure(job.error.code, job.error.message, job.error.execution); throw error; }
     if (job.mode === 'unchanged') return {...base, execution: 'not_executed', ...job.result, note: 'The installed app already matches this build; nothing was copied.'};

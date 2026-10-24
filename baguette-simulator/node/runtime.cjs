@@ -14,14 +14,14 @@ const {randomUUID} = require('node:crypto');
 // recycling of on-demand workers.
 const HOLD_MS = 100000, HOLD_POLL_MS = 10000;
 function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async () => false, viewing = () => false, forgetViewer = () => {},
-  tasks = null, existingViewerUrl = () => null, pendingOperation = () => null, viewerWanted = () => true,
+  tasks = null, existingViewerUrl = () => null, pendingOperation = () => null, pendingJob = () => null, viewerWanted = () => true,
   sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), holdMs = HOLD_MS, holdPollMs = HOLD_POLL_MS}) {
   let config, lastActivity = now(), lastStop = null, closing = false;
   // The existing saved viewer session carries reopen intent across workers;
   // explicit close retires it, while unexpected worker exit preserves it.
   let viewerClosed = !viewerWanted();
   // One operation at a time per device; '*' (settings, stop-all, idle) excludes everything.
-  const busyKeys = new Set();
+  const busyKeys = new Map();
   let idleHandled = false;
   const assertEnabled=async()=>{if(!(await load()).enabled||closing)throw failure('RUNTIME_DISABLED','Baguette is paused. Open plugin settings.');};
   const manager=require('./device-manager.cjs').createDeviceManager({dispatch,exclusive,assertEnabled,touch,contextFile:settingsFile+'.apps.json',
@@ -87,7 +87,7 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
     const unprocessed = outcomes.filter(o => o.execution === 'not_executed').map(o => o.udid);
     lastStop = {reason, at:now(), remaining, completed, unprocessed};
     const evidence = {remaining, completed, unprocessed, outcomes, ...(viewerError ? {viewerError} : {}), lastStop};
-    if (remaining.length || result.devicesError || viewerError) return {...result, ...evidence, ok:false, errorCode:'STOP_INCOMPLETE', execution:'unknown'};
+    if (remaining.length || before.platformErrors?.length || result.platformErrors?.length || result.devicesError || viewerError) return {...result, ...evidence, ok:false, errorCode:'STOP_INCOMPLETE', execution:'unknown'};
     return {...result, ...evidence, ok:true, execution:'executed'};
   }
   async function stopOne(udid, deadline) {
@@ -99,10 +99,28 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
     if (!device || device.state !== 'Shutdown') return {...result, ok:false, errorCode:'STOP_UNCONFIRMED', execution:'unknown', completed:[udid], remaining:[udid]};
     return {...result, ok:true, execution:'executed'};
   }
-  async function exclusive(fn, key = '*') {
-    const blocked = key === '*' ? busyKeys.size > 0 : busyKeys.has('*') || busyKeys.has(key);
-    if (blocked || closing) throw failure('BUSY', 'Another operation on this device is still running. Wait for it to finish, then try again.');
-    busyKeys.add(key);
+  async function exclusive(fn, key = '*', operation = {}) {
+    const blocker = () => key === '*' ? busyKeys.values().next().value : busyKeys.get('*') || busyKeys.get(key);
+    // Wait only before execution, at most one second and within this call's
+    // budget. Never replay a mutation or queue global stop/settings commands.
+    for (let attempt = 0; operation.wait && blocker() && !closing && attempt < 10; attempt++) {
+      if (operation.deadline !== undefined && operation.deadline - now() <= 1100) break;
+      await sleep(100);
+    }
+    const held = blocker();
+    if (held || closing) {
+      const job = held?.udid ? pendingJob(held.udid) : null;
+      const busy = {operation:held?.operation || 'worker-stopping', scope:held?.scope || 'global',
+        ...(held?.udid ? {udid:held.udid} : {}), ...(held?.sessionId ? {sessionId:held.sessionId} : {}),
+        elapsedSeconds:held ? Math.max(0, Math.floor((now() - held.startedAt) / 1000)) : 0,
+        ...(job ? {job:job.id} : {})};
+      const next = job ? `Use app action=install_status udid=${busy.udid} job=${job.id}.`
+        : 'Read devices for the active operation, then retry after it finishes.';
+      throw Object.assign(failure('BUSY', `${busy.operation} is running ${busy.udid ? 'on device '+busy.udid : 'across devices'} (${busy.elapsedSeconds}s). This request was not executed. ${next}`), {busy});
+    }
+    if (operation.deadline !== undefined) commandBudget(1, operation.deadline, now);
+    busyKeys.set(key, {...operation, operation:operation.operation || 'device-control', scope:key === '*' ? 'global' : 'device',
+      udid:operation.udid || (key.startsWith('device:') ? key.slice(7) : undefined), startedAt:now()});
     try { return await fn(); } finally {
       // A tool may return a pollable install job; retain its existing lock until
       // the underlying write settles, including failure. Reads remain available.
@@ -114,13 +132,20 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
   // The Cindy task a call belongs to: injected session context for Agent tools,
   // or the task page's own task (main.js sets `_task` for page actions only).
   const sessionOf = params => params?.session_context?.session_id ?? params?._task;
-  // Each device row says how many tasks use it and whether the calling task does,
-  // so the AI can reuse a free device or create one for this task.
+  // Keep durable selection separate from recent multi-device activity.
+  // No recent activity on a running device means unknown, never proven free.
   async function annotate(devices, session) {
     if (!tasks) return devices;
     const counts = await tasks.counts();
     const mine = session ? (await tasks.get(session))?.udid : null;
-    return devices.map(d => ({...d, tasks: counts[deviceId(d.udid)] || 0, ...(session ? {thisTask: deviceId(d.udid) === deviceId(mine)} : {})}));
+    return devices.map(d => {
+      const id=deviceId(d.udid), held=busyKeys.get('device:'+id)||busyKeys.get('*');
+      const activity=tasks.usage?.(id,session,now()) || {activeTasks:0,thisTaskActive:false};
+      return {...d, tasks:counts[id]||0, ...(session ? {thisTask:id===deviceId(mine)} : {}), ...activity,
+        usage:held||activity.activeTasks ? 'active' : d.state==='Shutdown' ? 'idle' : 'unknown',
+        ...(held ? {operation:{name:held.operation, scope:held.scope, udid:held.udid,
+          elapsedSeconds:Math.max(0,Math.floor((now()-held.startedAt)/1000)), ...(pendingJob(id) ? {job:pendingJob(id).id} : {})}} : {})};
+    });
   }
   const withTask = (url, session) => url.replace('#', `&task=${encodeURIComponent(session)}#`);
   async function taskState(session, locale) {
@@ -134,7 +159,7 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
     if (device && device.state === 'Booted' && settings.enabled && !viewerClosed) {
       // Reuse a running viewer without taking the runtime lock, so a page refresh
       // never makes an Agent tool call fail with BUSY.
-      let url = existingViewerUrl(device.udid, locale);
+      let url = await existingViewerUrl(device.udid, locale);
       if (!url) {
         try { url = (await request('open_viewer', {udid:device.udid, _locale:locale}))?.url || null; }
         catch (error) { if (error.code === 'BUSY') waiting = true; else throw error; }
@@ -145,7 +170,7 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
   }
   // Agent tools grouped by intent → the worker's own operations.
   const ROUTES = {
-    device: {create: 'create_device', boot: 'boot', shutdown: 'shutdown', rename: 'rename_device', erase: 'erase_device', delete: 'delete_device'},
+    device: {create: 'create_device', boot: 'boot', shutdown: 'shutdown', rename: 'rename_device', erase: 'erase_device', delete: 'delete_device', activity:'device_activity', release:'device_release', import_media:'import_media'},
     app: {install: 'app_install', install_status: 'app_install_status', info: 'app_info', launch: 'launch_app', terminate: 'app_terminate', uninstall: 'app_uninstall', open_url: 'open_url'},
     viewer: {open: 'open_viewer', close: 'close_viewer'},
   };
@@ -161,10 +186,26 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
       if (!actual) throw failure('INVALID_ARGUMENT', `action must be one of ${Object.keys(ROUTES[method]).join(', ')}`);
       return request(actual, params, deadline);
     }
+    if (method === 'device_activity' || method === 'device_release') {
+      const session=sessionOf(params);
+      if (!tasks || !validSession(session)) throw failure('INVALID_ARGUMENT','Device activity requires the calling task session context.');
+      if (method==='device_activity') await assertEnabled();
+      const listed=(await dispatch('devices',{},deadline)).devices;
+      if (!listed.some(d=>deviceId(d.udid)===params.udid)) throw failure('DEVICE_NOT_OWNED','Select an exact device from devices.');
+      if (method==='device_release') tasks.release(session,params.udid);
+      else {tasks.activity(session,params.udid,now());touch();}
+      return {ok:true,udid:params.udid,execution:'executed',...tasks.usage(params.udid,session,now()),
+        note:method==='device_release'?'Task activity released; device and App keep running.':'Task activity recorded for 15 minutes. Renew during a long script; release when finished. This is not an exclusive reservation.'};
+    }
     if (READ_ONLY.has(method) || (method === 'screenshot' && !params?.destination)) {
       if (!(await load()).enabled) throw failure('RUNTIME_DISABLED', 'Baguette is paused. Enable simulator operation in Plugins → Baguette settings.');
       touch();
-      return dispatch(method, params);
+      const result=await dispatch(method, params, deadline);
+      if (method!=='app_install_status' && result?.ok!==false) {
+        tasks?.activity?.(sessionOf(params),params.udid,now());
+        touch();
+      }
+      return result;
     }
     // A settings refresh must not reject a user's stop/permission change.
     // Reading simulator state is safe while a command is in flight.
@@ -173,6 +214,11 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
       return manager.start(params);
     }
     if (method === 'task_state') return taskState(params._task, params._locale);
+    if (method === 'task_target') {
+      const sessionId = tasks ? await tasks.latestForDevice(params.udid) : null;
+      if (!sessionId) throw failure('TASK_NOT_BOUND', 'No task uses this device. Refresh the device list.');
+      return {ok:true, sessionId};
+    }
     if (method === 'task_bind') {
       if (!tasks || !validSession(params._task)) throw failure('INVALID_ARGUMENT', 'Unknown task.');
       const listed = (await dispatch('devices')).devices;
@@ -193,6 +239,7 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
       return {...result, ok:true, currentTask: current, devices: await annotate(result.devices, current)};
     }
     if (method === 'viewer_catalog') return dispatch('environment');
+    if (method === 'android_setup_plan' || method === 'android_setup_status') return dispatch(method, params);
     if (method === 'device_hold') return hold();
     // Listing devices and the toolchain reads only; it never waits behind another device's operation, and works while paused.
     if (method === 'devices') {
@@ -200,9 +247,9 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
       return {...result, devices: await annotate(result.devices, sessionOf(params))};
     }
     if (method === 'environment') return dispatch(method, params);
-    // App creation and removal update the shared app-context file. Reuse the existing global
-    // lock for that entire operation instead of adding another writer queue.
-    const key = typeof params?.udid === 'string' && params.udid && !['settings_stop_all', 'settings_save', 'launch_app', 'app_uninstall', 'erase_device', 'delete_device'].includes(method) ? `device:${params.udid}` : '*';
+    // Device operations are independent. The manager serializes only shared
+    // record writes; stopping the shared viewer/settings still excludes all.
+    const key = typeof params?.udid === 'string' && params.udid && !['settings_stop_all', 'settings_save', 'close_viewer'].includes(method) ? `device:${params.udid}` : '*';
     return exclusive(async () => {
       // Emergency stop stays available even if settings are damaged.
       if (method === 'shutdown') return dispatch(method, params);
@@ -217,6 +264,7 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
       if (method === 'reveal_screenshot') return dispatch(method, params);
       if (method === 'delete_device' || method === 'erase_device') {
         const result = await dispatch(method, params);
+        if(result.outcome==='partial')return result;
         await manager.updateRecord(result, () => manager.forget(result.udid || params.udid));
         if (method === 'delete_device' && tasks) await taskUpdate(result, () => tasks.forgetDevice(params.udid));
         // The management page refreshes independently after the operation.
@@ -240,17 +288,18 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
       // A command can mutate a device and then fail (e.g. bootstatus timeout).
       // Re-arm cleanup before dispatch, even when no success result follows.
       touch();
-      const result = await dispatch(actual, params);
+      const result = await dispatch(actual, params, deadline);
       if (actual === 'app_uninstall') await manager.updateRecord(result, () => manager.forget(result.udid || params.udid, params.bundleId));
       if (actual === 'boot' || actual === 'open_viewer' || (actual === 'launch_app' && result?.viewer?.ready)) viewerClosed = false;
-      if(actual==='launch_app')await manager.updateRecord(result, () => manager.remember(params.udid,params.bundleId));
+      if(actual==='launch_app'&&result?.appLaunched!==false)await manager.updateRecord(result, () => manager.remember(params.udid,params.bundleId));
       // Starting, opening or launching on a device from a task gives that task the device.
-      if (tasks && validSession(sessionOf(params)) && ['boot','open_viewer','launch_app'].includes(actual) && result?.ok !== false) {
+      if (tasks && validSession(sessionOf(params)) && ['boot','open_viewer','launch_app'].includes(actual) && result?.ok !== false && result?.appLaunched!==false) {
         await taskUpdate(result, () => tasks.bind(sessionOf(params), params.udid));
       }
+      if (result?.ok!==false) tasks?.activity?.(sessionOf(params),params.udid,now());
       touch();
       return result;
-    }, key);
+    }, key, {operation:method,udid:params.udid,sessionId:sessionOf(params),deadline,wait:key!=='*'});
   }
   // Returns once no device is running and no viewer window is open (or at the
   // hold limit). A window can start a device itself, so it counts too. Never
@@ -271,7 +320,7 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
       const settings = await load();
       if (settings.enabled && (!settings.idleMinutes || now() - lastActivity < settings.idleMinutes * 60000)) return;
       // Someone is still watching or operating a device: start a new idle period.
-      if (settings.enabled && await inUse().catch(() => true)) { touch(); return; }
+      if (settings.enabled && (tasks?.hasActivity?.(now()) || await inUse().catch(() => true))) { touch(); return; }
       const result = await stopAll(settings.enabled ? 'idle' : 'disabled');
       // Incomplete shutdown stays visible; do not silently retry forever.
       idleHandled = true;

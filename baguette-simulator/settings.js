@@ -2,16 +2,16 @@
 const text = {
   en:{allow:'Allow simulators to run',allowHint:'Off shuts down every device and keeps AI from starting one.',idle:'Stop automatically when idle',idleHint:'Not stopped while a viewer is open or a tool or script is using the device. Apps quit; data is kept.',m15:'After 15 minutes',m30:'After 30 minutes',m60:'After 1 hour',manual:'Only manually',
     devices:'Devices',add:'Add device',stopAll:'Stop all',refresh:'Refresh',boot:'Start',shutdown:'Stop',viewer:'Open',booted:'Running',off:'Off',busyState:'Working…',
-    emptyTitle:'No simulators yet',emptyBody:'Create one and Cindy can run and test iOS apps right here.',createFirst:'Create your first iPhone',creating:'Creating…',created:'Device created. Start it when you need it.',
+    emptyTitle:'No simulators yet',emptyBody:'Create a device to run iOS and Android apps here.',createFirst:'Create a device',creating:'Creating…',created:'Device created. Start it when you need it.',
     orCustom:'Need another model? Ask Cindy to create it.',needXcode:'Needs full Xcode with an iOS runtime installed before a device can be created.',
-    moreTitle:'What the live view can do',moreViewer:'The live view lets you tap, type, rotate, shake, install apps and files, simulate location, motion, remote notification injection (may trigger app behavior), status bar and network conditions, and take screenshots or recordings. Camera and Mac location need your permission. Map search contacts OpenStreetMap. Copy and paste replace the respective clipboard. Switching devices stops the current one and may install the last app on the new one; app data and sign-ins are never copied.',
+    moreTitle:'What the live view can do',moreViewer:'Both platforms share touch, keyboard, rotation, shake and screenshots. Android adds Back. iOS advanced tools also offer location, motion, remote notification injection (may trigger app behavior), network, camera and recording; map search contacts OpenStreetMap. Use tools for Android state and logs. Copy/paste replaces the clipboard. Switching only selects a device. Devices and Apps keep running; nothing starts or transfers automatically. Start a stopped device explicitly.',
     moreStop:'Stop devices here before disabling the plugin. Closing the live view does not stop a device.',
     checking:'Checking devices…',paused:'Starting simulators is disabled. AI cannot start a device.',running:(n)=>`${n} running`,stopped:'All devices are off.',working:'Working…',saved:'Saved.',failed:'Could not confirm. Refresh to see the actual state.',busy:'Another operation is running. Try again in a moment.',disabled:'Simulators are off. Turn them on above first.',timeout:'No response from the simulator service. Reopen this page.',partial:'Shutdown is not fully confirmed. Refresh the device status before continuing.',settingsUnreadable:'Settings cannot be read. Starting is blocked; stopping still works. Restore the settings file and refresh.',readFailed:'Could not read device status.',shutdownDone:'Device stopped.',previewNeedsSession:'Open a conversation first, then open the live view from there. Stopping still works here.',previewFailed:'The live view did not open. Refresh and try again.'},
   'zh-CN':{allow:'允许运行模拟器',allowHint:'关闭后会关掉所有设备，AI 也不能再启动。',idle:'闲置后自动关闭',idleHint:'画面开着、或有工具和脚本在操作时不会关闭。关闭时 App 退出，数据保留。',m15:'15 分钟后',m30:'30 分钟后',m60:'1 小时后',manual:'仅手动',
     devices:'设备',add:'添加设备',stopAll:'全部关闭',refresh:'刷新',boot:'启动',shutdown:'关闭',viewer:'打开画面',booted:'运行中',off:'已关闭',busyState:'处理中…',
-    emptyTitle:'还没有模拟器',emptyBody:'创建一台，Cindy 就能在这里运行和测试 iOS App。',createFirst:'创建第一台 iPhone',creating:'正在创建…',created:'已创建。需要时再启动它。',
+    emptyTitle:'还没有模拟器',emptyBody:'创建一台，就能在这里运行和测试 iOS 和安卓 App。',createFirst:'创建设备',creating:'正在创建…',created:'已创建。需要时再启动它。',
     orCustom:'想要别的机型？直接让 Cindy 创建。',needXcode:'需要先安装完整的 Xcode 和一个 iOS 运行时，才能创建设备。',
-    moreTitle:'画面里可以做什么',moreViewer:'画面里可以点按、输入、旋转、摇一摇，安装 App 和文件，模拟位置、运动、注入远程通知（可能触发 App 行为）、状态栏和网络状况，截图和录屏。摄像头和本机定位需要你授权。地图搜索会访问 OpenStreetMap；复制粘贴会替换对应的剪贴板。切换设备会关掉当前设备，并可能把最近的 App 装到新设备上；App 数据和登录状态不会复制。',
+    moreTitle:'画面里可以做什么',moreViewer:'两端共用触摸、输入、旋转、摇一摇和截图，安卓另有返回。iOS 高级面板还提供定位、运动、注入远程通知（可能触发 App 行为）、网络、摄像头和录屏，地图访问 OpenStreetMap；安卓状态和日志使用工具。复制粘贴会替换剪贴板。切换只选择设备，原设备与 App 继续运行，不自动启动或搬运 App；已关闭的设备需要手动启动。',
     moreStop:'停用插件前先在这里关闭设备。关闭画面不会关闭设备。',
     checking:'正在检查设备…',paused:'已禁止启动模拟器，AI 无法启动设备。',running:(n)=>`${n} 台运行中`,stopped:'所有设备已关闭。',working:'正在处理…',saved:'已保存。',failed:'没能确认结果，请刷新查看实际状态。',busy:'有其他操作正在进行，稍后再试。',disabled:'模拟器已关闭，请先打开上方开关。',timeout:'模拟器服务没有响应，请重新打开本页。',partial:'关机尚未全部确认，请刷新设备状态后再继续。',settingsUnreadable:'无法读取设置：暂时不能启动，仍可关闭设备。恢复设置文件后刷新。',readFailed:'没能读取设备状态。',shutdownDone:'设备已关闭。',previewNeedsSession:'先打开一个对话，再从对话里打开画面；这里仍可关闭设备。',previewFailed:'画面没有打开，请刷新后重试。'}
 };
@@ -82,22 +82,19 @@ async function perform(action,params={}){
 async function createDefault(){
   if(busy)return;busy=true;render();message(T.creating);
   try{
-    catalog=catalog||await rpc('catalog');
-    if(!catalog.ok)throw Error(errorText(catalog));
-    const choice=M.defaultChoice(catalog);
-    if(!choice)throw Error(T.needXcode);
-    const result=await rpc('create',{name:choice.name,deviceType:choice.deviceType,runtime:choice.runtime});
-    if(!result.ok)throw Error(errorText(result));
-    message(T.created);
+    const result=await globalThis.CindySimPages.createDevice({lang:document.documentElement.lang});
+    message(result?T.created:'');
   }catch(e){message(e.message,true);}
   finally{busy=false;await refresh();render();}
 }
 $('enabled').onchange=()=>perform('save',{enabled:$('enabled').checked,idleMinutes:Number($('idle').value)});
 $('idle').onchange=()=>perform('save',{enabled:$('enabled').checked,idleMinutes:Number($('idle').value)});
 $('stop-all').onclick=()=>perform('stopAll');$('refresh').onclick=refresh;$('add').onclick=createDefault;
+$('android-setup').onclick=()=>globalThis.CindySimPages.setupAndroid(document.documentElement.lang);
 (async()=>{
   try{const r=await(await fetch('/app-context')).json();T=text[r.context?.locale]||text.en;}catch{}
   document.documentElement.lang=T===text['zh-CN']?'zh-CN':'en';
+  $('android-setup').textContent=T===text['zh-CN']?'安装安卓环境…':'Set up Android…';
   for(const el of document.querySelectorAll('[data-i18n]'))el.textContent=T[el.dataset.i18n];
   message(T.checking);await refresh();
   setInterval(()=>{if(!document.hidden)refresh();},10000);

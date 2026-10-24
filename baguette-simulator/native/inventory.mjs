@@ -13,7 +13,7 @@ const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), '..');
 const RECORD = join(PLUGIN, 'vendor-inventory.json');
 
 function trackedVendorFiles() {
-  const out = execFileSync('git', ['ls-files', '-z', 'vendor'], { cwd: PLUGIN, encoding: 'utf8' });
+  const out = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z', 'vendor'], { cwd: PLUGIN, encoding: 'utf8' });
   return out.split('\0').filter(Boolean);
 }
 

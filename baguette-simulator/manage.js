@@ -5,13 +5,13 @@
 // that task does not use yet can be opened in it.
 const TEXT = {
   en: {
-    title: 'Simulators', search: 'Search', add: 'New device', newIphone: 'iPhone…', newIpad: 'iPad…', newTv: 'Apple TV…', newVision: 'Vision Pro…',
+    title: 'Simulators', search: 'Search', add: 'New device', newIphone: 'iPhone…', newIpad: 'iPad…', newAndroid: 'Android…', newTv: 'Apple TV…', newVision: 'Vision Pro…',
     running: 'Running', off: 'Off', none: 'No matches',
     start: 'Start', starting: 'Starting…', stop: 'Shut Down', stopping: 'Shutting down…', open: 'Open in Current Task', rename: 'Rename',
     erase: 'Erase All Content and Settings…', remove: 'Delete…', more: 'More',
-    stateOff: 'Off', stateOn: 'Running', idle: 'idle', tasks: (n) => n === 1 ? 'used by 1 task' : `used by ${n} tasks`, thisTask: 'used by this task',
+    stateOff: 'Off', stateOn: 'Running', idle: 'idle', unknown: 'activity unknown', operating: 'operation in progress', selectedTask: 'selected by this task', tasks: (n) => n === 1 ? 'recently used by 1 task' : `recently used by ${n} tasks`, thisTask: 'recently used by this task',
     offTitle: (n) => `${n} is off`, offBody: 'Start it to use it here. Apps and data are kept.', screenLost: 'The screen did not connect. The device is still running.', retry: 'Try Again',
-    emptyTitle: 'No simulators yet', emptyBody: 'Create one and Cindy can run iOS apps in your tasks.', createIphone: 'New iPhone',
+    emptyTitle: 'No simulators yet', emptyBody: 'Create a device to run iOS and Android apps in your tasks.', createIphone: 'New device',
     pickTitle: 'Select a simulator', pickBody: 'Its screen shows here.',
     paused: 'Simulators are turned off in Plugins → Device Simulator. Shutting down and deleting still work.',
     pausedTitle: 'Simulators are turned off', pausedBody: 'Turn them on in Plugins → Device Simulator to start a device.',
@@ -21,15 +21,16 @@ const TEXT = {
     opened: 'Opened in the current task.', created: (n) => `Created ${n}.`, erased: 'Erased.', deleted: 'Deleted.', save: 'Save',
     failed: 'Not completed. Refresh to see the actual state.', busy: 'Another simulator operation is running. Try again in a moment.', timeout: 'No response from the simulator service. Reopen this page.', pluginOff: 'The Device Simulator plugin is turned off.',
     readFailed: 'Could not read the devices.', stateFailed: 'Task binding was saved, but its status or screen could not be read. Refresh the task; do not repeat the binding.', recordFailed: 'Device operation completed, but its task or App record was not saved. Check storage before assigning or switching devices; do not repeat the operation.',
+    goToTask: 'Open Simulator Sidebar', latestTask: 'Open the simulator sidebar in the most recently assigned task', noTask: 'No task uses this device. Refresh the device list.', hostUpdate: 'Update Cindy to jump to a task and open its simulator sidebar.',
   },
   'zh-CN': {
-    title: '模拟器', search: '搜索', add: '新建设备', newIphone: 'iPhone…', newIpad: 'iPad…', newTv: 'Apple TV…', newVision: 'Vision Pro…',
+    title: '模拟器', search: '搜索', add: '新建设备', newIphone: 'iPhone…', newIpad: 'iPad…', newAndroid: '安卓…', newTv: 'Apple TV…', newVision: 'Vision Pro…',
     running: '运行中', off: '已关闭', none: '没有匹配的设备',
     start: '启动', starting: '正在启动…', stop: '关闭', stopping: '正在关闭…', open: '在当前任务中打开', rename: '改名',
     erase: '抹掉所有内容和设置…', remove: '删除…', more: '更多',
-    stateOff: '已关闭', stateOn: '运行中', idle: '空闲', tasks: (n) => `${n} 个任务在用`, thisTask: '当前任务在用',
+    stateOff: '已关闭', stateOn: '运行中', idle: '空闲', unknown: '占用待确认', operating: '正在操作', selectedTask: '当前任务选中', tasks: (n) => `${n} 个任务近期使用`, thisTask: '当前任务近期使用',
     offTitle: (n) => `${n} 已关闭`, offBody: '启动后在这里使用，App 和数据都保留。', screenLost: '画面没有连上，设备仍在运行。', retry: '重试',
-    emptyTitle: '还没有模拟器', emptyBody: '新建一台，Cindy 就能在你的任务里运行 iOS App。', createIphone: '新建 iPhone',
+    emptyTitle: '还没有模拟器', emptyBody: '新建一台，就能在任务里运行 iOS 和安卓 App。', createIphone: '新建设备',
     pickTitle: '选择一台模拟器', pickBody: '它的画面会显示在这里。',
     paused: '模拟器运行已在「插件 → 设备模拟器」里关闭；关闭和删除设备仍可用。',
     pausedTitle: '模拟器运行已关闭', pausedBody: '在「插件 → 设备模拟器」里打开开关后即可启动设备。',
@@ -39,6 +40,7 @@ const TEXT = {
     opened: '已在当前任务中打开。', created: (n) => `已创建「${n}」。`, erased: '已抹掉。', deleted: '已删除。', save: '保存',
     failed: '操作没有完成，请刷新查看实际状态。', busy: '有其他模拟器操作正在进行，稍后再试。', timeout: '模拟器服务没有响应，请重新打开本页。', pluginOff: '「设备模拟器」插件已停用。',
     readFailed: '没能读取设备。', stateFailed: '任务绑定已保存，但状态或画面未能读取。请刷新任务，不要重复绑定。', recordFailed: '设备操作已完成，但任务绑定或 App 记录未保存。请先检查存储，再分配或切换设备；不要重复设备操作。',
+    goToTask: '打开模拟器侧栏', latestTask: '跳到最近关联的任务并打开模拟器侧栏', noTask: '已没有任务使用这台设备，请刷新设备列表。', hostUpdate: '请更新 Cindy，以支持跳到对应任务并打开模拟器侧栏。',
   },
 };
 const { rpc, h, locale, GLYPH, createDevice, catalog } = globalThis.CindySimPages;
@@ -56,14 +58,14 @@ const glyphFor = (d) => {
 };
 const modelName = (d) => models.get(d.deviceType) || String(d.deviceType || '').replace(/^.*SimDeviceType\./, '').replace(/-/g, ' ');
 const osVersion = (d) => M.runtimeLabel(d.runtime);
-const usage = (d) => d.thisTask ? T.thisTask : d.tasks ? T.tasks(d.tasks) : T.idle;
+const usage = (d) => d.thisTaskActive ? T.thisTask : d.activeTasks ? T.tasks(d.activeTasks) : d.operation ? T.operating : d.thisTask ? T.selectedTask : d.state === 'Shutdown' ? T.idle : T.unknown;
 const enabled = () => state?.settings?.enabled !== false;
 let messageTimer = null;
 function message(text, error = false) {
   $('message').textContent = text || ''; $('message').classList.toggle('error', !!error);
   clearTimeout(messageTimer); if (text && !error) messageTimer = setTimeout(() => message(''), 4000);
 }
-function errorText(r) { return ({ BUSY: T.busy, TIMEOUT: T.timeout, PLUGIN_OFF: T.pluginOff, RUNTIME_DISABLED: T.pausedTitle })[r?.errorCode || r?.code] || T.failed; }
+function errorText(r) { return ({ BUSY: T.busy, TIMEOUT: T.timeout, PLUGIN_OFF: T.pluginOff, RUNTIME_DISABLED: T.pausedTitle, TASK_NOT_BOUND:T.noTask, HOST_UPDATE_REQUIRED:T.hostUpdate })[r?.errorCode || r?.code] || T.failed; }
 function select(udid) { selected = udid; try { localStorage.setItem(SELECTED, udid || ''); } catch {} render(); }
 
 // ---- menus ----
@@ -119,11 +121,13 @@ function row(d) {
       h('input', { name: 'n', value: d.name, maxlength: '64', 'aria-label': T.rename, onkeydown: (e) => { if (e.key === 'Escape') { e.stopPropagation(); renaming = null; render(); } }, onblur: (e) => { if (renaming === d.udid && e.target.isConnected) e.target.form.requestSubmit(); } })])
     : h('span', { class: 'row-name', text: d.name });
   const node = h('div', { class: 'row', role: 'option', 'aria-selected': String(isSelected), tabindex: '0', 'data-udid': d.udid,
-    onclick: (e) => { if (!e.target.closest('.row-more, form')) select(d.udid); },
+    onclick: (e) => { if (!e.target.closest('button, form')) select(d.udid); },
     onkeydown: (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === node) { e.preventDefault(); select(d.udid); } },
     oncontextmenu: (e) => { e.preventDefault(); select(d.udid); deviceMenu(d, null, { x: e.clientX, y: e.clientY }); } }, [
     h('span', { class: 'tile', 'data-on': String(d.state === 'Booted'), html: glyphFor(d) }),
-    h('span', { class: 'row-text' }, [name, h('span', { class: 'row-sub', text: working ? working : `${modelName(d)} · ${usage(d)}` })]),
+    h('span', { class: 'row-text' }, [name, h('span', { class: 'row-sub', text: working ? working : `${modelName(d)} · ${usage(d)}` }),
+      d.tasks ? h('button', { class:'link row-task', type:'button', text:T.goToTask, title:d.tasks > 1 ? T.latestTask : T.goToTask,
+        onclick:(e)=>{ e.stopPropagation(); goToTask(d, e.currentTarget); } }) : null]),
     h('span', { class: 'row-os', text: osVersion(d) }),
     h('button', { class: 'icon-btn row-more', type: 'button', title: T.more, 'aria-label': T.more, html: GLYPH.more, onclick: (e) => { e.stopPropagation(); deviceMenu(d, e.currentTarget); } }),
   ]);
@@ -170,12 +174,12 @@ function hero(d, note) {
   let children;
   if (!state) children = [h('div', { class: 'spinner' })];
   else if (!state.devices.length) children = [big(GLYPH.iphone), h('h2', { text: T.emptyTitle }), h('p', { text: T.emptyBody }),
-    h('div', { class: 'hero-actions' }, [h('button', { class: 'btn cta', text: T.createIphone, disabled: !enabled(), onclick: () => newDevice('iphone') })])];
+    h('div', { class: 'hero-actions' }, [h('button', { class: 'btn cta', text: T.createIphone, disabled: !enabled(), onclick: () => newDevice('any') })])];
   else if (!d) children = [big(GLYPH.iphone), h('h2', { text: T.pickTitle }), h('p', { text: T.pickBody })];
   else {
     const working = busy[d.udid], running = d.state !== 'Shutdown' && enabled();
     children = [big(glyphFor(d)), h('h2', { text: d.state === 'Shutdown' ? T.offTitle(d.name) : d.name }),
-      h('p', { class: 'hero-meta', text: `${modelName(d)} · ${osVersion(d)} · ${usage(d)}` }),
+      h('p', { class: 'hero-meta', text: `${modelName(d)} · ${M.runtimeLabel(d.runtime)} · ${usage(d)}` }),
       h('p', { text: !enabled() ? T.pausedBody : running ? T.screenLost : T.offBody }),
       h('div', { class: 'hero-actions' }, working ? [h('span', { class: 'spinner' }), h('span', { class: 'hero-working', text: working })] : [
         running ? h('button', { class: 'btn cta', text: T.retry, onclick: () => showScreen(d) })
@@ -201,6 +205,14 @@ function render() {
 }
 
 // ---- data & actions ----
+async function goToTask(d, button) {
+  button.disabled = true;
+  try {
+    const result = await rpc('go_to_task', {udid:d.udid}, T.timeout);
+    if (!result?.ok) throw result;
+  } catch (error) { message(errorText(error), true); }
+  finally { button.disabled = false; }
+}
 async function refresh() {
   if (Object.keys(busy).length || pending) return;
   const request = pending = {};
@@ -216,7 +228,7 @@ async function act(action, d, done, extra = {}) {
   message(''); render();
   try {
     const r = await rpc(action, { udid: d.udid, ...extra }, T.timeout);
-    if (r?.ok === false) throw r;
+    if (r?.ok === false || r?.deviceError) throw r;
     if (r.taskBindingError || r.appContextError) message(T.recordFailed, true);
     else if (r.taskStateError) message(T.stateFailed, true);
     else if (done) message(done);
@@ -239,7 +251,7 @@ async function newDevice(family) {
   $('add').innerHTML = GLYPH.plus; $('add').title = T.add; $('add').setAttribute('aria-label', T.add);
   $('search-glyph').innerHTML = GLYPH.search; $('search').placeholder = T.search;
   $('search').addEventListener('input', (e) => { query = e.target.value.trim().toLowerCase(); renderList(); });
-  $('add').addEventListener('click', () => showMenu($('add'), [item(T.newIphone, () => newDevice('iphone'), { disabled: !enabled() }), item(T.newIpad, () => newDevice('ipad'), { disabled: !enabled() }), item(T.newTv, () => newDevice('tv'), { disabled: !enabled() }), item(T.newVision, () => newDevice('vision'), { disabled: !enabled() })]));
+  $('add').addEventListener('click', () => showMenu($('add'), [item(T.newIphone, () => newDevice('iphone'), { disabled: !enabled() }), item(T.newIpad, () => newDevice('ipad'), { disabled: !enabled() }), item(T.newTv, () => newDevice('tv'), { disabled: !enabled() }), item(T.newAndroid, () => newDevice('android'), { disabled: !enabled() }), item(T.newVision, () => newDevice('vision'), { disabled: !enabled() })]));
   render(); await refresh();
   catalog().then((c) => { for (const t of c.deviceTypes || []) models.set(t.identifier, t.name); render(); }).catch(() => {});
   setInterval(() => { if (!document.hidden && !openMenu && !renaming && !Object.keys(busy).length && !document.querySelector('dialog[open]')) refresh(); }, 4000);
