@@ -39,9 +39,11 @@ Review contract: .greptile/rules.md → 运行验证与证据复用
 
 ## Decisions, if applicable / 相关决定（适用时）
 
-<!-- Link the maintainer's scoped decision for a new plugin/provider, changed
-product direction/audience, or expanded permission/publishing trust boundary.
-An acknowledged issue OR Draft PR is sufficient; no duplicate proposal required.
-Existing decisions remain valid within scope; ordinary fixes need no new approval.
-新插件/供应商、产品定位/受众变化或权限/发布信任边界扩大，链接维护者对相应范围的
-明确决定。已确认的 issue 或 Draft PR 任选其一；普通修复无需新提案或重复批准。 -->
+<!-- For a new plugin or an audience change, state which tier applies:
+`all`, opt-in `{ "emails": [] }`, or not accepted. A match needs no maintainer
+approval. Link the maintainers' explicit decision only for a real boundary
+expansion: permission, credential, or publish-trust widening; undisclosed
+network access; renaming or deleting a published plugin.
+新增插件或改 audience 时写明落在哪一档：`all`、自选 `{ "emails": [] }`，或
+不予接受。符合标准不需要维护者批准。只有真实边界扩大才链接维护者的明确决定：
+权限、凭证或发布信任扩大，未声明的网络访问，以及重命名或删除已发布插件。 -->

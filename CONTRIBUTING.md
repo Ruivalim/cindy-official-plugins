@@ -77,11 +77,14 @@ authors or maintainers may supply it. Green CI does not prove runtime testing.
   exercised paths and gaps. No fixed wording, checkbox or copied artifact hash is
   required. Explain applicability across the full diff since reused evidence;
   affected behavior still needs verification.
-- Once required checks, effective review, runtime evidence and applicable product/
-  permission decisions are satisfied, already-authorized merge automation may
-  execute without asking again. Packaging scripts, dependency updates or images
-  do not require manual approval just because of their paths. Real permission or
-  publishing trust changes still need a scoped maintainer decision.
+- Once required checks, effective review, and runtime evidence are satisfied,
+  already-authorized merge automation may execute without asking again.
+  Packaging scripts, dependency updates, or images do not require manual
+  approval just because of their paths. Admission and audience that fit the
+  standard below need no separate maintainer approval. Real permission,
+  credential, or publish-trust widening, undisclosed network access, and
+  renaming or deleting a published plugin still need the maintainers' explicit
+  decision for that scope.
 - Before merging, verify the current target and combined result. Retargeting a PR
   requires fresh validation; checks for its previous target are insufficient.
   Merge and public release are separate stages.
@@ -154,7 +157,7 @@ do not edit the generated `dist/maker.js` by hand.
 4. Explain the Agent-facing impact of changed tool declarations. Supply actual
    verification for affected paths; reuse valid evidence for unaffected ones,
    with accurate environments and compatibility limitations. Lowering/removing
-   `minCindyVersion` still needs a maintainer decision and old-version evidence.
+   `minCindyVersion` still needs the maintainers' review and old-version evidence.
 
 Every non-draft PR's **Verify pull request** runs the Server/Desktop contract,
 localization, provisioning, changed-plugin tests and actual dry-run packaging.
@@ -171,10 +174,32 @@ removed; merging or manually dispatching from main submits Global pending releas
    counterpart must update both files in the same pull request, and vice
    versa. A pull request that updates only one side will not be merged.
 
-Bug fixes and small improvements are welcome as direct PRs. For new plugins,
-built-in providers or changed product positioning, align on boundaries and audience
-in a proposal issue OR Draft PR. No duplicate proposal is needed; decisions remain
-valid within their approved scope.
+Bug fixes and small improvements are welcome as direct PRs. New plugins,
+built-in providers, and audience changes are judged by the standard below. A
+match needs no separate maintainer approval. A proposal issue or Draft PR may
+record design notes; it is not an approval gate, and no duplicate proposal is
+required.
+
+### Admission and audience
+
+Apply this uniformly. When a useful plugin does not clearly earn `all`, accept
+it as opt-in instead of waiting for a case-by-case decision.
+
+1. `audience: "all"` (installed for everyone): most users benefit; works out of
+   the box with no self-obtained third-party key or account; not tied to one
+   person's or one team's workflow; stable quality. Popularity or many
+   submissions alone never justify `all`.
+2. Accept as opt-in (provisioning audience `{ "emails": [] }`; users choose it
+   in the marketplace): useful but niche, or needs the user's own key or account.
+3. Not accepted: very personal (serves only the author's own data, workflow, or
+   private service), a pure demo or sample (put it in `docs/` instead), or
+   something the agent can already do directly without a plugin.
+
+The `author` field must be the real author, not an impersonation of the official
+team. A mismatch is a concrete review finding. Only a genuine boundary expansion
+needs the maintainers' explicit decision: real permission, credential, or
+publish-trust widening; undisclosed network access; renaming or deleting a
+published plugin.
 
 ## Licensing of contributions (DCO)
 

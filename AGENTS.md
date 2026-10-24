@@ -86,7 +86,7 @@ vendor/dist whole-package upgrades require a verified official source and review
   device-verification checkbox; green checks are not proof of runtime testing.
   Authors or maintainers may perform verification. Missing evidence is a review
   prerequisite, not automatically a code P1. Lowering/removing `minCindyVersion`
-  still requires maintainer approval and compatibility evidence.
+  still requires the maintainers' review and compatibility evidence.
 - Paired bilingual docs (`README.md` ↔ `README.zh-CN.md`, etc.) must change in
   the same PR. 双语文档必须同 PR 同步。
 - Never commit credentials, real user data, or `node_modules`; fixtures use
@@ -94,37 +94,77 @@ vendor/dist whole-package upgrades require a verified official source and review
 
 ## New plugins / 新插件
 
-Discuss a new plugin, built-in provider, or changed product positioning in a
-[new plugin proposal](./.github/ISSUE_TEMPLATE/new_plugin_proposal.yml) issue or
-Draft PR before substantial implementation. Either entry is sufficient. Reviewers
-provide relevant overlap evidence; same-provider product families and
-same-protocol different providers may coexist. Record the maintainer's admission
-and audience decision once; reuse it while its scope remains valid. New plugins
-also need a `provisioning.json` entry and runtime verification evidence. Ordinary
-fixes need no separate proposal. Do not reject current code using resolved findings.
+Judge a new plugin, built-in provider, or audience change against the standard
+below. A match needs no separate maintainer approval and no prior proposal.
+A [proposal issue](./.github/ISSUE_TEMPLATE/new_plugin_proposal.yml) or Draft PR
+may record design notes; it is not an approval gate. Duplicate check remains
+mandatory: compare against every existing plugin's `ghost.json`
+(description / whenToUse / tools / hosts). Same-provider product families and
+same-protocol different providers coexist; duplicate generic capabilities do
+not. New plugins need a `provisioning.json` entry whose audience matches the
+standard, a real `author` (do not impersonate the official team), and runtime
+verification evidence. Ordinary fixes need no separate proposal. Do not reject
+current code using resolved findings.
+
+### Admission and audience / 准入与受众
+
+Apply this uniformly. When a useful plugin does not clearly earn `all`, accept
+it as opt-in. Do not leave it pending a case-by-case decision.
+按同一标准直接判定。有用但够不上 `all` 时按自选接受，不要搁成个案待决定。
+
+1. `audience: "all"` (installed for everyone): most users benefit; works out of
+   the box with no self-obtained third-party key or account; not tied to one
+   person's or one team's workflow; stable quality. Popularity or many
+   submissions alone never justify `all`.
+   `all`（装给所有人）：多数用户受益；开箱即用，无需自备第三方密钥或账号；
+   不绑定某一个人或某一个团队的流程；质量稳定。热度或投稿数量本身不能作为
+   `all` 的理由。
+2. Accept as opt-in (provisioning audience `{ "emails": [] }`; users choose it
+   in the marketplace): useful but niche, or needs the user's own key or account.
+   自选接受（`{ "emails": [] }`，用户在市场自行选择）：有用但小众，或需要用户
+   自己的密钥或账号。
+3. Not accepted: very personal (serves only the author's own data, workflow, or
+   private service), a pure demo or sample (put it in `docs/` instead), or
+   something the agent can already do directly without a plugin.
+   不予接受：非常个人（只服务作者自己的数据、流程或私有服务）；纯演示或示例
+   （改放到 `docs/`）；或 Agent 不装插件就能直接完成的事。
+
+The `author` field must be the real author, not an impersonation of the official
+team. `author` 必须是真实作者，不得冒充官方团队。
+
+Only a genuine boundary expansion needs the maintainers' explicit decision:
+real permission, credential, or publish-trust widening; undisclosed network
+access; renaming or deleting a published plugin. A mismatch with the standard
+above is a concrete review finding, not a pending decision.
+只有真实边界扩大才需要维护者的明确决定：实际扩大权限、凭证或发布信任；未声明的
+网络访问；重命名或删除已发布插件。与上述标准不符是具体审查意见，不是待决定。
 
 ## Merge policy / 合并纪律
 
 PR-first; preserve the live `main-pr-first` ruleset (required CI checks, effective
 approving review and resolved threads). An already-authorized merge automation
-may merge when those requirements, applicable decisions and runtime evidence are
+may merge when those requirements, any applicable boundary decision, and runtime evidence are
 satisfied, without asking again for ordinary maintenance. Being a reviewer alone
 never grants merge/close permission. Do not bypass protections or self-approve.
 
 Assess actual changes, not file categories: traceable dependency/vendor updates,
 rebuilt workers, static images and packaging correctness fixes may be approved
 automatically when evidence is sufficient and trust/permission boundaries do not
-expand. Product admission and real credential, authorization, distribution or
-publishing trust changes need scoped maintainer decisions. Verify the original
-approval and its author; a PR author's claim is insufficient. Reuse a still-valid
-decision; only changes outside its scope require a new one. Review-policy changes
-and weakened safety gates remain subject to maintainer review.
+expand. Admission and audience that fit the standard need no separate maintainer
+approval; a mismatch is a concrete review finding. Real permission, credential, or
+publish-trust widening, undisclosed network access, and renaming or deleting a
+published plugin need the maintainers' explicit decision for that scope. Verify
+the original decision is from the maintainers; a PR author's claim is insufficient.
+Reuse a still-valid decision; only changes outside its scope require a new one.
+Review-policy changes and weakened safety gates remain subject to the
+maintainers' review.
 
 Greptile follows the `autoApprove` risk gate in `.greptile/config.json`; the
 repository imposes no extra clean-5/5 requirement. Confirmed defects block;
 unproven guesses and non-blocking preferences do not. Keep code findings,
-verification gaps and maintainer decisions separate; a routing requirement is
-not itself a P1. Recheck other reviewers' findings, accept evidence-based
+verification gaps and boundary decisions separate; a routing requirement is
+not itself a P1, and an audience mismatch is a concrete finding rather than a
+pending decision. Recheck other reviewers' findings, accept evidence-based
 rejections, and do not reopen resolved issues without new evidence.
 
 ## Reply language / 回复语言

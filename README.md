@@ -76,13 +76,20 @@ The full path from idea to marketplace:
    duplicating each other's scenarios; same-provider product families
    (Gmail / Drive / Calendar) and same-protocol different providers
    (163 / iCloud / QQ mail) are fine, but a second generic web search is not.
-2. **Align** — open a
-   [new plugin proposal](https://github.com/makecindy/cindy-official-plugins/issues/new?template=new_plugin_proposal.yml)
-   describing the scenario, boundaries, and any autonomous Host capabilities
-   (network hosts, credentials, long-lived Node runtime). A Draft PR is also a
-   valid entry; no duplicate proposal is needed. Align admission before substantial
-   implementation of a new plugin/provider. Ordinary fixes need no proposal, and
-   existing decisions remain valid within scope.
+2. **Check the standard** — admission and audience are judged by the
+   [admission and audience standard](.greptile/rules.md#插件准入与受众标准).
+   A plugin that fits needs no separate maintainer approval and no prior proposal.
+   A [proposal issue](https://github.com/makecindy/cindy-official-plugins/issues/new?template=new_plugin_proposal.yml)
+   or Draft PR may record the scenario, boundaries, and autonomous Host
+   capabilities (network hosts, credentials, long-lived Node runtime); it is not
+   an approval gate. `all` is only for plugins most users benefit from, that work
+   out of the box with no self-obtained third-party key or account, that are not
+   tied to one person's or one team's workflow, and that are stable. Popularity
+   or many submissions alone never justify `all`. Useful but niche plugins, or
+   plugins that need the user's own key or account, are accepted as opt-in
+   (`{ "emails": [] }`; users choose them in the marketplace). Very personal
+   plugins, pure demos (use `docs/` instead), and tasks the agent can already
+   do without a plugin are not accepted. `author` must be the real author.
 3. **Build** — follow the [harness-independent quick path](#harness-independent-quick-path)
    with any coding Agent or development environment. The repository documents
    the file format, runtime messages, validation command, and packaging format;
@@ -94,10 +101,11 @@ The full path from idea to marketplace:
 5. **Review** — CI validates each manifest and the Server/Desktop delivery
    limits within this repository, checks localization / provisioning,
    and dry-runs the exact package; automated review enforces the full ruleset in
-   [`.greptile/rules.md`](./.greptile/rules.md); a maintainer reviews against
-   the same [review standards](#review-standards). Once checks, effective review,
-   verification and applicable decisions are satisfied, already-authorized merge
-   automation may execute without another confirmation for routine maintenance.
+   [`.greptile/rules.md`](./.greptile/rules.md); the maintainers apply the same
+   [review standards](#review-standards). Once checks, effective review, and
+   verification are satisfied, already-authorized merge automation may execute
+   without another confirmation for routine maintenance. A fitting admission
+   needs no extra decision.
 6. **Submit and approve** — merging to `main` submits changed packages to Global
    Plugin Platform. Only approved releases become available to compatible clients;
    rejection leaves the previous approved release in service. CN submission remains
@@ -108,9 +116,12 @@ The full path from idea to marketplace:
 Every official plugin is installed by real users who carry its security and
 experience risk. Review actual behavior, impact and evidence: routine packaging
 fixes, dependency maintenance, traceable generated artifacts and static images
-do not require human approval just because of their paths. Product admission and
-real credential/permission/publishing trust expansion still need scoped decisions.
-Separate code defects, verification gaps and product decisions. Four principles:
+do not require human approval just because of their paths. Admission and
+audience that fit the standard need no separate maintainer approval; a mismatch
+is a concrete review finding. Real permission, credential, or publish-trust
+widening, undisclosed network access, and renaming or deleting a published
+plugin still need the maintainers' explicit decision. Separate code defects,
+verification gaps, and those boundary decisions. Four principles:
 
 1. **Pure sandbox by default; authorization follows the executor.** Regular
    plugins run in Cindy's isolated sandbox. Whether a plugin tool runs is decided
@@ -159,8 +170,8 @@ Separate code defects, verification gaps and product decisions. Four principles:
 - [ ] Actual runtime evidence for affected paths, or linked valid prior evidence
       with applicability across the full subsequent diff; accurate environment,
       version, results and gaps. No fixed PR checkbox; green CI is not runtime proof
-- [ ] `ghost.json.version` bumped; `provisioning.json` entry present with an
-      audience decision stated in the PR
+- [ ] `ghost.json.version` bumped; `provisioning.json` audience matches the
+      standard (`all`, or opt-in `{ "emails": [] }`); `author` is the real author
 - [ ] No credentials, real user data, `node_modules`, or unrelated generated
       files in the diff; fixtures use placeholder domains (`example.test`)
 - [ ] Bundled dependency changes reflected in `THIRD-PARTY-LICENSES.txt`
