@@ -58,31 +58,35 @@ Start with the
 For large prebuilt dependencies, follow the [dependency guide](docs/binary-dependencies.md):
 retain local outputs for debugging, commit only source/declarations/licenses,
 and let CI download and package. Python is not a local development prerequisite.
-You may open a Ready PR with device verification unchecked, download a test package
-from **Verify pull request** Artifacts, verify it on stable/Beta Cindy, then check
-the attestation. Upload runs before that gate, so a failure of only the final
-attestation still leaves the artifact available; fix earlier test/build failures
-first. Packages expire after 7 days, are unreviewed, and never go to Platform/OSS.
-Record source identity and package hash; green CI alone is not device verification.
+You may open a Ready PR to obtain test packages from **Verify pull request**
+Artifacts. They expire after 7 days, are unreviewed and never go to Platform/OSS.
+Tests and packaging must pass. CI no longer fails on a device checkbox or exempts
+authors by identity. Reviewers assess actual runtime evidence for affected paths;
+authors or maintainers may supply it. Green CI does not prove runtime testing.
 
-**How an external contributor's PR flows:**
+**What happens after submission:**
 
-- **Verify pull request** runs on the plain `pull_request` event with read-only
-  permissions and no secrets, so it is safe to run automatically on forks. If your
-  GitHub account is brand new, GitHub may still ask a maintainer to click
-  "Approve and run" once; the PR shows it as awaiting approval — nothing for you to do.
-- The **PR contributor guidance** bot keeps one comment on your PR listing what is
-  still missing (device-verification checkbox, commits without DCO sign-off, CI
-  awaiting approval) and updates it on every push, description edit, or when
-  **Verify pull request** is requested/completes (including after a maintainer
-  approves a waiting fork run). It recomputes from the current PR commits each
-  run (so a DCO remediation commit is enough; you do not need to rewrite history)
-  and uses the same packaged-file gate as Verify (including root `LICENSE` /
-  `NOTICE` / `TRADEMARKS`). It only reads PR metadata and never executes code from
-  the PR.
-- If only "Require Cindy device verification attestation" fails and every earlier
-  step is green, your code passed: follow the Job Summary steps, verify on a device,
-  and check the box. Editing the PR body re-runs the check.
+- **Verify pull request** runs on source pushes with read-only permissions and no
+  publishing secrets. A first-time fork run may need maintainer approval; this is
+  a maintainer action, not a code change for the author.
+- **PR contributor guidance** maintains one comment for DCO and fork-run actions,
+  recomputing from current commits and accepting DCO remediation without rewriting
+  history. It reads metadata only and never executes PR code.
+- PR edits refresh guidance and validation (including target-branch changes).
+  Put verification in the body or a linked comment: actual version/environment,
+  exercised paths and gaps. No fixed wording, checkbox or copied artifact hash is
+  required. Explain applicability across the full diff since reused evidence;
+  affected behavior still needs verification.
+- Once required checks, effective review, runtime evidence and applicable product/
+  permission decisions are satisfied, already-authorized merge automation may
+  execute without asking again. Packaging scripts, dependency updates or images
+  do not require manual approval just because of their paths. Real permission or
+  publishing trust changes still need a scoped maintainer decision.
+- Before merging, verify the current target and combined result. Retargeting a PR
+  requires fresh validation; checks for its previous target are insufficient.
+  Merge and public release are separate stages.
+
+See the [review contract](.greptile/rules.md) for the complete decision rules.
 
 The `*.test.mjs` files under `.tests/` run on Node's built-in test runner:
 
@@ -147,26 +151,15 @@ do not edit the generated `dist/maker.js` by hand.
    historical release is delivered instead; without one, the plugin is hidden.
    Desktop treats that Server selection as authoritative and does not add a
    second `minCindyVersion` filter or install confirmation, so keep this field accurate.
-4. When changing `ghost.json` tool declarations (`tools[].description` or
-   parameters), explain the impact on Agent behaviour in the pull request
-   description — that description is the usage manual the Agent reads.
-   Check the Cindy device verification item only after installing every
-   changed plugin's packaged `.cindy` on a real device running a stable production
-   or Beta Cindy build and exercising its core functionality. If a plugin
-   declares `minCindyVersion`, that Cindy build must be greater than or equal to
-   it. Lowering or removing the field expands claimed compatibility and
-   requires maintainer review.
+4. Explain the Agent-facing impact of changed tool declarations. Supply actual
+   verification for affected paths; reuse valid evidence for unaffected ones,
+   with accurate environments and compatibility limitations. Lowering/removing
+   `minCindyVersion` still needs a maintainer decision and old-version evidence.
 
-Every non-draft pull request is verified by the `Verify pull request`
-workflow: it runs the Server/Desktop delivery contract, localization and
-provisioning gates, runs the `*.test.mjs` tests of every changed plugin
-(installing that plugin's dependencies first), and dry-runs the exact packaging
-step the publish pipeline uses. For every changed plugin package from an
-external contributor, CI also requires the Cindy device verification checkbox in
-the pull request body. Repository maintainers (`author_association` OWNER,
-MEMBER, or COLLABORATOR, or login `zqchris`) skip that checkbox gate; CI passes
-with a notice. CN uploads have been removed; Global uploads run after a merge to
-`main` or a manual dispatch from `main`.
+Every non-draft PR's **Verify pull request** runs the Server/Desktop contract,
+localization, provisioning, changed-plugin tests and actual dry-run packaging.
+There is no device-checkbox parsing or identity exemption. CN uploads remain
+removed; merging or manually dispatching from main submits Global pending releases.
 
 5. Review the complete diff and confirm it contains no credentials, unrelated
    generated files, or an accidentally committed `node_modules`.
@@ -178,9 +171,10 @@ with a notice. CN uploads have been removed; Global uploads run after a merge to
    counterpart must update both files in the same pull request, and vice
    versa. A pull request that updates only one side will not be merged.
 
-Bug fixes and small improvements are welcome as direct pull requests. For a new
-official plugin, open an issue first to discuss positioning and boundaries
-(avoiding overlap with existing plugins), then submit a pull request once aligned.
+Bug fixes and small improvements are welcome as direct PRs. For new plugins,
+built-in providers or changed product positioning, align on boundaries and audience
+in a proposal issue OR Draft PR. No duplicate proposal is needed; decisions remain
+valid within their approved scope.
 
 ## Licensing of contributions (DCO)
 
@@ -258,8 +252,10 @@ platforms. New plugins and binary additions/modifications trigger the check;
 source/docs-only edits and binary deletions do not force legacy migrations.
 Both paths retain license/review/package-size requirements.
 Custom build hooks are not accepted.
-Dependency declaration changes require a plugin version bump and maintainer
-review of provenance, hashes and redistribution licenses.
+Dependency declaration changes require a plugin version bump and review of
+provenance, hashes and redistribution licenses. Routine maintenance can be reviewed
+automatically; real permission/trust expansion or missing evidence needs maintainer
+attention.
 `node --test .tests/binary-dependencies.test.mjs` runs the offline packaging
 regressions; PR CI also dry-runs the actual changed packages. Downloads and
 packaging run separately from the OIDC publishing job.

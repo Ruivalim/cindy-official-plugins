@@ -45,24 +45,27 @@
 
 大型预编译依赖按[依赖接入指南](docs/binary-dependencies.zh-CN.md)迁移：本地保留输出
 调试，Git 只提交源码、声明和许可证，CI 下载并打包。Python 不是本地开发前置条件。
-可以先提交 Ready PR，实机验证项保持未勾选，从 **Verify pull request** 的 Artifacts
-下载测试包，完成正式稳定版/Beta 实机验证后再勾选。上传发生在该勾选检查之前，
-因此最后一项未通过仍可下载；更早的测试/打包失败则需先修复。包保留 7 天，未审核，
-不进入 Platform/OSS。记录具体构建来源和包哈希，不能只凭 CI 绿灯宣称已实机验证。
+可以先开 Ready PR，从 **Verify pull request** 的 Artifacts 取得测试包。包保留
+7 天，未审核，不进入 Platform/OSS。测试和打包必须通过；不再用实机勾选项把技术
+CI 判红，也不按维护者身份豁免验证。真实运行证据由 reviewer 按受影响场景核对，
+可由作者或维护者提供。CI 绿灯不代表已实测。
 
-**外部贡献者的 PR 会怎样流转：**
+**提交后会发生什么：**
 
-- **Verify pull request** 以普通 `pull_request` 事件、只读权限运行，不接触任何密钥，
-  fork PR 也能安全自动跑。若你是首次在 GitHub 上贡献的新账号，GitHub 可能要求维护者
-  先点一次「Approve and run」，这期间 PR 上会显示等待批准，你无需操作。
-- **PR contributor guidance** 机器人会在 PR 下维护一条评论，列出仍缺的事项（实机验证
-  勾选、缺少 DCO 签名的 commit、CI 是否在等待批准）；每次 push、编辑描述，或
-  **Verify pull request** 被请求/完成（含维护者批准等待中的 fork 运行）时都会刷新。
-  每次运行都按当前 commit 列表重算（推送 DCO 补签 commit 即可，不必改写历史），
-  实机验证门禁与 Verify 相同（含根目录 `LICENSE` / `NOTICE` / `TRADEMARKS`）。
-  它只读取 PR 元数据，从不执行 PR 中的代码。
-- 只剩「Require Cindy device verification attestation」失败、前面步骤全绿时，代码已通过，
-  按 Job Summary 中的步骤完成实机验证并勾选即可；编辑 PR 描述会自动重跑检查。
+- **Verify pull request** 在源码推送时以只读权限运行，不接触发布密钥。首次 fork
+  运行可能需要维护者批准；这属于维护者待办，作者无需改代码。
+- **PR contributor guidance** 保持一条评论，提示 DCO 与 fork 运行待办；按当前
+  commit 列表重算，支持 DCO 补签，不要求改写历史。它只读取元数据，不执行 PR 代码。
+- PR 编辑会刷新引导与验证（包括目标分支变更）。运行记录可放正文或链接的
+  评论里，不要求固定措辞、checkbox 或重复抄写产物哈希。记录真实版本/环境、场景和
+  未测项；沿用旧证据时说明此后完整差异的适用范围，受影响场景仍需补测。
+- required checks、有效 review、必要验收与产品/权限决定齐全后，已授权的合并程序
+  可以执行，无需再问一次“合”。普通打包脚本、依赖或图片修改不因路径转人工。
+  真实权限/发布信任边界变化仍需维护者决定；已有范围内的批准不重复索要。
+- 合并前应核对当前目标分支及其组合结果；改 PR 的目标分支后需重新验证，不能沿用
+  旧目标的检查。合并与公开上架是不同阶段。
+
+完整判定口径见 [审查规则](.greptile/rules.md)。
 
 `.tests/` 下的 `*.test.mjs` 用 Node 内置 test runner 运行，例如：
 
@@ -114,19 +117,13 @@ cd 163-mail && npm ci && npm run build
    回退到兼容历史版本，没有兼容历史版本时不展示该插件。
    Desktop 以该 Server 选择为准，不再追加 `minCindyVersion` 二次筛选或安装确认，
    因此必须准确填写这个字段。
-4. 改动 `ghost.json` 的工具声明（`tools[].description` / 参数）时，在 PR 描述里说明对
-   Agent 行为的影响——这段描述就是 Agent 读到的使用手册。每个改动插件都必须先在
-   运行正式稳定版或 Beta 版 Cindy 的实际设备上安装真实 `.cindy` 包并验证核心功能，再勾选 PR
-   的 Cindy 实机验证项；插件声明 `minCindyVersion` 时，验证所用 Cindy 版本必须
-   不低于该最低版本。降低或删除该字段会扩大声称支持的范围，必须交维护者人工 review。
+4. 改动工具声明时说明对 Agent 行为的影响。按审查规则提供受影响路径的真实验证，
+   未受影响路径可沿用有效证据；准确标注环境与兼容限制。降低/删除 `minCindyVersion`
+   仍需维护者确认扩大支持范围及相关旧版本证据。
 
-每个非草稿 PR 都会由 `Verify pull request` workflow 验证：跑 Server / Desktop 交付
-契约、localization 与 provisioning 门禁、跑每个被改动插件的 `*.test.mjs` 测试（先装
-该插件的依赖），并用与发布流水线完全相同的打包步骤做 dry-run。外部贡献者只要改动
-了插件包，CI 还会要求 PR Body 勾选 Cindy 实机验证项。仓库维护者（`author_association`
-为 OWNER、MEMBER 或 COLLABORATOR，或登录名为 `zqchris`）会跳过该勾选门禁，CI 以
-notice 记录后直接通过。国内上传逻辑已移除；海外在合入 `main` 或从 `main` 手动
-触发时上传。
+每个非草稿 PR 的 **Verify pull request** 会运行 Server/Desktop 交付契约、localization、
+provisioning、改动插件的定向测试与实际试打包。不解析实机勾选，也不按身份豁免。
+国内上传保持移除；合并或从 main 手动触发后，海外向 Platform 提交待审包。
 
 5. Review 完整 diff，确认没有凭证、无关生成文件或误提交的 `node_modules`。
 6. 等待 review；不要直接向 `main` 推送。合入后，变更包会提交到海外 Plugin Platform，
@@ -135,8 +132,8 @@ notice 记录后直接通过。国内上传逻辑已移除；海外在合入 `ma
    `.zh-CN` 对应版本的文档时，两份必须在同一个 PR 内一起更新，反之亦然。只改
    一边的 PR 不予合并。
 
-Bug 修复和小改进可以直接提 PR。新官方插件请先开 issue 讨论定位与边界（避免与现有插件
-重叠），对齐后再提 PR。
+Bug 修复和小改进直接提 PR。新插件、新内置供应商或产品定位变化，先用提案 issue
+或 Draft PR 对齐定位、边界和受众，任选其一，不重复开提案；已有决定在范围内持续有效。
 
 ## 贡献的许可与署名（DCO）
 
@@ -200,9 +197,9 @@ Signed-off-by: 你的名字 <你的邮箱>
 使用 [binary-dependencies.json](docs/binary-dependencies.zh-CN.md) 按需收集大依赖，
 小二进制仍可直接入仓，不接受自定义构建钩子。每个插件直接入仓的二进制按所有平台
 合计，上限 10 MiB。新插件或新增/修改二进制时触发检查；仅改代码/文档或删除二进制
-不强制迁移存量文件。两条路径均保留许可证、人工审查和总包
-大小要求。依赖声明变化必须提升插件版本，
-由维护者人工核对来源、哈希和再分发许可证。
+不强制迁移存量文件。两条路径均保留许可证、来源审查和总包大小要求。依赖声明
+变化必须提升插件版本，核对来源、哈希和再分发许可证；仅实际权限/信任边界扩大
+或证据不足时转维护者，普通维护更新可自动审查。
 `node --test .tests/binary-dependencies.test.mjs` 运行离线打包回归；
 PR CI 还会对实际改动的插件试打包。下载、打包与 OIDC 发布分属不同 job。
 

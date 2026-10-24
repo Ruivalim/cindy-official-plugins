@@ -178,7 +178,7 @@ jobs:
           done
           echo "directory=${artifact_dir}" >> "${GITHUB_OUTPUT}"
 
-      # Available even when the following manual-attestation gate is pending.
+      # Available for impact-based runtime verification during review.
       # Test artifacts are never consumed by the production publishers.
       - name: Upload PR verification packages
         if: ${{ steps.changes.outputs.plugins != '[]' }}
@@ -189,43 +189,3 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
-
-      - name: Require Cindy device verification attestation
-        if: ${{ steps.changes.outputs.plugins != '[]' }}
-        env:
-          AUTHOR_ASSOCIATION: ${{ github.event.pull_request.author_association }}
-          AUTHOR_LOGIN: ${{ github.event.pull_request.user.login }}
-        run: |
-          set -euo pipefail
-          association="${AUTHOR_ASSOCIATION:-$(jq -r '.pull_request.author_association // empty' "${GITHUB_EVENT_PATH}")}"
-          login="${AUTHOR_LOGIN:-$(jq -r '.pull_request.user.login // empty' "${GITHUB_EVENT_PATH}")}"
-          skip=0
-          case "${association}" in
-            OWNER|MEMBER|COLLABORATOR) skip=1 ;;
-          esac
-          # GitHub logins are case-insensitive; zqchris is a known maintainer.
-          if [[ "${login,,}" == "zqchris" ]]; then
-            skip=1
-          fi
-          if [[ "${skip}" -eq 1 ]]; then
-            echo "::notice::Skipping Cindy device verification checkbox for maintainer ${login} (author_association=${association})."
-            exit 0
-          fi
-          pr_body="$(jq -r '.pull_request.body // ""' "${GITHUB_EVENT_PATH}")"
-          # Keep accepting the stricter stable-only attestation on existing PRs.
-          if ! grep -Eq '^- \[[xX]\] \*\*(Cindy device verification / Cindy 实机验证|Production Cindy verification / 生产版 Cindy 验证)\*\*' \
-            <<<"${pr_body}"; then
-            msg="Cindy device verification / Cindy 实机验证 is not checked yet. This is the ONLY remaining gate if every earlier step is green — it is an expected intermediate state, not a code failure. / 实机验证项尚未勾选；若前面步骤都是绿的，这是唯一剩余门禁，属于预期中间状态，不是代码错误。"
-            echo "::error title=Cindy 实机验证 not checked / 实机验证未勾选::${msg}"
-            {
-              echo "## ⏳ Cindy device verification pending / 等待实机验证"
-              echo
-              echo "${msg}"
-              echo
-              echo "1. Download the test package from this run's **Artifacts** (\`pr-plugins-…\`, kept 7 days). / 从本次 run 的 Artifacts 下载测试包（保留 7 天）。"
-              echo "2. Install it on a real device running a stable production or Beta Cindy build (Dev/local builds do not qualify; version ≥ the plugin's minCindyVersion). / 在正式稳定版或 Beta 版 Cindy 实机上安装（Dev/本地构建不算；版本不低于 minCindyVersion）。"
-              echo "3. Record run/artifact URL, buildCommit, package SHA-256, Cindy version + channel under **Verification / 验证** in the PR body. / 在 PR 描述的验证一节记录 run 链接、buildCommit、包 SHA-256、Cindy 版本与渠道。"
-              echo "4. Check \`- [x] **Cindy device verification / Cindy 实机验证**\`. Editing the PR body re-runs this check automatically. / 勾选该项；编辑 PR 描述会自动重跑检查。"
-            } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
-            exit 1
-          fi

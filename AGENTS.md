@@ -9,9 +9,9 @@ Greptile, etc.). 本文件面向在本仓工作的一切 AI agent：写插件、
 
 Source of Cindy's official plugins (Ghosts). **CN package submission remains
 removed; merging to `main` automatically submits changed packages to Global
-Plugin Platform.** Only approved releases become visible — review remains strict.
+Plugin Platform.** Only approved releases become visible; review is evidence-based and proportional.
 国内推包逻辑保持移除，合入 `main` 后自动将变更包提交到海外 Plugin Platform；
-审核通过后才对用户可见，审查从严。
+审核通过后才对用户可见；审查按实际风险与证据进行。
 
 ## Authoring reference / 编写参考
 
@@ -42,7 +42,7 @@ Runtime patches and host safeguards until equivalent behavior is verified.
   [Review standards](./README.md#review-standards) /
   [审查标准](./README.zh-CN.md#审查标准).
 
-Security highlights (full text in the contract; violations are P1):
+Security highlights (full text in the contract; grade findings by actual impact):
 credentials only via the three host-injection channels
 (`network.secrets[].inject` / `network.connections[].inject` /
 `node.secretBindings[]`) — with two approved exceptions that must NOT be
@@ -79,12 +79,14 @@ vendor/dist whole-package upgrades require a verified official source and review
   of the PR and must not be flagged.
 - Bundled third-party dependencies changed → update that plugin's
   `THIRD-PARTY-LICENSES.txt`.
-- Every changed plugin package requires the PR's Cindy device verification
-  checkbox, attesting that its packaged `.cindy` was installed and exercised on
-  a real device running a stable production or Beta Cindy build. Either channel
-  is sufficient; Dev/local builds do not qualify. If the plugin declares
-  `minCindyVersion`, that Cindy build must be greater than or equal to it.
-  Lowering/removing the field requires maintainer review.
+- Record runtime evidence appropriate to the affected behavior, following
+  `.greptile/rules.md` → 运行验证与证据复用. Reuse evidence for unaffected paths;
+  identify version/environment and any remaining compatibility gaps truthfully.
+  Authors and maintainers follow the same standard. CI does not require a fixed
+  device-verification checkbox; green checks are not proof of runtime testing.
+  Authors or maintainers may perform verification. Missing evidence is a review
+  prerequisite, not automatically a code P1. Lowering/removing `minCindyVersion`
+  still requires maintainer approval and compatibility evidence.
 - Paired bilingual docs (`README.md` ↔ `README.zh-CN.md`, etc.) must change in
   the same PR. 双语文档必须同 PR 同步。
 - Never commit credentials, real user data, or `node_modules`; fixtures use
@@ -92,26 +94,38 @@ vendor/dist whole-package upgrades require a verified official source and review
 
 ## New plugins / 新插件
 
-Open a [new plugin proposal](./.github/ISSUE_TEMPLATE/new_plugin_proposal.yml)
-issue and get a maintainer ack **before** writing code. Duplicate check is
-mandatory: compare against every existing plugin's `ghost.json`
-(description / whenToUse / tools / hosts). Same-provider product families and
-same-protocol different providers coexist; duplicate generic capabilities do
-not. New plugins also need: a `provisioning.json` entry with an explicit
-audience decision (prefer staged rollout over `"all"` for first release), and
-real-device verification notes in the PR description. New plugin admission is
-a product decision and always requires maintainer review.
+Discuss a new plugin, built-in provider, or changed product positioning in a
+[new plugin proposal](./.github/ISSUE_TEMPLATE/new_plugin_proposal.yml) issue or
+Draft PR before substantial implementation. Either entry is sufficient. Reviewers
+provide relevant overlap evidence; same-provider product families and
+same-protocol different providers may coexist. Record the maintainer's admission
+and audience decision once; reuse it while its scope remains valid. New plugins
+also need a `provisioning.json` entry and runtime verification evidence. Ordinary
+fixes need no separate proposal. Do not reject current code using resolved findings.
 
 ## Merge policy / 合并纪律
 
-PR-first; `main` must be protected by the `main-pr-first` ruleset (required CI
-checks, 1 current-head approving review, all threads resolved). Reviewers
-report; **merge decisions belong to maintainers**. Greptile may approve only a
-clean 5/5, non-sensitive PR allowed by the `autoApprove` gate in
-`.greptile/config.json`; sensitive changes always require maintainer approval.
-Automated reviewers may authorize but must never merge or close.
-Greptile 仅可自动授权通过配置门禁的非敏感 5/5 PR；敏感变更必须由维护者人工
-review。自动 reviewer 不合并、不关闭 PR。
+PR-first; preserve the live `main-pr-first` ruleset (required CI checks, effective
+approving review and resolved threads). An already-authorized merge automation
+may merge when those requirements, applicable decisions and runtime evidence are
+satisfied, without asking again for ordinary maintenance. Being a reviewer alone
+never grants merge/close permission. Do not bypass protections or self-approve.
+
+Assess actual changes, not file categories: traceable dependency/vendor updates,
+rebuilt workers, static images and packaging correctness fixes may be approved
+automatically when evidence is sufficient and trust/permission boundaries do not
+expand. Product admission and real credential, authorization, distribution or
+publishing trust changes need scoped maintainer decisions. Verify the original
+approval and its author; a PR author's claim is insufficient. Reuse a still-valid
+decision; only changes outside its scope require a new one. Review-policy changes
+and weakened safety gates remain subject to maintainer review.
+
+Greptile follows the `autoApprove` risk gate in `.greptile/config.json`; the
+repository imposes no extra clean-5/5 requirement. Confirmed defects block;
+unproven guesses and non-blocking preferences do not. Keep code findings,
+verification gaps and maintainer decisions separate; a routing requirement is
+not itself a P1. Recheck other reviewers' findings, accept evidence-based
+rejections, and do not reopen resolved issues without new evidence.
 
 ## Reply language / 回复语言
 

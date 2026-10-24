@@ -77,123 +77,17 @@ test('changed-plugin detection uses the merge parents even when event base is st
   assert.doesNotMatch(prWorkflow, /github\.event\.pull_request\.base\.sha/);
 });
 
-test('pull request verification requires the Cindy device attestation', () => {
+test('technical PR checks do not depend on editable prose or contributor identity', () => {
+  // Retargeting emits edited: keep validation for the new merge result.
+  // Required jobs must not turn green merely because prose was edited.
   assert.match(prWorkflow, /^      - edited$/m);
-  assert.match(
-    prWorkflow,
-    /name: Require Cindy device verification attestation\n        if: \$\{\{ steps\.changes\.outputs\.plugins != '\[\]' \}\}/,
-  );
-  assert.match(prWorkflow, /Cindy device verification \/ Cindy 实机验证/);
-  assert.match(prWorkflow, /\.pull_request\.body/);
-  assert.match(prWorkflow, /GITHUB_EVENT_PATH/);
-  assert.doesNotMatch(prWorkflow, /github\.event\.pull_request\.body/);
-  assert.ok(
-    prWorkflow.indexOf('name: Dry-run plugin packaging') <
-      prWorkflow.indexOf('name: Require Cindy device verification attestation'),
-    'package validation must run before a pending manual attestation blocks the job',
-  );
+  assert.doesNotMatch(prWorkflow, /pull_request\.(?:body|author_association|user\.login)/);
+  assert.doesNotMatch(prWorkflow, /Require Cindy device verification|Skipping Cindy device/);
+  assert.match(prWorkflow, /node --test \.tests\/plugin-contract\.test\.mjs/);
+  assert.match(prWorkflow, /name: Dry-run plugin packaging/);
 });
 
-test('device attestation accepts current and legacy checked labels, but not unchecked claims', (t) => {
-  const step = prWorkflow.match(/      - name: Require Cindy device verification attestation\n([\s\S]*?)(?=\n      - name:|$)/)?.[1];
-  assert.ok(step, 'workflow must contain the device attestation gate');
-  const source = step.split('        run: |\n')[1];
-  assert.ok(source, 'attestation gate must contain an executable shell script');
-  const script = source.split('\n').map((line) => line.replace(/^          /, '')).join('\n');
-  const fixture = mkdtempSync(path.join(os.tmpdir(), 'cindy-attestation-'));
-  t.after(() => rmSync(fixture, { recursive: true, force: true }));
-  const event = path.join(fixture, 'event.json');
-  const template = readFileSync(new URL('../.github/PULL_REQUEST_TEMPLATE.md', import.meta.url), 'utf8');
-  assert.match(template, /or Beta Cindy build/);
-  assert.match(template, /Either channel is sufficient/);
-  assert.match(template, /Dev\/local builds do not qualify/);
-  for (const [body, expected] of [
-    ['- [x] **Cindy device verification / Cindy 实机验证** — stable 0.1.82', 0],
-    ['- [X] **Cindy device verification / Cindy 实机验证** — Beta 0.1.82', 0],
-    ['- [x] **Production Cindy verification / 生产版 Cindy 验证**', 0],
-    ['- [ ] **Cindy device verification / Cindy 实机验证**', 1],
-    ['- [ ] **Production Cindy verification / 生产版 Cindy 验证**', 1],
-    ['Beta 0.1.82 verified, without checking the attestation', 1],
-    ['', 1],
-  ]) {
-    writeFileSync(event, JSON.stringify({ pull_request: { body } }));
-    const env = { ...process.env, GITHUB_EVENT_PATH: event };
-    delete env.AUTHOR_ASSOCIATION;
-    delete env.AUTHOR_LOGIN;
-    const result = spawnSync('bash', ['-c', script], { encoding: 'utf8', env });
-    assert.equal(result.status, expected, result.stderr || result.stdout);
-  }
-});
-
-test('device attestation is skipped for repository maintainers and zqchris', (t) => {
-  const step = prWorkflow.match(/      - name: Require Cindy device verification attestation\n([\s\S]*?)(?=\n      - name:|$)/)?.[1];
-  assert.ok(step, 'workflow must contain the device attestation gate');
-  assert.match(step, /github\.event\.pull_request\.author_association/);
-  assert.match(step, /github\.event\.pull_request\.user\.login/);
-  const source = step.split('        run: |\n')[1];
-  assert.ok(source, 'attestation gate must contain an executable shell script');
-  const script = source.split('\n').map((line) => line.replace(/^          /, '')).join('\n');
-  const fixture = mkdtempSync(path.join(os.tmpdir(), 'cindy-attestation-maintainer-'));
-  t.after(() => rmSync(fixture, { recursive: true, force: true }));
-  const event = path.join(fixture, 'event.json');
-  const unchecked = '- [ ] **Cindy device verification / Cindy 实机验证**';
-  const run = (payload, extraEnv = {}) => {
-    writeFileSync(event, JSON.stringify({ pull_request: payload }));
-    const env = { ...process.env, GITHUB_EVENT_PATH: event, ...extraEnv };
-    if (!Object.hasOwn(extraEnv, 'AUTHOR_ASSOCIATION')) delete env.AUTHOR_ASSOCIATION;
-    if (!Object.hasOwn(extraEnv, 'AUTHOR_LOGIN')) delete env.AUTHOR_LOGIN;
-    return spawnSync('bash', ['-c', script], { encoding: 'utf8', env });
-  };
-  const output = (result) => result.stderr || result.stdout;
-
-  for (const association of ['OWNER', 'MEMBER', 'COLLABORATOR']) {
-    const result = run({
-      body: unchecked,
-      author_association: association,
-      user: { login: 'someone' },
-    });
-    assert.equal(result.status, 0, output(result));
-    assert.match(`${result.stdout}${result.stderr}`, /Skipping Cindy device verification checkbox/);
-  }
-
-  const byLogin = run({
-    body: unchecked,
-    author_association: 'CONTRIBUTOR',
-    user: { login: 'zqchris' },
-  });
-  assert.equal(byLogin.status, 0, output(byLogin));
-  assert.match(`${byLogin.stdout}${byLogin.stderr}`, /Skipping Cindy device verification checkbox/);
-
-  const byLoginCase = run({
-    body: unchecked,
-    author_association: 'NONE',
-    user: { login: 'ZqChris' },
-  });
-  assert.equal(byLoginCase.status, 0, output(byLoginCase));
-
-  for (const association of ['CONTRIBUTOR', 'FIRST_TIMER', 'FIRST_TIME_CONTRIBUTOR', 'NONE', '']) {
-    const result = run({
-      body: unchecked,
-      author_association: association,
-      user: { login: 'external-user' },
-    });
-    assert.equal(result.status, 1, `expected failure for ${association}: ${output(result)}`);
-  }
-
-  const envAssociation = run(
-    { body: unchecked, author_association: 'CONTRIBUTOR', user: { login: 'external-user' } },
-    { AUTHOR_ASSOCIATION: 'OWNER' },
-  );
-  assert.equal(envAssociation.status, 0, output(envAssociation));
-
-  const envLogin = run(
-    { body: unchecked, author_association: 'CONTRIBUTOR', user: { login: 'external-user' } },
-    { AUTHOR_LOGIN: 'zqchris' },
-  );
-  assert.equal(envLogin.status, 0, output(envLogin));
-});
-
-test('PR verification artifacts are scoped, pinned and uploaded before attestation', () => {
+test('PR verification artifacts are scoped, pinned and available for runtime review', () => {
   const upload = prWorkflow.split('      - name: Upload PR verification packages\n')[1]?.split('\n      - name: ')[0];
   assert.ok(upload);
   assert.match(upload, /if: \$\{\{ steps\.changes\.outputs\.plugins != '\[\]' \}\}/);
@@ -205,7 +99,6 @@ test('PR verification artifacts are scoped, pinned and uploaded before attestati
   assert.match(upload, /compression-level: 0/);
   assert.doesNotMatch(upload, /always\(|continue-on-error/);
   assert.ok(prWorkflow.indexOf('name: Dry-run plugin packaging') < prWorkflow.indexOf('name: Upload PR verification packages'));
-  assert.ok(prWorkflow.indexOf('name: Upload PR verification packages') < prWorkflow.indexOf('name: Require Cindy device verification attestation'));
   assert.doesNotMatch(prWorkflow, /pull_request_target|id-token: write|secrets\./);
   for (const publisher of [globalWorkflow]) {
     assert.doesNotMatch(publisher, /pr-plugins-|workflow_run:/);
@@ -557,72 +450,23 @@ test('contributor guidance never checks out PR code and refreshes when Verify co
   }
 });
 
-test('contributor guidance matches pr-verify gating and recomputes DCO each run', (t) => {
-  const licenseOnly = runGuidance(t, {
-    'files.json': [{ status: 'modified', filename: 'LICENSE' }],
-  });
-  assert.equal(licenseOnly.result.status, 0, licenseOnly.result.stderr || licenseOnly.result.stdout);
-  assert.match(licenseOnly.posted, /Cindy 实机验证\*\* is unchecked/);
-
-  const licenseChecked = runGuidance(t, {
-    'files.json': [{ status: 'modified', filename: 'LICENSE' }],
-    'pull.json': {
-      draft: false,
-      body: '- [x] **Cindy device verification / Cindy 实机验证** — stable 0.1.82',
-      user: { login: 'alice' },
-      author_association: 'FIRST_TIMER',
-      head: { sha: GUIDANCE_HEAD },
-    },
-  });
-  assert.equal(licenseChecked.result.status, 0, licenseChecked.result.stderr);
-  assert.match(licenseChecked.posted, /No missing items detected by this bot/);
-
-  for (const association of ['OWNER', 'MEMBER', 'COLLABORATOR']) {
-    const maintainer = runGuidance(t, {
-      'files.json': [{ status: 'modified', filename: 'LICENSE' }],
-      'pull.json': {
-        draft: false,
-        body: '',
-        user: { login: 'someone' },
-        author_association: association,
-        head: { sha: GUIDANCE_HEAD },
-      },
-    });
-    assert.equal(maintainer.result.status, 0, maintainer.result.stderr || maintainer.result.stdout);
-    assert.doesNotMatch(maintainer.posted, /Cindy 实机验证\*\* is unchecked/);
-    assert.match(maintainer.posted, /No missing items detected by this bot/);
+test('contributor guidance treats verification equally and recomputes DCO each run', (t) => {
+  // Old unchecked/checked/contradictory templates and prose must not turn a
+  // guidance comment into approval or make an external author fix a checkbox.
+  for (const association of ['OWNER', 'MEMBER', 'COLLABORATOR', 'FIRST_TIMER', 'NONE']) {
+    for (const body of ['', '- [ ] **Cindy device verification / Cindy 实机验证**',
+      '- [x] **Cindy device verification / Cindy 实机验证**\nNot yet verified']) {
+      const check = runGuidance(t, {
+        'files.json': [{ status: 'modified', filename: 'LICENSE' }],
+        'pull.json': { draft: false, body, user: { login: 'alice' },
+          author_association: association, head: { sha: GUIDANCE_HEAD } },
+      });
+      assert.equal(check.result.status, 0, check.result.stderr);
+      assert.doesNotMatch(check.posted, /is unchecked|check the box|已实测|可安全合并/);
+      assert.match(check.posted, /this comment is not merge approval/);
+      assert.match(check.posted, /Runtime evidence and applicable approvals are assessed in review/);
+    }
   }
-
-  for (const login of ['zqchris', 'ZqChris']) {
-    const byLogin = runGuidance(t, {
-      'files.json': [{ status: 'modified', filename: 'LICENSE' }],
-      'pull.json': {
-        draft: false,
-        body: '',
-        user: { login },
-        author_association: 'CONTRIBUTOR',
-        head: { sha: GUIDANCE_HEAD },
-      },
-    });
-    assert.equal(byLogin.result.status, 0, byLogin.result.stderr || byLogin.result.stdout);
-    assert.doesNotMatch(byLogin.posted, /Cindy 实机验证\*\* is unchecked/);
-  }
-
-  const docsOnly = runGuidance(t, {
-    'files.json': [{ status: 'modified', filename: 'README.md' }],
-  });
-  assert.equal(docsOnly.result.status, 0, docsOnly.result.stderr);
-  assert.doesNotMatch(docsOnly.posted, /Cindy 实机验证\*\* is unchecked/);
-  assert.match(docsOnly.posted, /No missing items detected by this bot/);
-
-  const deletedPlugin = runGuidance(t, {
-    'files.json': [
-      { status: 'removed', filename: 'qq-mail/ghost.json' },
-      { status: 'removed', filename: 'qq-mail/main.js' },
-    ],
-  });
-  assert.equal(deletedPlugin.result.status, 0, deletedPlugin.result.stderr);
-  assert.doesNotMatch(deletedPlugin.posted, /Cindy 实机验证\*\* is unchecked/);
 
   const unsigned = runGuidance(t, {
     'commits.json': [{

@@ -79,9 +79,10 @@ The full path from idea to marketplace:
 2. **Align** — open a
    [new plugin proposal](https://github.com/makecindy/cindy-official-plugins/issues/new?template=new_plugin_proposal.yml)
    describing the scenario, boundaries, and any autonomous Host capabilities
-   (network hosts, credentials, long-lived Node runtime). Wait for a maintainer ack before writing
-   code — it keeps you from building something that overlaps or won't be
-   accepted.
+   (network hosts, credentials, long-lived Node runtime). A Draft PR is also a
+   valid entry; no duplicate proposal is needed. Align admission before substantial
+   implementation of a new plugin/provider. Ordinary fixes need no proposal, and
+   existing decisions remain valid within scope.
 3. **Build** — follow the [harness-independent quick path](#harness-independent-quick-path)
    with any coding Agent or development environment. The repository documents
    the file format, runtime messages, validation command, and packaging format;
@@ -94,8 +95,9 @@ The full path from idea to marketplace:
    limits within this repository, checks localization / provisioning,
    and dry-runs the exact package; automated review enforces the full ruleset in
    [`.greptile/rules.md`](./.greptile/rules.md); a maintainer reviews against
-   the same [review standards](#review-standards). Walk through the self-check
-   list below before requesting review.
+   the same [review standards](#review-standards). Once checks, effective review,
+   verification and applicable decisions are satisfied, already-authorized merge
+   automation may execute without another confirmation for routine maintenance.
 6. **Submit and approve** — merging to `main` submits changed packages to Global
    Plugin Platform. Only approved releases become available to compatible clients;
    rejection leaves the previous approved release in service. CN submission remains
@@ -104,7 +106,11 @@ The full path from idea to marketplace:
 ## Review standards
 
 Every official plugin is installed by real users who carry its security and
-experience risk, so review is strict by design. Four hard principles:
+experience risk. Review actual behavior, impact and evidence: routine packaging
+fixes, dependency maintenance, traceable generated artifacts and static images
+do not require human approval just because of their paths. Product admission and
+real credential/permission/publishing trust expansion still need scoped decisions.
+Separate code defects, verification gaps and product decisions. Four principles:
 
 1. **Pure sandbox by default; authorization follows the executor.** Regular
    plugins run in Cindy's isolated sandbox. Whether a plugin tool runs is decided
@@ -150,10 +156,9 @@ experience risk, so review is strict by design. Four hard principles:
 - [ ] User-facing errors are actionable; no raw status codes or stack traces
 - [ ] Four-language locales complete; `node --test .tests/localization.test.mjs`
       passes
-- [ ] Every changed plugin's packaged `.cindy` was installed and exercised on a
-      real device running a stable production or Beta Cindy build, and the PR
-      verification box is checked; when the plugin declares `minCindyVersion`,
-      the verified Cindy build is greater than or equal to it
+- [ ] Actual runtime evidence for affected paths, or linked valid prior evidence
+      with applicability across the full subsequent diff; accurate environment,
+      version, results and gaps. No fixed PR checkbox; green CI is not runtime proof
 - [ ] `ghost.json.version` bumped; `provisioning.json` entry present with an
       audience decision stated in the PR
 - [ ] No credentials, real user data, `node_modules`, or unrelated generated
@@ -387,11 +392,11 @@ See the [dependency guide](docs/binary-dependencies.md) for migration steps,
 complete declaration examples and downloading PR verification packages.
 
 Before submitting to this official repository, add a `provisioning.json` entry
-and declare locale files for exactly `zh-CN`, `en`, `ja`, and `ko`, covering the
-plugin text and every tool description. Then follow
-[`CONTRIBUTING.md`](./CONTRIBUTING.md). You may first open a PR to obtain its test
-package; before merging, install and verify the exact `.cindy` on a real device
-running an eligible stable production or Beta Cindy build, then check the attestation.
+and locale files for `zh-CN`, `en`, `ja` and `ko`, covering plugin text and tool
+descriptions. Follow [`CONTRIBUTING.md`](./CONTRIBUTING.md). Open a PR to obtain a
+test package; authors or maintainers supply runtime and compatibility evidence
+appropriate to the affected behavior before merge. Valid evidence for unaffected
+paths can be reused without reinstalling after every wording change.
 
 `taptap-maker/vendor/taptap-maker/` ships the official `@taptap/maker@0.0.37`
 with the plugin. When upgrading, replace the published npm package content
