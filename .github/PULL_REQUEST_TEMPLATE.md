@@ -39,26 +39,21 @@ Review contract: .greptile/rules.md → 运行验证与证据复用
 
 ## Third-party OAuth scopes / 第三方 OAuth 授权范围
 
-<!-- Tick one. This covers any change that expands the scopes Cindy's shared
-OAuth app (or a similar platform grant) requests, including a plugin that
-depends on a new host authorization. If it applies, list the scopes, why, and
-whether the plugin or the host requests them. When the host does, name that
-grant, whether the platform has approved it, and whether a host release
-contains it. Do not merge until that is done. Plan scopes from the plugin and
-the host together; do not request unused ones. Host-side changes follow the
-same rule in makecindy/cindy; do not restate it here.
-勾一项。凡扩大 Cindy 共用 OAuth 应用（或同类平台授权）申请范围的改动都算，
-包括插件依赖宿主新增的授权。有则列出 scope、为什么要、由插件还是宿主申请。
-由宿主申请时写明依赖哪项宿主授权、平台是否已批准、宿主是否已发布；没有就先
-不合。按插件和宿主的整体需求一次规划，用不上的不要申请。宿主侧改动由主仓
-makecindy/cindy 的同一条规则管，这里不复述。 -->
+<!-- Tick one. Besides scopes this plugin requests, include any Cindy host
+authorization it uses or depends on. Name that grant, whether the platform has
+approved it, and whether a host release contains it. If the grant changed or
+is not ready, do not merge. Plan scopes that still need requesting together;
+do not request unused ones.
+勾一项。除插件自己申请的 scope 外，写上它用到或依赖的 Cindy 本体授权：哪一项、
+平台是否已批准、宿主是否已发布。本体授权有变化或未就绪先不合。需要申请的范围
+一起规划，用不上的不要申请。 -->
 
-- [ ] Does not expand scopes requested by Cindy's shared OAuth app (or an
-      equivalent platform grant), and does not depend on a new host authorization.
-      未扩大 Cindy 共用 OAuth 应用（或同类平台授权）的申请范围，也不依赖宿主新增授权。
-- [ ] Does. Scopes, why, who requests them; if the host does, the host grant,
-      platform approval, and host release:
-      有。scope、为什么要、由谁申请；若由宿主申请：宿主授权、平台是否已批准、宿主是否已发布：
+- [ ] No change to scopes this plugin requests, and it does not use or depend on
+      a changed or unready Cindy host authorization.
+      插件自己申请的 scope 无变化，也不依赖有变化或未就绪的 Cindy 本体授权。
+- [ ] Applies. Scopes this plugin requests, plus each host grant, platform
+      approval, and host release:
+      有。插件自己的 scope，以及每项本体授权、平台是否已批准、宿主是否已发布：
 
 ## Decisions, if applicable / 相关决定（适用时）
 

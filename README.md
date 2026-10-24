@@ -105,9 +105,9 @@ The full path from idea to marketplace:
    [review standards](#review-standards). Once checks, effective review, and
    verification are satisfied, already-authorized merge automation may execute
    without another confirmation for routine maintenance. A fitting admission
-   needs no extra decision. Changes that expand Cindy's shared OAuth app,
-   including a plugin that depends on a new host grant, still wait for platform
-   approval; see [Review standards](#review-standards).
+   needs no extra decision. A plugin that uses or depends on a Cindy host
+   authorization still waits until that grant is approved and released; see
+   [Review standards](#review-standards).
 6. **Submit and approve** — merging to `main` submits changed packages to Global
    Plugin Platform. Only approved releases become available to compatible clients;
    rejection leaves the previous approved release in service. CN submission remains
@@ -122,15 +122,12 @@ do not require human approval just because of their paths. Admission and
 audience that fit the standard need no separate maintainer approval; a mismatch
 is a concrete review finding. Real permission, credential, or publish-trust
 widening, undisclosed network access, and renaming or deleting a published
-plugin still need the maintainers' explicit decision. Any change that expands
-the scopes Cindy's shared OAuth app (or a similar platform authorization)
-requests is separate, including a plugin that depends on a new host grant.
-Merge waits until the platform has approved it. When the host requests the
-scope, the pull request names that grant and whether a host release contains
-it, and waits until both are done. Plan scopes from the plugin and the host
-together, and leave unused ones out. Host-side changes follow the same rule in
-[makecindy/cindy](https://github.com/makecindy/cindy); this repository only
-points there. Other changes that fit the existing standard are still judged
+plugin still need the maintainers' explicit decision. Review of a plugin also
+checks any Cindy host authorization it uses or depends on, besides scopes the
+plugin itself requests: which grant, whether the platform has approved it, and
+whether a host release contains it. If that grant changed or is not ready, do
+not merge, and plan the scopes that still need requesting together. Leave
+unused ones out. Other changes that fit the existing standard are still judged
 directly. Details are in
 [第三方平台授权](.greptile/rules.md#第三方平台授权).
 Separate code defects, verification gaps, boundary decisions, and platform
@@ -185,10 +182,10 @@ approval. Four principles:
       version, results and gaps. No fixed PR checkbox; green CI is not runtime proof
 - [ ] `ghost.json.version` bumped; `provisioning.json` audience matches the
       standard (`all`, or opt-in `{ "emails": [] }`); `author` is the real author
-- [ ] No expansion of scopes requested by Cindy's shared OAuth app (or an
-      equivalent platform grant), and no dependency on a new host authorization;
-      otherwise the pull request lists the scopes, why, who requests them, and,
-      when the host does, that grant, platform approval, and host release
+- [ ] Scopes the plugin requests are unchanged, and it does not use or depend on
+      a changed or unready Cindy host authorization; otherwise the pull request
+      lists those scopes and, for each host grant, platform approval and host
+      release
 - [ ] No credentials, real user data, `node_modules`, or unrelated generated
       files in the diff; fixtures use placeholder domains (`example.test`)
 - [ ] Bundled dependency changes reflected in `THIRD-PARTY-LICENSES.txt`
