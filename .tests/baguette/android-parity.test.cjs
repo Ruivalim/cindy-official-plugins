@@ -1,6 +1,6 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),vm=require('node:vm');
-const base=path.resolve('baguette-simulator/node/android'),id='00000000-0000-4000-8000-000000000001';
+const base=path.resolve('cindy-simulator/node/android'),id='00000000-0000-4000-8000-000000000001';
 async function temp(t){const dir=await fs.mkdtemp(path.join(os.tmpdir(),'android-parity-test-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));return dir;}
 test('media import uses generated guest paths, verifies bytes and preserves copied outcomes',async t=>{
  const root=await temp(t),file=path.join(root,'photo; $(ignored).png');await fs.writeFile(file,'test');
