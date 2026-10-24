@@ -140,6 +140,32 @@ test('contacts: failed pre-write read never claims the contact was modified', as
   assert.equal(f.requests.length, 1);
 });
 
+test('contacts: update returns a changed server resource name for subsequent operations', async () => {
+  const updated = { ...person, resourceName: 'people/c456' };
+  const f = fixture({ reply: (_, count) => json(count === 1 ? person : updated) });
+  const result = await f.call({ action: 'update', resourceName: person.resourceName, etag: 'version-one',
+    person: { emailAddresses: [{ value: 'new@example.test' }] } });
+  assert.equal(result.ok, true);
+  assert.equal(result.result.execution, 'executed');
+  assert.equal(result.result.data.resourceName, updated.resourceName);
+  assert.equal(new URL(f.requests[1].url).pathname, '/v1/people/c123:updateContact');
+  const next = await f.call({ action: 'get', resourceName: result.result.data.resourceName });
+  assert.equal(next.ok, true);
+  assert.equal(new URL(f.requests[2].url).pathname, '/v1/people/c456');
+  assert.deepEqual(f.requests.map(request => request.method), ['GET', 'PATCH', 'GET']);
+});
+
+test('contacts: update still rejects malformed successful receipts without retrying the write', async () => {
+  for (const resourceName of [undefined, '', 'groups/123', 'people/../../other', 'people/c456?key=other']) {
+    const f = fixture({ reply: (_, count) => json(count === 1 ? person : { resourceName }) });
+    const result = await f.call({ action: 'update', resourceName: person.resourceName, etag: 'version-one',
+      person: { emailAddresses: [{ value: 'new@example.test' }] } });
+    assert.equal(result.ok, false);
+    assert.match(result.message, /\[executed\].*回执不完整/);
+    assert.deepEqual(f.requests.map(request => request.method), ['GET', 'PATCH']);
+  }
+});
+
 test('contacts: delete accepts empty successful response and does not retry', async () => {
   const f = fixture({ reply: () => ({ ok: true, status: 200, body: '' }) });
   const result = await f.call({ action: 'delete', resourceName: 'people/c123' });

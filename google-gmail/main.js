@@ -581,8 +581,9 @@ async function googleContacts(args, callId, beginOperation) {
         if (response.truncated) throw new Error('truncated');
         var data = JSON.parse(response.body);
         if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('invalid');
-        if (mutating && (!/^people\/[A-Za-z0-9_-]+$/.test(data.resourceName || '')
-          || (resource && data.resourceName !== resource))) throw new Error('invalid receipt');
+        // Linking or unlinking a Google Profile can change a contact's name.
+        // Return the new server identifier so later operations use it.
+        if (mutating && !/^people\/[A-Za-z0-9_-]+$/.test(data.resourceName || '')) throw new Error('invalid receipt');
         return data;
       } catch (_) {
         error(execution === 'executed' ? '联系人操作已执行，但回执不完整。请先到 Google 通讯录核对，不要重复创建或修改。' : '联系人响应不完整，请缩小查询范围后重新读取。');
