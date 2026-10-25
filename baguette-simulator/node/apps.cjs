@@ -107,7 +107,13 @@ function createApps({sim, run, Failure, now = Date.now, rsync = '/usr/bin/rsync'
     if (!receipt) return null;
     if (receipt.source === source && receipt.container === container && now() - receipt.at < 3600000) {
       const current = await stamps(source, container, deadline);
-      if (current.every((v, i) => v.stamp === receipt.stamps[i].stamp)) return {...receipt.result, verificationReused: true, checkedAt: new Date(now()).toISOString()};
+      if (current.every((v, i) => v.stamp === receipt.stamps[i].stamp)) {
+        // A writer may have changed an already-visited file while the first
+        // traversal continued. Revisit both entire trees before reusing proof.
+        const confirmed = await stamps(source, container, deadline);
+        if (confirmed.every((v, i) => v.stamp === current[i].stamp) && now() - receipt.at < 3600000)
+          return {...receipt.result, verificationReused: true, checkedAt: new Date(now()).toISOString()};
+      }
     }
     receipts.delete(key);
     return null;

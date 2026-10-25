@@ -83,10 +83,10 @@ function createAgent({root,devices,run}){
     return {udid:d.udid,path:file,mimeType:png?'image/png':'image/jpeg',pixels:{width,height},screen:f.screen,scale,capturedAt:new Date().toISOString(),screenshotAttached:!!inline,...(p.region?{region:r}:{}),... (inline?{_modelImages:inline}:{}),note:'Android rectangular framebuffer, without an added corner or cutout mask; this does not verify physical screen occlusion. Image pixels divided by scale are view points; add the region origin when cropped. Use those coordinates for tap and gesture.'};
   }
   async function after(d,p,result){
-    const started=Date.now();
-    p={...p,_deadline:Math.min(p._deadline??Infinity,started+(p.until?27000:12000))};
+    const started=Date.now(),callDeadline=p._deadline??Infinity;
+    p={...p,_deadline:Math.min(callDeadline,started+(p.until?27000:12000))};
     try{
-      if(p.until)result.wait=await waitFor(d,{text:p.until,timeout:15,_deadline:p._deadline});
+      if(p.until){result.wait=await waitFor(d,{text:p.until,timeout:15,_deadline:p._deadline});p._deadline=Math.min(callDeadline,Date.now()+12000);}
       else if(p.observe!=='none')await sleep(number(p.settle,'settle',0,5,0.6)*1000,p._deadline);
       if(['ui','both'].includes(p.observe??'ui'))result.ui=await describe(d,p);
       if(['screenshot','both'].includes(p.observe)){const {_modelImages,...shot}=await screenshot(d,p);result.screenshot=shot;if(_modelImages)result._modelImages=_modelImages;}

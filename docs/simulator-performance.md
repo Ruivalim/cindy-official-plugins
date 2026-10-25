@@ -16,6 +16,8 @@ Before PR submission, the implementation was rebased onto `b825436` (plugin
 `0.2.29`, screenshot orientation/export fixes) and versioned `0.2.30`. The
 statistics below remain the original 0.2.23/0.2.24 comparison, not measurements
 of 0.2.30. The installation/verification code is unchanged by that rebase.
+Review follow-up `0.2.31` adds a confirmation scan before reusing a receipt;
+its affected performance results are reported separately below.
 This PR introduces no dependency, permission, platform authorization, plugin
 identity or publication setting changes.
 
@@ -71,8 +73,10 @@ compared independently because macOS openrsync can omit them from dry-run
 itemization. A receipt is local
 to the worker, valid for at most one hour, and reused only after both complete
 trees still have identical paths, inode/device, type/mode, size, nanosecond
-mtime/ctime and symlink targets. Equal-size resource edits with restored mtime
-invalidate it. A change during full verification cannot produce a receipt.
+mtime/ctime and symlink targets. In 0.2.31, two successive traversals of both
+trees must match the receipt, so changing an already-visited resource during
+the first traversal invalidates reuse. Equal-size resource edits with restored
+mtime invalidate it. A change during full verification cannot produce a receipt.
 This assumes normal local-filesystem change semantics; it does not verify App
 data, running memory or external content, or continuously monitor later writes.
 
@@ -216,6 +220,7 @@ claim followed by the next quest page. This initialization is not recovery.
 Two incorrect OCR expectations were corrected from observed text; the failed
 assertions remain in the private record. No input was blindly repeated and no
 App functions were injected. Both dedicated devices were shut down afterward.
+
 ## PR submission verification: 0.2.30
 
 After integrating main's screenshot orientation/export fixes, the required suite
@@ -240,3 +245,55 @@ independent screenshot established the current state before the separate visual
 acceptance run; it does not turn the failed automatic assertion into a pass.
 This PR does not claim to fix text-wait reliability. The dedicated device was
 shut down after verification; shared devices and plugin installations were untouched.
+
+## Review follow-up: 0.2.31
+
+Receipt reuse now requires a second complete metadata traversal of both trees.
+The regression changes an already-visited file while the first traversal
+continues, preserving size and mtime; info must report a mismatch and install
+must synchronize instead of skipping. Source and installed trees are both
+covered. Android now resets the post-`until` observation deadline to the lesser
+of the original deadline and 12 seconds from the wait result. Fast/slow waits
+and an earlier original deadline are covered. The required suite passes
+644/644 and the official packer produces 0.2.31. Android evidence is simulated;
+the Apple screenshot and viewer paths are unchanged from the 0.2.30 visual checks.
+
+Two fresh attempts to repeat the 0.2.23 baseline on the same dedicated device
+aborted during preparation: checksum comparison returned unconfirmed after
+110.079 and 110.020 seconds. Neither established build equality; neither counts
+as a successful latency sample, and neither triggered a recovery installation.
+Both raw attempts are retained, including the second attempt with OS caches
+already partly warmed. They do not replace the earlier completed 0.2.23/0.2.24
+data.
+
+The supplemental comparison uses the submitted 0.2.30 commit `3716260` versus
+the frozen 0.2.31 candidate, the same dedicated device and historical bundle,
+and the unchanged replay script. This isolates the cost of the confirmation
+scan; it is not the original optimization baseline. Each worker first completes
+full verification, then trials alternate AB/BA without purging OS caches.
+
+| Repeated build check | Rounds / successful goals | Median / P90 (s) | Measured / total calls | Full preparation (s) | Measured status-wait (s) |
+|---|---:|---:|---:|---:|---:|
+| 0.2.30 | 5 / 5 | 18.59 / 33.27 | 5 / 10 | 347.21 | 0 |
+| 0.2.31 | 5 / 5 | 32.08 / 40.67 | 5 / 9 | 305.36 | 0 |
+
+There were no failed calls, input retries or observation retries in this group.
+The confirmation scan adds 72.6% to the median in this supplemental series;
+it is a correctness cost, not a speed improvement. These workers both ran at
+nice level 5, with no CPU isolation or storage-cache purge. Host load and cache
+conditions were not held constant across series, so do not compare absolute
+latencies across series or apply the original percentage improvement to 0.2.31.
+
+| Repeated install + build check | Rounds / successful goals | Median / P90 (s) | Measured / total calls | Preparation (s) | Measured status-wait (s) |
+|---|---:|---:|---:|---:|---:|
+| 0.2.30 | 2 / 2 | 81.62 / 93.59 | 6 / 10 | 241.91 | 72.29 |
+| 0.2.31 | 2 / 2 | 77.26 / 86.65 | 6 / 13 | 506.44 | 75.57 |
+
+All four installs returned `unchanged`; each subsequent check confirmed the
+bundle. Failed calls and retries were zero. With only two samples per version,
+this group does not establish a consistent speedup. The unchanged script forces
+candidate full verification before each install round; 0.2.30 auto verification
+can reuse its receipt in round two. Preparation is therefore reported separately
+and is not a comparison of full-verification performance. Both dedicated devices
+were confirmed shut down after the replay. Raw records, frozen sources and
+scripts remain private local evidence.

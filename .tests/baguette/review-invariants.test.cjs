@@ -107,6 +107,45 @@ test('a resource change during full comparison cannot create a reusable receipt'
   mutate=false;assert.equal((await apps.info({udid:A},{appPath:source,wait:85})).verificationReused,undefined);
 });
 
+test('receipt reuse revisits files changed after their first scan, for info and install on either tree',async t=>{
+  const code=await fs.readFile(path.join(dir,'apps.cjs'),'utf8');
+  for(const side of ['source','installed'])for(const action of ['info','install'])await t.test(`${side} ${action}`,async t=>{
+    const root=await temporary(t),source=path.join(root,'Build.app'),installed=path.join(root,'Installed.app');
+    const metadata={CFBundleSupportedPlatforms:['iPhoneSimulator'],CFBundleIdentifier:'test.example.game',CFBundleExecutable:'Game'};
+    for(const folder of [source,installed]){
+      await fs.mkdir(folder);await fs.writeFile(path.join(folder,'Info.plist'),JSON.stringify(metadata));
+      await fs.writeFile(path.join(folder,'Game'),'exe');await fs.writeFile(path.join(folder,'asset'),'old');
+      await fs.writeFile(path.join(folder,'z-last'),'last');
+    }
+    const target=side==='source'?await fs.realpath(source):installed;let armed=false,mutations=0;
+    const context={module:{exports:{}},setImmediate,clearTimeout,setTimeout,require:name=>{
+      if(name==='node:fs')return {...syncFs,lstatSync(file,options){
+        const stat=syncFs.lstatSync(file,options);
+        if(armed&&file===path.join(target,'z-last')){
+          armed=false;mutations++;const asset=path.join(target,'asset'),old=syncFs.statSync(asset);
+          syncFs.writeFileSync(asset,'new');syncFs.utimesSync(asset,old.atime,old.mtime);
+        }
+        return stat;
+      }};
+      return require(name.startsWith('.')?path.resolve(dir,name):name);
+    }};
+    vm.runInNewContext(code,context);
+    const apps=context.module.exports.createApps({Failure,sim:async args=>{assert.equal(args[0],'get_app_container');return {stdout:installed};},
+      run:async(file,args)=>file.endsWith('plutil')?{stdout:await fs.readFile(args.at(-1),'utf8')}:exec(file,args)});
+    assert.equal((await apps.info({udid:A},{appPath:source,wait:85})).matchesLocal,true);
+    armed=true;
+    if(action==='info'){
+      const result=await apps.info({udid:A},{appPath:source,wait:85});
+      assert.equal(result.verificationReused,undefined);assert.equal(result.matchesLocal,false);
+    }else{
+      const result=await apps.install({udid:A},{appPath:source},{terminate:async()=>{}});
+      assert.equal(result.mode,'sync');assert.equal(result.execution,'executed');assert.equal(result.matchesLocal,true);
+      assert.equal(await fs.readFile(path.join(installed,'asset'),'utf8'),await fs.readFile(path.join(source,'asset'),'utf8'));
+    }
+    assert.equal(mutations,1);
+  });
+});
+
 test('missing optional platform metadata still permits verified unchanged installs; symlink edits invalidate receipts',async t=>{
   const root=await temporary(t),source=path.join(root,'Build.app'),installed=path.join(root,'Installed.app');
   const metadata={CFBundleIdentifier:'test.example.game',CFBundleExecutable:'Game'};
