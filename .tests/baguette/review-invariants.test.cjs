@@ -438,6 +438,32 @@ test('viewer exports use live orientation and full resolution after an Agent scr
   assert.equal(state.files.size,0);
 });
 
+test('Agent and native fallback screenshots remove temporary and partial output files on every capture stage failure',async()=>{
+  for(const native of [false,true])for(const phase of ['capture','geometry','stale','render']){
+    let f,captures=0;
+    f=agentFixture({onCommand(_file,args,_options,state){
+      if(args[0]==='screenshot'){
+        captures++;
+        if(phase==='capture'){
+          state.files.set(args[args.indexOf('--output')+1],Buffer.from('partial'));
+          throw new Failure('CAPTURE_FAILED','original capture failure');
+        }
+        if(phase==='geometry'){f.agent.forget(f.device.udid);state.failTree=true;}
+        if(phase==='stale'){state.failConfirm=true;state.failTree=true;}
+      }
+      if(args[2]?.endsWith('image.jxa.js')&&phase==='render'){
+        state.files.set(args[4],Buffer.from('partial output'));
+        throw new Failure('RENDER_FAILED','original render failure');
+      }
+    }});
+    const expected={capture:'CAPTURE_FAILED',geometry:'SCREEN_UNAVAILABLE',stale:'SCREEN_CHANGED',render:'RENDER_FAILED'}[phase];
+    const task=native?f.agent.nativeScreenshot(f.device,10000):f.agent.screenshot(f.device,{corners:false,_deadline:10000});
+    await assert.rejects(task,e=>e.code===expected);
+    assert.equal(captures,phase==='capture'?2:1);
+    assert.equal(f.state.files.size,0,`${native?'native fallback':'Agent'} ${phase} leaves no private image files`);
+  }
+});
+
 test('flat viewer exports capture native pixels at the visible pose without AX or input probes',async()=>{
   for(const [orientation,rotation] of Object.entries({'portrait':0,'landscape-left':90,'portrait-upside-down':180,'landscape-right':270})) {
     const {agent,state,device}=agentFixture();

@@ -197,3 +197,20 @@ visual restore was covered by the controller regression test rather than a new
 embedded-page walkthrough. No host partition or app-wide storage behavior was
 changed. The preference survives ordinary plugin replacement because its file
 is outside the replaced package, using the existing settings persistence path.
+
+## 0.2.29 review follow-up: fallback capture failure cleanup
+
+The native fallback (no explicit viewer orientation) uses the Agent screenshot
+pipeline. Its raw capture and post-capture geometry read previously ran before
+the cleanup block, leaving a partial raw PNG when either failed. Cleanup now
+covers the full operation, including capture retries and geometry validation;
+errors also remove partial rendered output while preserving the original error.
+Successful captures retain their exported file and unchanged image processing.
+
+The regression test first failed against 0.2.28, then passed after the fix. It
+covers Agent and native fallback entry points for double capture failure,
+post-capture geometry failure, stale geometry and partial renderer output.
+Forge validated and packed 0.2.29. This follow-up changes failure cleanup only;
+the 0.2.28 installed/user acceptance evidence above remains applicable to the
+unchanged successful screenshot, viewer and preference paths. 0.2.29 was not
+installed into the user's running client during this scheduled review.

@@ -239,29 +239,27 @@ function createAgent({binary, deviceSet, root, run, sim, Failure, spatialAction,
     const scale = number(p.scale, 'scale', 1, 3, 1);
     const dir = await shotsDir();
     const id = crypto.randomUUID(), raw = path.join(dir, `${id}.raw.png`), file = path.join(dir, `${id}.${p.format === 'png' ? 'png' : 'jpg'}`);
-    // Confirm live geometry on both sides of capture; cached age alone cannot
-    // establish which orientation and panel these pixels belong to.
-    const known = densities.get(device.udid);
-    const divisor = !nativeResolution && known ? Math.max(1, Math.floor(known / scale)) : 1;
-    const before = await geometry(device, {maxAge: 0, deadline: p._deadline});
-    if (before.stale) throw failure('SCREEN_UNAVAILABLE', 'Current screen geometry could not be confirmed.');
-    const screen = before.screen;
-    await captureFrame(device, raw, divisor, p._deadline);
-    const afterFrame = await geometry(device, {maxAge: 0, deadline: p._deadline});
-    if (afterFrame.stale || !sameScreen(afterFrame.screen, screen)) {
-      await fs.rm(raw, {force: true});
-      throw failure('SCREEN_CHANGED', 'The screen turned or folded while capturing. Take a new screenshot.');
-    }
-    if (screen.target?.pixelSize?.width) densities.set(device.udid, screen.target.pixelSize.width / screen.width);
-    const view = G.viewSize(screen);
-    let region = null;
-    if (p.region) {
-      const r = p.region;
-      const x = number(r.x, 'region.x', 0, view.width), y = number(r.y, 'region.y', 0, view.height);
-      region = {x, y, width: number(r.width, 'region.width', 1, view.width - x), height: number(r.height, 'region.height', 1, view.height - y)};
-    }
-    const grid = p.grid === true ? (region ? 25 : 100) : number(p.grid, 'grid', 0, 1000, 0);
     try {
+      // Start cleanup before capture: failed captures and geometry reads can
+      // leave a partial framebuffer even when rendering never starts.
+      const known = densities.get(device.udid);
+      const divisor = !nativeResolution && known ? Math.max(1, Math.floor(known / scale)) : 1;
+      const before = await geometry(device, {maxAge: 0, deadline: p._deadline});
+      if (before.stale) throw failure('SCREEN_UNAVAILABLE', 'Current screen geometry could not be confirmed.');
+      const screen = before.screen;
+      await captureFrame(device, raw, divisor, p._deadline);
+      const afterFrame = await geometry(device, {maxAge: 0, deadline: p._deadline});
+      if (afterFrame.stale || !sameScreen(afterFrame.screen, screen))
+        throw failure('SCREEN_CHANGED', 'The screen turned or folded while capturing. Take a new screenshot.');
+      if (screen.target?.pixelSize?.width) densities.set(device.udid, screen.target.pixelSize.width / screen.width);
+      const view = G.viewSize(screen);
+      let region = null;
+      if (p.region) {
+        const r = p.region;
+        const x = number(r.x, 'region.x', 0, view.width), y = number(r.y, 'region.y', 0, view.height);
+        region = {x, y, width: number(r.width, 'region.width', 1, view.width - x), height: number(r.height, 'region.height', 1, view.height - y)};
+      }
+      const grid = p.grid === true ? (region ? 25 : 100) : number(p.grid, 'grid', 0, 1000, 0);
       const radius = p.corners === false ? 0 : await cornerRadius(device, screen, p._deadline);
       const options = {rotate: G.rotation(screen), view, scale, nativeResolution, region, radius, grid, format: p.format === 'png' ? 'png' : 'jpeg', quality: 0.82};
       const render = async (out, extra) => JSON.parse((await run('/usr/bin/osascript', ['-l', 'JavaScript', path.join(__dirname, 'image.jxa.js'), raw, out, JSON.stringify({...options, ...extra})], budget(20000, p._deadline))).stdout);
@@ -285,7 +283,10 @@ function createAgent({binary, deviceSet, root, run, sim, Failure, spatialAction,
       return {udid: device.udid, path: file, mimeType: p.format === 'png' ? 'image/png' : 'image/jpeg', pixels: size, scale, screen: viewInfo(screen),
         ...(inline ? {_modelImages: inline} : {}),
         ...(region ? {region} : {}), note: `${inline ? 'The screenshot is attached to this result and the user sees it in this tool step; do not import or re-embed it (the file at path is the same image).' : 'Open the file at path with your image tool.'} ${scale === 1 ? 'Image pixels are view points' : `Divide pixels by ${scale} for view points`}${region ? ` and add the region origin (${region.x}, ${region.y})` : ''}; ${platform(device) === 'tvOS' ? 'use press to navigate and select' : platform(device) === 'visionOS' ? 'pass view points to tap (spatial pinch)' : 'pass view points to tap and gesture'}.`};
-    } finally { await fs.rm(raw, {force: true}); }
+    } catch (error) {
+      await fs.rm(file, {force: true}).catch(() => {});
+      throw error;
+    } finally { await fs.rm(raw, {force: true}).catch(() => {}); }
   }
 
   // A flat viewer already supplies its pose. Its export needs one coherent
