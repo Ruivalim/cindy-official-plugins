@@ -189,6 +189,17 @@ test('shared help follows the device, opens without device input and action butt
  }
 });
 
+test('flat screenshot buttons pass the visible pose, while foldable and TV captures keep native geometry',async()=>{
+ for(const kind of ['flat','folded','unfolded','tv']){
+  const f=await boot({respond:({action})=>action==='status'?status({device:{udid,state:'Booted',runtime:kind==='tv'?'tvOS-27':'iOS-27'}}):{}});
+  f.dom.byId.screen.contentWindow={__nativeOrientation:()=> 'landscape-right',__cindyPose:{get:()=>kind==='folded'?0:kind==='unfolded'?180:null}};
+  f.dom.byId.posture.style.setProperty=()=>{};
+  await f.dom.byId['btn-shot'].listeners.click[0]();
+  const request=f.calls.find(p=>p.action==='screenshot');assert.ok(request);
+  assert.equal(request.orientation,kind==='flat'?'landscape-right':undefined);
+ }
+});
+
 test('status refresh keeps an in-flight screenshot disabled on every platform',async()=>{
  for(const runtime of ['iOS-27','tvOS-27','xrOS-27']){
   let finish;
@@ -212,6 +223,30 @@ test('slow desktop and clipboard screenshots finish before the viewer HTTP budge
   await dom.byId['btn-shot'].listeners.click[0]();
   assert.equal(shots,1);assert.equal(dom.byId['btn-shot'].dataset.busy,undefined);
   assert.doesNotMatch(dom.text(dom.byId.dock),/截图失败/);
+ }
+});
+
+test('screenshot destination restores without browser storage, saves before switching and ignores stale status',async()=>{
+ const tick=()=>new Promise(resolve=>setImmediate(resolve));
+ for(const fail of [false,true]){
+  let finishSave,finishStatus,delayStatus=false;
+  const saved=status({settings:{enabled:true,idleMinutes:15,screenshotDestination:'clipboard'}});
+  const f=await boot({respond:p=>{
+   if(p.action==='status')return delayStatus?new Promise(resolve=>finishStatus=resolve):saved;
+   assert.equal(p.action,'screenshot_destination');assert.equal(p.destination,'desktop');
+   return new Promise(resolve=>finishSave=resolve);
+  }});
+  assert.match(f.dom.byId['btn-shot'].title,/剪贴板/,'restored with no localStorage');
+  delayStatus=true;const pending=f.poll();
+  f.dom.byId['btn-shot-menu'].dispatch('click');
+  const rows=f.dom.body.querySelectorAll('button').filter(b=>b.attrs.role==='menuitemradio');
+  rows[0].dispatch('click');await tick();
+  assert.equal(f.dom.byId['btn-shot'].disabled,true);assert.match(f.dom.byId['btn-shot'].title,/剪贴板/);
+  finishSave(fail?{httpStatus:503}:{ok:true,destination:'desktop'});await tick();
+  finishStatus(saved);await pending;
+  assert.equal(f.dom.byId['btn-shot'].disabled,false);
+  assert.match(f.dom.byId['btn-shot'].title,fail?/剪贴板/:/桌面/);
+  if(fail)assert.ok(f.dom.text(f.dom.byId.dock).trim());
  }
 });
 

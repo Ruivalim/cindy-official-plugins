@@ -166,7 +166,11 @@ function agentFixture({frames=[],streamError=false,streamEvents=[],onDelay,onCom
     if(file.endsWith('plutil'))return {stdout:'测试 Game'};
     if(file.endsWith('osascript')) {
       if(args[2].endsWith('ocr.jxa.js')) {if(state.ocr===null)throw Error('OCR unavailable');return {stdout:JSON.stringify(state.ocr)};}
-      if(state.failRender)throw new Failure('RENDER_FAILED','image conversion failed');
+      if(state.failRender)throw new Failure('RENDER_FAILED','image conversion failed',options.mutation?'unknown':'not_executed');
+      if(args[2].endsWith('image.jxa.js')&&JSON.parse(args.at(-1)).clipboard){
+        state.copied=true;
+        return {stdout:state.renderReceipt??JSON.stringify({width:874,height:402,bytes:state.imageBytes,copied:true})};
+      }
       const script=args[2];state.files.set(args[script.endsWith('image.jxa.js')?4:3],Buffer.alloc(state.imageBytes,1));
       return {stdout:JSON.stringify({width:402,height:874})};
     }
@@ -409,6 +413,94 @@ test('screenshots reject a rotation during capture and refresh a rotation inside
   const shot=await agent.screenshot(device,{corners:false});assert.equal(shot.screen.width,874);assert.equal(shot.screen.orientation,'landscape-left');
   state.orientation='portrait';state.turnOnShot=true;
   await assert.rejects(agent.screenshot(device,{corners:false}),e=>e.code==='SCREEN_CHANGED');
+});
+
+test('viewer exports use live orientation and full resolution after an Agent screenshot warmed the density cache',async()=>{
+  for(const [orientation,rotation] of Object.entries({'portrait':0,'landscape-left':90,'portrait-upside-down':180,'landscape-right':270})) {
+    const {agent,state,device}=agentFixture();
+    await agent.screenshot(device,{corners:false});
+    state.orientation=orientation;state.calls.length=0;
+    const shot=await agent.nativeScreenshot(device,10000);
+    assert.equal(shot._screen.orientation,orientation);
+    const capture=state.calls.find(([,args])=>args[0]==='screenshot')[1];
+    assert.equal(capture[capture.indexOf('--scale')+1],'1');
+    const render=state.calls.find(([,args])=>args[2]?.endsWith('image.jxa.js'));
+    const options=JSON.parse(render[1].at(-1));
+    assert.equal(options.rotate,rotation);assert.equal(options.nativeResolution,true);
+    assert.equal(options.radius,0);assert.equal(options.grid,0);assert.equal(options.format,'png');
+    assert.equal(options.view.width,rotation%180?874:402);
+    assert.ok(!state.calls.some(([,args])=>args[0]==='chrome'));
+    assert.ok([...state.files.keys()].every(file=>!file.endsWith('.raw.png')));
+  }
+  const {agent,state,device}=agentFixture();
+  state.turnOnShot=true;
+  await assert.rejects(agent.nativeScreenshot(device,10000),e=>e.code==='SCREEN_CHANGED');
+  assert.equal(state.files.size,0);
+});
+
+test('flat viewer exports capture native pixels at the visible pose without AX or input probes',async()=>{
+  for(const [orientation,rotation] of Object.entries({'portrait':0,'landscape-left':90,'portrait-upside-down':180,'landscape-right':270})) {
+    const {agent,state,device}=agentFixture();
+    await agent.screenshot(device,{corners:false}); // populate a lower-density Agent cache
+    state.calls.length=0;state.orientation='portrait';state.failTree=true;state.failConfirm=true;
+    const shot=await agent.nativeScreenshot(device,10000,orientation);
+    assert.ok(state.files.has(shot.path));
+    assert.deepEqual(state.calls.map(([,args])=>args[0]),['screenshot','-l']);
+    const capture=state.calls[0][1];assert.equal(capture[capture.indexOf('--scale')+1],'1');
+    const options=JSON.parse(state.calls.find(([,args])=>args[2]?.endsWith('image.jxa.js'))[1].at(-1));
+    assert.equal(options.rotate,rotation);assert.equal(options.view,undefined,'renderer derives dimensions from the captured PNG');
+    assert.equal(options.nativeResolution,true);
+    assert.ok([...state.files.keys()].every(file=>!file.endsWith('.raw.png')));
+  }
+  const invalid=agentFixture();
+  await assert.rejects(invalid.agent.nativeScreenshot(invalid.device,10000,'bogus'),e=>e.code==='INVALID_ARGUMENT');
+  assert.equal(invalid.state.calls.length,0);
+});
+
+test('flat exports clean partial files and do not restart an expired capture budget',async()=>{
+  for(const phase of ['capture','render','expired','transient']){
+    let captures=0;
+    const f=agentFixture({clockStep:0,onCommand(_file,args,_options,state){
+      if(args[0]==='screenshot'){
+        captures++;
+        if(phase==='capture'||(phase==='transient'&&captures===1)){
+          state.files.set(args[args.indexOf('--output')+1],Buffer.from('partial'));
+          throw new Failure('CAPTURE_FAILED','capture failed');
+        }
+      }
+      if(args[0]==='-l'&&phase==='render'){
+        state.files.set(args[4],Buffer.from('partial'));
+        throw new Failure('RENDER_FAILED','render failed');
+      }
+    }});
+    const task=f.agent.nativeScreenshot(f.device,phase==='expired'?0:10000,'landscape-left');
+    if(phase==='transient'){const result=await task;assert.equal(captures,2);assert.deepEqual([...f.state.files.keys()],[result.path]);}
+    else{await assert.rejects(task);assert.equal(f.state.files.size,0);}
+    if(phase==='expired')assert.equal(f.state.calls.length,0);
+  }
+});
+
+test('flat clipboard exports render and copy once without a second PNG file, and never retry uncertain writes',async()=>{
+  for(const orientation of ['portrait','landscape-left','landscape-right','portrait-upside-down']){
+    const f=agentFixture();f.state.failTree=true;
+    const shot=await f.agent.nativeScreenshot(f.device,10000,orientation,true);
+    assert.equal(shot.copied,true);assert.equal(shot.bytes,f.state.imageBytes);assert.equal(shot.path,undefined);
+    assert.equal(f.state.files.size,0);
+    assert.deepEqual(f.state.calls.map(([,args])=>args[0]),['screenshot','-l']);
+    assert.equal(f.state.calls.at(-1)[2].mutation,true);
+  }
+  for(const receipt of ['invalid','{}','null','{"copied":true,"bytes":0}']){
+    const f=agentFixture();f.state.renderReceipt=receipt;
+    await assert.rejects(f.agent.nativeScreenshot(f.device,10000,'landscape-left',true),e=>e.execution==='unknown');
+    assert.equal(f.state.calls.filter(([,args])=>args[0]==='-l').length,1);
+    assert.equal(f.state.files.size,0);
+  }
+  const failed=agentFixture();failed.state.failRender=true;
+  await assert.rejects(failed.agent.nativeScreenshot(failed.device,10000,'portrait',true),e=>e.execution==='unknown');
+  assert.equal(failed.state.calls.filter(([,args])=>args[0]==='-l').length,1);
+  const expired=agentFixture({clockStep:0,onCommand(_file,args,_opts,state){if(args[0]==='screenshot')state.advance(1000);}});
+  await assert.rejects(expired.agent.nativeScreenshot(expired.device,1000,'portrait',true),e=>e.execution==='not_executed');
+  assert.equal(expired.state.copied,undefined);assert.equal(expired.state.files.size,0);
 });
 
 test('a log wait timeout includes the current screenshot without a separate request',async()=>{

@@ -3,7 +3,6 @@ const {execFile} = require('node:child_process');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
-const crypto = require('node:crypto');
 const readline = require('node:readline');
 const {commandBudget} = require('./budget.cjs');
 const {deviceId} = require('./device-id.cjs');
@@ -405,24 +404,24 @@ async function appleDispatch(method,p={},deadline=Date.now()+110000) {
     agent().forget(device.udid);
     return {udid:device.udid,execution:pressed.execution};
   }
-  if(method==='screenshot'&&p.destination==='desktop') {
-    // The viewer's screenshot button: a PNG on the Desktop, named like Simulator's.
-    const file=await desktopFile(device.name);
-    const result=await bagCommand('screenshot',device,['--format','png','--output',file],{mutation:true});
-    const stat=await fs.stat(file); if(!stat.size) throw new Failure('EMPTY_SCREENSHOT','No image produced');
-    desktopShots.add(file); if(desktopShots.size>50)desktopShots.delete(desktopShots.values().next().value);
-    return {...result,path:file,name:path.basename(file),mimeType:'image/png',bytes:stat.size};
-  }
-  if(method==='screenshot'&&p.destination==='clipboard') {
-    // The viewer's screenshot button set to Clipboard: PNG onto the Mac pasteboard, no file kept.
-    const dir=path.join(ROOT,'screenshots');await fs.mkdir(dir,{recursive:true,mode:0o700});
-    const file=path.join(dir,crypto.randomUUID()+'.png');
+  if(method==='screenshot'&&['desktop','clipboard'].includes(p.destination)) {
+    // Export the same upright screen as the viewer, at the capture's native resolution.
+    const shot=await agent().nativeScreenshot(device,deadline,p.orientation,p.destination==='clipboard');
+    if(shot.copied) return {udid:device.udid,mimeType:'image/png',bytes:shot.bytes,execution:'executed',copied:true};
     try {
-      const result=await bagCommand('screenshot',device,['--format','png','--output',file]);
-      const stat=await fs.stat(file); if(!stat.size) throw new Failure('EMPTY_SCREENSHOT','No image produced');
-      await runCommand('/usr/bin/osascript',['-e','on run argv','-e','set the clipboard to (read (POSIX file (item 1 of argv)) as «class PNGf»)','-e','end run',file],{timeout:15000,mutation:true});
-      return {...result,execution:'executed',copied:true,mimeType:'image/png',bytes:stat.size};
-    } finally { await fs.rm(file,{force:true}).catch(()=>{}); }
+      const stat=await fs.stat(shot.path); if(!stat.size) throw new Failure('EMPTY_SCREENSHOT','No image produced');
+      const result={udid:device.udid,mimeType:'image/png',bytes:stat.size};
+      if(p.destination==='desktop') {
+        const file=await desktopFile(device.name);
+        commandBudget(15000,deadline);
+        try { await fs.copyFile(shot.path,file); }
+        catch(error) { throw new Failure('SCREENSHOT_EXPORT_FAILED',`Could not save the screenshot; check the Desktop before retrying: ${error.message}`,'unknown'); }
+        desktopShots.add(file); if(desktopShots.size>50)desktopShots.delete(desktopShots.values().next().value);
+        return {...result,execution:'executed',path:file,name:path.basename(file)};
+      }
+      await runCommand('/usr/bin/osascript',['-e','on run argv','-e','set the clipboard to (read (POSIX file (item 1 of argv)) as «class PNGf»)','-e','end run',shot.path],{timeout:15000,mutation:true});
+      return {...result,execution:'executed',copied:true};
+    } finally { await fs.rm(shot.path,{force:true}).catch(()=>{}); }
   }
   if(method==='screenshot') return agent().screenshot(device,p);
   if(method==='app_info') return apps().info(device,p);

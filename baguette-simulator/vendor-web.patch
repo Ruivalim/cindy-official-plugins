@@ -267,7 +267,31 @@
                title="Simulated location"
 --- a/sim-native.js
 +++ b/sim-native.js
-@@ -143,7 +143,7 @@
+@@ -105,6 +105,23 @@
+   let orientationIndex = 0;
+   let currentOrientation = 'portrait';
+
++  // Cindy: the bezel pose belongs to the viewer. An app/AX orientation may
++  // stay portrait on a sideways phone and must not undo the user's rotation.
++  const ORIENTATION_KEY = 'baguette.native.orientation.' + udid;
++  function storedOrientation() {
++    try {
++      const value = localStorage.getItem(ORIENTATION_KEY);
++      if (ORIENTATION_CYCLE.includes(value)) return value;
++    } catch (_) { /* storage may be unavailable in an embedded page */ }
++    return null;
++  }
++  let viewerOrientation = storedOrientation();
++  function rememberOrientation(value) {
++    if (deviceMode || foldable) return;
++    viewerOrientation = value;
++    try { localStorage.setItem(ORIENTATION_KEY, value); } catch (_) { /* optional visual hint */ }
++  }
++
+   // Debug knobs for landscape-right edge-gesture exploration —
+   // iOS in raw=3 doesn't fire the home recognizer on any of the
+   // recipes that work for landscape-left / upside-down, so we
+@@ -143,9 +160,10 @@
    // the container so non-rotation CSS (max-height caps in
    // landscape) and the input/overlay coord transforms can read
    // `currentOrientation`.
@@ -275,8 +299,11 @@
 +  function applyOrientation(value, step = 1) {
      const previous = currentOrientation;
      currentOrientation = value;
++    rememberOrientation(value);
      const root = document.getElementById('nativeDeviceFrame');
-@@ -156,13 +156,45 @@
+     if (root) {
+       if (value === 'portrait') root.removeAttribute('data-orientation');
+@@ -156,13 +174,45 @@
        // after format swap), keep the existing degrees so the
        // bezel doesn't re-animate.
        if (value !== previous) {
@@ -323,7 +350,15 @@
    }
 
    // Set an orientation outright, no cycle step and no animation —
-@@ -185,6 +217,7 @@
+@@ -171,6 +221,7 @@
+   function snapOrientation(value) {
+     const canonical = { 'portrait': 0, 'landscape-left': 90, 'portrait-upside-down': 180, 'landscape-right': 270 };
+     currentOrientation = value;
++    rememberOrientation(value);
+     rotationDegrees = canonical[value] || 0;
+     orientationIndex = Math.max(0, orientationCycle().indexOf(value));
+     const root = document.getElementById('nativeDeviceFrame');
+@@ -185,6 +236,7 @@
        wrapper.style.transition = t;
      }
      layoutHandheld();
@@ -331,8 +366,32 @@
    }
 
    // Map a normalized coord [0, 1]² from the rotated visual frame
-@@ -373,6 +406,8 @@
-     const hinge = deviceMode ? null : await readHinge();
+@@ -320,8 +372,11 @@
+     // before the template paints.
+     document.body.style.background = 'var(--nv-page-bg, #1a1a1f)';
+
++    // Independent reads overlap when a task recreates its viewer page.
++    const [html, meta, hinge] = await Promise.all([
++      fetchTemplate(), fetchDeviceMeta(udid), deviceMode ? null : readHinge(),
++    ]);
+     // 1. Load template + inline styles from sim-native.html.
+-    const html = await fetchTemplate();
+     if (!html) {
+       document.body.innerHTML =
+           '<pre style="color:#f87171;padding:24px;font-family:ui-monospace">sim-native.html not found</pre>';
+@@ -332,7 +387,6 @@
+     // 2. Resolve device name + iOS runtime from the list endpoint.
+     //    The SDK definition gives us the bezel; /simulators.json gives
+     //    us the human-readable identity that sits above it.
+-    const meta = await fetchDeviceMeta(udid);
+     deviceName = meta.name;
+     const nameEl = document.getElementById('nativeDeviceName');
+     const osEl = document.getElementById('nativeDeviceOS');
+@@ -370,15 +424,17 @@
+     // flat chrome never shows for it while the guest is up — the cube
+     // button turns the book instead of leaving 3D. The flat chrome
+     // still carries the power card for a device that is not booted.
+-    const hinge = deviceMode ? null : await readHinge();
      foldable = !!(hinge && hinge.foldable);
      if (foldable) currentLitPanel = hinge.litPanel || 'primary';
 +    // Cindy: the guest's own orientation, so a book left turned opens turned.
@@ -340,7 +399,14 @@
      if (foldable && isBooted(meta.state)) {
        document.getElementById('nativeDeviceFrame').setAttribute('data-foldable', '');
      }
-@@ -456,26 +491,8 @@
+     try {
+       sim = await useSimulator(deviceDefinitionURL);
+       sim.mount(document.getElementById('nativeDeviceFrame'));
++      if (!deviceMode && !foldable && viewerOrientation) snapOrientation(viewerOrientation);
+     } catch (e) {
+       console.warn('[native] no device definition:', (e && e.message) || e);
+       sim = null;
+@@ -456,26 +512,8 @@
            window.SimFileDrop.attach(document.getElementById('nativeDeviceFrame'), { udid });
      }
 
@@ -365,20 +431,21 @@
 -      resetToPortrait();
 -    }
 +    // Cindy: observe the guest orientation when the stream opens. Opening a
-+    // viewer must never rotate the device or restore a browser's stale value.
++    // viewer must never write its initial visual hint back to the device.
 
      // Start watching for network conditioning immediately, before the card
      // has ever been opened. A throttle armed from the CLI in another
-@@ -836,11 +853,19 @@
+@@ -836,11 +874,19 @@
     *  screens — so nothing here follows the hinge; the 3D scene does. */
    let foldable = false;
    let currentLitPanel = 'primary';
-+  let foldOrientation = null;
-
+-
 -  function resetToPortrait() {
 -    if (deviceMode) return; // a physical phone rotates itself
 -    fetch('/simulators/' + encodeURIComponent(udid) + '/orientation?value=portrait',
 -        { method: 'POST' }).catch(() => { /* best-effort */ });
++  let foldOrientation = null;
++
 +  function syncLitPanel(panel) {
 +    if (!foldable || (panel !== 'primary' && panel !== 'secondary') || panel === currentLitPanel) return;
 +    currentLitPanel = panel;
@@ -393,7 +460,7 @@
    }
 
    // Theme toggle. Three logical states — "auto" (no manual pin,
-@@ -915,8 +940,13 @@
+@@ -915,8 +961,13 @@
    }
 
    function sessionCallbacks(onFirstPaint) {
@@ -401,14 +468,14 @@
 +    let painted = false, orientationRead = null;
      return {
 +      onOpen: () => {
-+        if (deviceMode || foldable) return;
++        if (deviceMode || foldable || viewerOrientation) return;
 +        orientationRead = { session, orientation: currentOrientation };
 +        session.send({ type: 'describe_ui', x: 1, y: 1 });
 +      },
        onSize: (w, h) => {
          lastPaintedSize = { w, h };
          // First frame after a boot — the guest is genuinely up, so
-@@ -929,7 +959,16 @@
+@@ -929,7 +980,17 @@
          if (el) el.textContent = fps + ' fps';
        },
        onLog: (msg) => console.log('[native]', msg),
@@ -417,8 +484,9 @@
 +        if (orientationRead && env?.type === 'describe_ui_result') {
 +          const read = orientationRead; orientationRead = null;
 +          const orientation = env.ok && env.tree?.screen?.orientation;
-+          // A retired stream or a manual rotation owns the newer view.
-+          if (read.session === session && read.orientation === currentOrientation && ORIENTATION_CYCLE.includes(orientation)) snapOrientation(orientation);
++          // Only seed a view with no known pose. A saved/manual pose wins,
++          // including a full turn back to the value present when reading began.
++          if (!viewerOrientation && read.session === session && read.orientation === currentOrientation && ORIENTATION_CYCLE.includes(orientation)) snapOrientation(orientation);
 +          return true;
 +        }
 +        return routeStreamText(env);
@@ -426,7 +494,7 @@
      };
    }
 
-@@ -1480,7 +1519,6 @@
+@@ -1480,7 +1541,6 @@
    function onBooted() {
      renderPowerCard('starting');
      startMainView();
@@ -434,7 +502,7 @@
      firstFrameTimer = setTimeout(hidePowerCard, FIRST_FRAME_TIMEOUT_MS);
    }
 
-@@ -1491,11 +1529,15 @@
+@@ -1491,11 +1551,15 @@
        const frame = document.getElementById('nativeDeviceFrame');
        if (frame) frame.setAttribute('data-foldable', '');
        toggle3D({ fixed: true });
@@ -453,7 +521,7 @@
        return;
      }
      startSession(currentFormat());
-@@ -1784,7 +1826,6 @@
+@@ -1784,7 +1848,6 @@
        members: [
          { id: 'nativeAxToggle', label: 'Accessibility', role: 'state' },
          { id: 'nativeLogsToggle', label: 'Logs', role: 'state' },
@@ -461,7 +529,7 @@
        ],
      },
      {
-@@ -2044,8 +2085,9 @@
+@@ -2044,8 +2107,9 @@
      if (member.role === 'readout') {
        const row = document.createElement('div');
        row.className = 'tb-read';
@@ -472,7 +540,7 @@
        row.querySelector('.tb-val').textContent = source.textContent || '—';
        return row;
      }
-@@ -2053,7 +2095,8 @@
+@@ -2053,7 +2117,8 @@
      if (member.role === 'choice') {
        const row = document.createElement('div');
        row.className = 'tb-choice';
@@ -482,7 +550,7 @@
        // The real picker is moved in, not copied: it keeps its handlers,
        // its `.active` pill, and its identity as the one control the
        // rest of the page already talks to.
-@@ -2066,8 +2109,9 @@
+@@ -2066,8 +2131,9 @@
      row.className = 'tb-row' + (source.classList.contains('active') ? ' on' : '');
      const glyph = source.querySelector('svg');
      row.innerHTML = (glyph ? glyph.outerHTML : clusterSvg('more')) +
@@ -493,7 +561,7 @@
      row.addEventListener('click', () => {
        source.click();
        closeFoldMenus();
-@@ -2334,16 +2378,27 @@
+@@ -2334,16 +2400,27 @@
      // through the `/simulators/<udid>/orientation?value=...` route;
      // server delegates to `simulator.orientation().set(...)`, which
      // dispatches a device orientation change through the appropriate backend.
@@ -524,7 +592,7 @@
          fetch(url, { method: 'POST' }).catch(() => { /* best-effort */ });
          return;
        }
-@@ -2352,7 +2407,7 @@
+@@ -2352,7 +2429,7 @@
        // + canvas as one unit, while the input + overlay wrappers
        // remap coords back to portrait so taps still land on the
        // iOS element under the cursor.
@@ -533,7 +601,7 @@
        const url = '/simulators/' + encodeURIComponent(udid)
            + '/orientation?value=' + encodeURIComponent(value);
        fetch(url, { method: 'POST' }).catch(() => { /* best-effort */ });
-@@ -2696,6 +2751,7 @@
+@@ -2696,6 +2773,7 @@
            format: currentFormat(),
            background: live3DBackground(),
            fixed,

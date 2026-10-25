@@ -56,6 +56,30 @@ test('off stops exact devices, persists across restart, and rejects tool boot; e
   await restored.request('settings_save',{enabled:true,idleMinutes:15});assert.equal(f.state(),'Shutdown');
   assert.equal(f.calls.filter(c=>c.method==='boot').length,0);
 });
+
+test('screenshot destination survives worker restart and unrelated settings changes without operating a device',async t=>{
+  const f=await fixture(t);
+  for(const destination of ['clipboard','desktop']){
+    const runtime=f.restart();f.calls.length=0;
+    assert.equal((await runtime.request('screenshot_destination',{destination,udid})).destination,destination);
+    assert.equal(f.calls.length,0,'saving a preference never boots, stops or screenshots a device');
+    assert.equal(JSON.parse(await fs.readFile(f.file)).screenshotDestination,destination);
+    const restored=f.restart();
+    assert.equal((await restored.status()).settings.screenshotDestination,destination);
+    await restored.request('settings_save',{enabled:true,idleMinutes:30});
+    assert.equal((await f.restart().status()).settings.screenshotDestination,destination);
+  }
+  await assert.rejects(f.restart().request('screenshot_destination',{destination:'/tmp/image.png'}),e=>e.code==='INVALID_ARGUMENT');
+  assert.equal((await f.restart().status()).settings.screenshotDestination,'desktop');
+});
+
+test('failed preference writes retain the last saved destination',async t=>{
+  const f=await fixture(t);
+  await f.runtime.request('screenshot_destination',{destination:'clipboard'});
+  await fs.rm(f.file);await fs.mkdir(f.file);
+  await assert.rejects(f.runtime.request('screenshot_destination',{destination:'desktop'}));
+  assert.equal((await f.runtime.status()).settings.screenshotDestination,'clipboard');
+});
 test('status polling does not renew idle; real operations do, and manual mode stays running',async t=>{
   const f=await fixture(t);await f.runtime.request('devices');f.advance(14*60000);await f.runtime.request('settings_status');
   await f.runtime.checkIdle();assert.equal(f.state(),'Booted');f.advance(60000);await f.runtime.checkIdle();assert.equal(f.state(),'Shutdown');

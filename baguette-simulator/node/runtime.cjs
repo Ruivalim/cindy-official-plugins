@@ -34,7 +34,8 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
     const value = await readJsonRecord(settingsFile, {initial:{enabled:true, idleMinutes:15},
       validate:value=>typeof value.enabled === 'boolean' && [0,15,30,60].includes(value.idleMinutes),
       code:'SETTINGS_UNREADABLE', message:'Cannot read Baguette settings. Restore the settings file before starting a device.'});
-    config ||= {enabled: value.enabled, idleMinutes: value.idleMinutes};
+    config ||= {enabled: value.enabled, idleMinutes: value.idleMinutes,
+      ...(['desktop','clipboard'].includes(value.screenshotDestination) ? {screenshotDestination:value.screenshotDestination} : {})};
     return config;
   }
   async function save(value) {
@@ -249,7 +250,7 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
     if (method === 'environment') return dispatch(method, params);
     // Device operations are independent. The manager serializes only shared
     // record writes; stopping the shared viewer/settings still excludes all.
-    const key = typeof params?.udid === 'string' && params.udid && !['settings_stop_all', 'settings_save', 'close_viewer'].includes(method) ? `device:${params.udid}` : '*';
+    const key = typeof params?.udid === 'string' && params.udid && !['settings_stop_all', 'settings_save', 'screenshot_destination', 'close_viewer'].includes(method) ? `device:${params.udid}` : '*';
     return exclusive(async () => {
       // Emergency stop stays available even if settings are damaged.
       if (method === 'shutdown') return dispatch(method, params);
@@ -273,11 +274,16 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
         return result;
       }
       const settings = await load();
+      if (method === 'screenshot_destination') {
+        if (!['desktop','clipboard'].includes(params.destination)) throw failure('INVALID_ARGUMENT', 'Invalid screenshot destination.');
+        await save({...settings, screenshotDestination:params.destination});
+        return {ok:true, destination:params.destination, execution:'executed'};
+      }
       if (method === 'settings_save') {
         if (typeof params.enabled !== 'boolean' || ![0,15,30,60].includes(params.idleMinutes)) throw failure('INVALID_ARGUMENT', 'Invalid runtime settings. Refresh this page.');
         // Persist the stop switch BEFORE touching devices. Partial failure must
         // not allow a new boot to undo the user's decision.
-        await save({enabled:params.enabled, idleMinutes:params.idleMinutes});
+        await save({...settings, enabled:params.enabled, idleMinutes:params.idleMinutes});
         // Turning simulators off also retires the saved viewer address.
         if (!params.enabled) { const result = await stopAll('disabled', deadline); forgetViewer(); return result; }
         touch();

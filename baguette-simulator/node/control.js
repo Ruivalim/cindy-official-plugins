@@ -208,7 +208,8 @@
     visionBar.hidden = !on || M.platform(device) !== 'visionOS';
     stage.dataset.vision = M.platform(device) === 'visionOS' ? 'true' : 'false';
     for (const id of ['btn-home', 'btn-shot', 'btn-shot-menu', 'btn-rotl', 'btn-rotr']) $(id).disabled = !on;
-    $('btn-shot').disabled = !on || !!$('btn-shot').dataset.busy;
+    $('btn-shot').disabled = !on || savingShotTo || !!$('btn-shot').dataset.busy;
+    $('btn-shot-menu').disabled = !on || savingShotTo;
     label($('btn-home'), M.platform(device)==='visionOS'?(lang==='zh-CN'?'主屏幕（数码旋钮）':'Home (Digital Crown)'):t.home, '⇧⌘H'); label($('btn-shot'), `${t.screenshot} · ${shotTo() === 'clipboard' ? t.shotToClipboard : t.shotToDesktop}`, '⌘S'); label($('btn-shot-menu'), t.shotTo);
     label($('btn-rotl'), t.rotateLeft, '⌘←'); label($('btn-rotr'), t.rotateRight, '⌘→');
     label($('zoom-out'), t.zoomOut, '⌘−'); label($('zoom-in'), t.zoomIn, '⌘+'); label($('btn-more'), t.more);
@@ -258,10 +259,15 @@
 
   // ---- status loop ----
   let checking = false;
+  let savingShotTo = false, shotPreferenceRevision = 0;
   async function check() {
     if (checking) return; checking = true;
     try {
+      const preferenceRevision = shotPreferenceRevision;
       const s = await api('status');
+      // An older status response must not undo a choice saved while it was in flight.
+      if (savingShotTo || preferenceRevision !== shotPreferenceRevision)
+        s.settings = {...s.settings, screenshotDestination:state.status?.settings?.screenshotDestination};
       state.status = s; state.lost = false;
       // A completed selection may point at a stopped device. Use its own
       // state immediately, never load its stream using the source's state.
@@ -326,12 +332,17 @@
     try { await api('release'); toast(t.released, 'ok'); } catch { toast(t.actionFailed, 'error'); }
   }
   async function screenshot() {
-    if (!live() || $('btn-shot').dataset.busy) return;
+    if (!live() || savingShotTo || $('btn-shot').dataset.busy) return;
     $('btn-shot').dataset.busy = '1'; $('btn-shot').disabled = true;
     flash();
     const to = shotTo();
     try {
-      const r = await api('screenshot', { to });
+      // Flat viewers can be held sideways while an app still reports portrait.
+      // Foldable/3D captures retain their existing panel geometry.
+      const view = screen.contentWindow;
+      const orientation = M.handheld(state.status?.device) && view?.__cindyPose?.get?.() == null
+        ? view?.__nativeOrientation?.() : undefined;
+      const r = await api('screenshot', { to, orientation });
       if(to==='clipboard'&&r.clipboardPng){const bytes=Uint8Array.from(atob(r.clipboardPng),c=>c.charCodeAt(0));await navigator.clipboard.write([new ClipboardItem({'image/png':new Blob([bytes],{type:'image/png'})})]);}
       if (to === 'clipboard') toast(t.shotCopied, 'ok');
       else toast(t.shotDesktop, 'ok', r.path && { label: t.reveal, run: () => api('reveal', { path: r.path }).catch(() => {}) });
@@ -341,9 +352,19 @@
   }
   // Where the screenshot button puts the image: the Desktop (as Simulator
   // does) or the clipboard. One choice for every device, picked from the caret.
-  const shotTo = () => store.get('cindy.shotTo') === 'clipboard' ? 'clipboard' : 'desktop';
+  const shotTo = () => (state.status?.settings?.screenshotDestination ?? store.get('cindy.shotTo')) === 'clipboard' ? 'clipboard' : 'desktop';
+  async function saveShotTo(to) {
+    if (savingShotTo) return;
+    savingShotTo = true; shotPreferenceRevision++; renderBar();
+    try {
+      const result = await api('screenshot_destination', {destination:to});
+      state.status = {...state.status, settings:{...state.status?.settings, screenshotDestination:result.destination}};
+      store.set('cindy.shotTo', result.destination);
+    } catch { toast(t.actionFailed, 'error'); }
+    finally { savingShotTo = false; shotPreferenceRevision++; renderBar(); }
+  }
   $('btn-shot-menu').addEventListener('click', () => {
-    const choice = (to, text) => h('button', { class: 'item', role: 'menuitemradio', 'aria-checked': String(shotTo() === to), onclick: () => { closeMenu(); store.set('cindy.shotTo', to); renderBar(); } },
+    const choice = (to, text) => h('button', { class: 'item', role: 'menuitemradio', 'aria-checked': String(shotTo() === to), onclick: () => { closeMenu(); saveShotTo(to); } },
       [h('span', { class: 'label', text }), h('span', { html: shotTo() === to ? ICON.check : '' })]);
     showMenu($('btn-shot-menu'), [h('div', { class: 'menu-title', text: t.shotTo }), choice('desktop', t.shotToDesktop), choice('clipboard', t.shotToClipboard)]);
   });

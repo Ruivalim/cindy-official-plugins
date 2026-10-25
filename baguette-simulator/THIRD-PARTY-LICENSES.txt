@@ -6,7 +6,7 @@ Local keyboard transport: use same-origin /clipboard; never select host or port 
 Local keyboard localization: added input errors use English fallback.
 Local keyboard patch: serialize paste/copy with keys; suppress only adjacent identical pending paste; report queue overflow.
 Local Web security patches: toolbar labels rendered as text; CSS selector fallback uses hexadecimal escaping.
-Local Web orientation patch: opening a view observes the guest through the existing describe_ui socket message; it never restores a cached orientation or sends an implicit rotation.
+Local Web orientation patch: opening a view restores its per-device bezel pose; only an unknown pose is seeded from the existing describe_ui socket message. App orientation cannot override a known viewer pose, and no implicit rotation is sent. Independent bootstrap reads run concurrently.
 Local Web patch: the Defaults card toggle is removed; the plugin proxy blocks its routes. See vendor-web.patch and VENDOR-REVIEW.md.
 Official release archive SHA-256: af95902bd11eb1e81309a697c863b5b25698aae480da1d67b8e9db178343b8c3
 Official source archive SHA-256: c7a3003515af13c752af5cdbb8846cbf6dc0b819c3645f6b98e17951a4927771

@@ -113,6 +113,7 @@ function createViewer({devices,agent,root}){
           case 'release':result=await controls.request('press',{udid:p.udid,button:'release-input'});break;
           case 'restart':await controls.assertEnabled();result={ready:true,generation:Date.now()};break;
           case 'screenshot':result=await controls.request('screenshot',{udid:p.udid,destination:p.to==='clipboard'?'clipboard':'desktop'});break;
+          case 'screenshot_destination':result=await controls.request('screenshot_destination',{destination:p.destination});break;
           case 'reveal':result=await controls.request('reveal_screenshot',{path:p.path,platform:'android'});break;
           default:return reply(400,{error:'Unknown action'});
         }
