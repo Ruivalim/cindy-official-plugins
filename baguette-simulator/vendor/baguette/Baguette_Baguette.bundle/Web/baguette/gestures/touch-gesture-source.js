@@ -4,6 +4,14 @@
 // touch path entirely and lets SafariGestureEventSource own the pinch —
 // see the note below. Browsers without those events (Chromium) stream the
 // two real fingers as touch2-* from here instead.
+//
+// A two-finger gesture is never allowed to end up as a single-finger tap, and
+// whatever has been pressed is released when the gesture ends, is cancelled
+// or the source is detached. The second finger may land outside the bound
+// element (a pinch that starts wider than the screen): its touchstart then
+// goes to another element and never reaches this one, so the finger count is
+// also read from the document (capture) and from every touchmove, whose
+// `touches` lists every finger on the page.
 (function (root) {
   'use strict';
 
@@ -42,9 +50,12 @@
     }
 
     detach() {
-      // A lone touch still held back is dropped, never sent after the detach.
+      // A lone touch still held back is dropped, never sent after the detach;
+      // one already pressed on the device is lifted.
       if (this._dropHeld) this._dropHeld();
+      if (this._releaseAll) this._releaseAll();
       this._dropHeld = null;
+      this._releaseAll = null;
       super.detach();
     }
 
@@ -64,16 +75,40 @@
         clearHold();
         if (state && state.mode === 'pending') state = null;
       };
+      // Every finger on the page (not only those on the bound element), from the
+      // document's capture phase; null where there is no document to ask.
+      let pageTouches = null;
+      const clearOverlay = () => {
+        if (this.overlay) this.overlay.clear();
+      };
+      // Lifts whatever this source has pressed on the device and forgets it.
+      const releaseAll = () => {
+        clearHold();
+        const held = state;
+        state = null;
+        if (!held) return;
+        if (held.mode === 'single') this.screen.touchUp([held.last]);
+        else if (held.mode === 'edge-stream') this.screen.touchUp([held.last], { edge: held.edge });
+        else if (held.mode === 'multi') this.screen.touchUp(held.last);
+        clearOverlay();
+      };
+      this._releaseAll = releaseAll;
       // Sends a held lone touch (see SINGLE_HOLD_MS) and makes it a streaming one.
       const startHeld = () => {
         clearHold();
         if (!state || state.mode !== 'pending') return;
+        // Two fingers are down on the page (the second outside the bound
+        // element): this is a pinch, not a lone press.
+        if (pageTouches && pageTouches.length >= 2 && !this._hasSafariGestures()) {
+          beginPair(pageTouches);
+          return;
+        }
         const { point, edge } = state;
         if (edge) {
-          state = { mode: 'edge-stream', edge };
+          state = { mode: 'edge-stream', edge, last: point };
           this.screen.touchDown([point], { edge });
         } else {
-          state = { mode: 'single' };
+          state = { mode: 'single', last: point };
           this.screen.touchDown([point]);
         }
       };
@@ -114,30 +149,79 @@
         };
       };
 
+      // Chromium (no gesture* events): two real fingers are on the page, so
+      // stream them as touch2-*. Whatever this source had pressed or held as a
+      // lone finger is dropped or lifted first, so the pair never follows a tap.
+      const beginPair = (touches) => {
+        clearHold();  // a held lone touch was never sent: nothing to lift
+        const all = relFingers(touches);
+        if (state && (state.mode === 'single' || state.mode === 'edge-stream')) {
+          if (state.mode === 'edge-stream') this.screen.touchUp([state.last], { edge: state.edge });
+          else this.screen.touchUp([state.last]);
+        }
+        const pair = pairOf(touches);
+        if (pair.inside) {
+          this.screen.touchDown(pair.fingers);
+          state = { mode: 'multi', last: pair.fingers };
+          lastMs = 0;
+        } else {
+          state = { mode: 'multi-ignored' };
+        }
+        if (this.overlay) {
+          this.overlay.setFingers(all.slice(0, 2).map((f) => ({ x: f.vx, y: f.vy })));
+        }
+      };
+      // The pinch is over (a finger lifted, possibly one this element never
+      // heard of): release both fingers and let the remaining one do nothing.
+      const endPair = (remaining) => {
+        if (!state || state.mode !== 'multi') return;
+        this.screen.touchUp(state.last);
+        clearOverlay();
+        state = remaining > 0 ? { mode: 'multi-ended' } : null;
+      };
+      const noteFingers = (e) => { pageTouches = e.touches; };
+      const pageTouchStart = (e) => {
+        noteFingers(e);
+        // A second finger that landed outside the bound element: its touchstart
+        // never reaches the handler below.
+        if (e.touches.length >= 2 && !this._hasSafariGestures() && state &&
+            (state.mode === 'pending' || state.mode === 'single' || state.mode === 'edge-stream')) {
+          beginPair(e.touches);
+        }
+      };
+      const pageTouchEnd = (e) => {
+        noteFingers(e);
+        if (e.touches.length < 2) endPair(e.touches.length);
+      };
+      const doc = root.document;
+      if (doc && doc.addEventListener) {
+        this._on(doc, 'touchstart', pageTouchStart, { capture: true, passive: true });
+        this._on(doc, 'touchmove', noteFingers, { capture: true, passive: true });
+        this._on(doc, 'touchend', pageTouchEnd, { capture: true, passive: true });
+        this._on(doc, 'touchcancel', pageTouchEnd, { capture: true, passive: true });
+        // The page going away (tab hidden, closed, navigated) ends the gesture
+        // for good: nothing would lift the fingers afterwards.
+        this._on(doc, 'visibilitychange', () => {
+          if (doc.visibilityState === 'hidden') releaseAll();
+        });
+      }
+      if (root.addEventListener) this._on(root, 'pagehide', releaseAll);
+
       this._on(this._el, 'touchstart', (e) => {
         e.preventDefault();
+        noteFingers(e);
         const all = relFingers(e.touches);
         if (all.length >= 2 && !this._hasSafariGestures()) {
           // No gesture* events in this browser (Chromium): nothing else
-          // will drive the pinch, so stream the two real fingers. Lift a
-          // streaming single touch first, same as the Safari handoff.
-          clearHold();  // a held lone touch was never sent: nothing to lift
-          if (state && (state.mode === 'single' || state.mode === 'edge-stream')) {
-            const lift = [{ x: all[0].x, y: all[0].y }];
-            if (state.mode === 'edge-stream') this.screen.touchUp(lift, { edge: state.edge });
-            else this.screen.touchUp(lift);
+          // will drive the pinch, so stream the two real fingers. A third
+          // finger joins a pinch already streaming and changes nothing.
+          if (state && state.mode === 'multi') {
+            if (this.overlay) {
+              this.overlay.setFingers(all.slice(0, 2).map((f) => ({ x: f.vx, y: f.vy })));
+            }
+            return;
           }
-          const pair = pairOf(e.touches);
-          if (pair.inside) {
-            this.screen.touchDown(pair.fingers);
-            state = { mode: 'multi', last: pair.fingers };
-            lastMs = 0;
-          } else {
-            state = { mode: 'multi-ignored' };
-          }
-          if (this.overlay) {
-            this.overlay.setFingers(all.slice(0, 2).map((f) => ({ x: f.vx, y: f.vy })));
-          }
+          beginPair(e.touches);
           return;
         }
         if (all.length >= 2) {
@@ -159,6 +243,11 @@
           return;
         }
         if (all.length === 1) {
+          // A new gesture starts: nothing of an earlier one may stay pressed
+          // (its end never reached this element).
+          if (state && (state.mode === 'single' || state.mode === 'edge-stream' || state.mode === 'multi')) {
+            releaseAll();
+          }
           // Edge-band detection — same shape as the mouse handler. In
           // 3D Interact mode a touch on the device bezel/body maps
           // outside the screen quad and starts nothing.
@@ -185,6 +274,7 @@
 
       this._on(this._el, 'touchmove', (e) => {
         e.preventDefault();
+        noteFingers(e);
         if (!state) return;
         const all = relFingers(e.touches);
 
@@ -201,10 +291,29 @@
         }
 
         if (state.mode === 'multi-ignored' || state.mode === 'multi-ended') return;
+
+        // `touches` lists every finger on the page, so a second finger whose
+        // touchstart went elsewhere shows up here. A lone finger held back is
+        // part of a two-finger gesture after all: never send it as a tap.
+        if (all.length >= 2 && state.mode !== 'multi') {
+          if (!this._hasSafariGestures()) {
+            beginPair(e.touches);
+            return;
+          }
+          if (state.mode === 'pending') {
+            clearHold();
+            state = { mode: 'multi-deferred' };
+            if (this.overlay) {
+              this.overlay.setFingers(all.slice(0, 2).map((f) => ({ x: f.vx, y: f.vy })));
+            }
+            return;
+          }
+        }
         if (state.mode === 'pending') startHeld();
 
         if (state.mode === 'multi') {
-          if (all.length < 2) return;
+          // One finger left without this element hearing of it: the pinch is over.
+          if (all.length < 2) { endPair(all.length); return; }
           const pair = pairOf(e.touches);
           state.last = pair.fingers;  // freshest positions for the touch-up
           if (this.overlay) {
@@ -221,14 +330,13 @@
         if (now - lastMs < MOVE_FLUSH_MS) return;
         lastMs = now;
         if (state.mode === 'edge-stream' && all.length === 1) {
-          this.screen.touchMove(
-              [this._screenPoint(e.touches[0].clientX, e.touches[0].clientY)],
-              { edge: state.edge }
-          );
+          const at = this._screenPoint(e.touches[0].clientX, e.touches[0].clientY);
+          state.last = at;
+          this.screen.touchMove([at], { edge: state.edge });
         } else if (state.mode === 'single' && all.length === 1) {
-          this.screen.touchMove(
-              [this._screenPoint(e.touches[0].clientX, e.touches[0].clientY)]
-          );
+          const at = this._screenPoint(e.touches[0].clientX, e.touches[0].clientY);
+          state.last = at;
+          this.screen.touchMove([at]);
         } else if (state.mode === 'single' && all.length >= 2) {
           // Late-arriving second finger after a streaming single
           // touch had already started: close it cleanly and hand
@@ -244,6 +352,7 @@
 
       const endTouch = (e) => {
         e.preventDefault();
+        noteFingers(e);
         if (!state) return;
         if (state.mode === 'pending') {
           // A cancelled lone touch was never sent: nothing to cancel. A lift
@@ -251,6 +360,13 @@
           if (e.type === 'touchcancel') {
             clearHold();
             state = null;
+            return;
+          }
+          // A finger is still down elsewhere on the page: this lift ends a
+          // two-finger gesture that never started here, not a tap.
+          if (e.touches.length >= 1) {
+            clearHold();
+            state = { mode: 'multi-ended' };
             return;
           }
           startHeld();
@@ -261,13 +377,14 @@
           if (e.type === 'touchend' && e.touches.length >= 2) return;
           if (state.mode === 'multi') {
             this.screen.touchUp(state.last);
-            if (this.overlay) this.overlay.clear();
+            clearOverlay();
           }
           state = e.type === 'touchend' && e.touches.length > 0 ? { mode: 'multi-ended' } : null;
           return;
         }
         if (state.mode === 'multi-deferred') {
-          // gesturestart/change/end owns this lifecycle.
+          // gesture*start/change/end owns this lifecycle; only the HUD is ours.
+          clearOverlay();
           state = null;
           return;
         }
