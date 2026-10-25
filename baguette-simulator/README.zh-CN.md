@@ -1,5 +1,7 @@
 # 设备模拟器
 
+0.2.24 将 Apple 轻量信息与全包校验分开，校验复用现有安装 job。仅在逐项复核两个包的完整文件清单（含 ctime）后复用验证；源路径、容器变化、到期或 worker 重启均失效，版本号/可执行文件哈希不能证明资源一致。安装状态报告真实阶段，建议可提前完成的85秒等待。输入后观察有独立短预算，画面失败尝试独立截图，不重启 App；截图标注时间与是否附图。验证范围与实测结果见工作流手册及[性能回放报告](../docs/simulator-performance.zh-CN.md)。
+
 [English](README.md)
 
 0.2.21 已同步主干 e13abcd（#199），保留 Apple TV/Vision Pro 输入，安卓继续使用手机画面与旋转路径。Dash 于2026-10-24再次确认此前0.2.14的Beta验收没有问题；不声称后续新包已重新实测，由维护者结合既有验收与技术验证审核。
@@ -119,7 +121,7 @@ iOS 模拟器任务默认使用。先 environment、devices，复用适合的已
 - **统一坐标。** 全部使用用户看到的视图点：截图按看到的方向摆正（横屏、折叠屏内屏），画出屏幕圆角与灵动岛，默认 1 像素 = 1 点，可叠加刻度网格或只截局部；`describe_ui` 返回带视图坐标与中心点的精简元素列表；`tap` 可按文字、identifier 与角色点元素。iPhone Duo 展开时，SpringBoard 的无障碍坐标比画面转了 90°（iOS 27.1 实测），插件会自动校正。
 - **游戏。** 没有无障碍树的界面（游戏、引擎自绘），`describe_ui`、`tap text=…`、`wait_for text=…` 改用苹果本机 Vision 识别画面上的文字（画面不离开这台 Mac）。`type_text` 在普通 App 里粘贴，在常常不接受粘贴的游戏里逐键输入，并先把拼音等输入法切到英文。按坐标点击会绑定读坐标时的屏幕，屏幕转向后会拒绝而不是点错位置。
 - **等待与转场。** `wait_for` 等元素出现或消失、画面（或某个区域）在容差内稳定（应对游戏背景动画）或日志出现某行，没等到时返回当时截图；`capture` 一边执行动作一边录帧，返回标注毫秒的联系表。
-- **装对版本。** `app action=install` 遇到相同构建直接跳过，只改了少量文件时增量同步，否则整包安装，耗时长的返回 job；`app action=info` 比对已装可执行文件指纹与本地构建（`matchesLocal`），因为版本号相同不代表是同一次构建。
+- **装对版本。** `app action=install` 遇到相同构建直接跳过，少量文件变化时增量同步，否则整包安装。Apple 安装 job 包含全包内容校验。`app action=info appPath=…` 校验全部资源或复核有效验证记录，未完成返回 job；只有 `matchesLocal: true` 确认一致，轻量元数据不证明构建。
 - **状态与诊断。** `set_state` 改方向、折叠姿态、外观、对比度、字号、网络条件、定位、干净状态栏与权限授权。所有步骤与读回共用请求截止时间。`applied` 列出已完成字段；失败或预算耗尽时停止后续步骤，`stateError` 返回失败字段 `field`、`code`、`message` 与 `execution`，先核对该字段，不整批重试。方向/姿态变化后的屏幕信息仅在剩余时间内确认成功时返回；`current` 中的 `null` 表示未确认。`logs` 读取 App 最近的统一日志并汇总本设备的崩溃报告。iOS 的 level=default 保留普通 Default 消息，不是安卓的警告阈值。
 
 手册（`manual/workflow/MANUAL.md`）给出完整工作流、构建方法、验证原则与异常恢复。同一台设备一次只执行一个操作，不同设备的输入与 App 启动可并行，共享 App 记录只在写入时短暂串行。全局设置、关闭全部设备及共享查看器仍互斥。读取类操作（describe_ui、wait_for、logs）不等待输入。
@@ -194,6 +196,6 @@ Agent 健康性：查看器以真实 HTTP 服务响应判断就绪，不依赖�
 
 近期使用记录保存在 worker 内存，15 分钟到期，同一任务可同时使用多台设备。长脚本每五分钟用 `device action=activity` 续期，结束用 `device action=release` 释放；释放保留设备与 App 运行。这是使用证据，不是排他预约。普通操作更新记录，设备和状态轮询不更新。重启后记录清空，运行中设备标为未知。
 
-App 内容校验失败时保留 `comparisonError` 与 `verification: unconfirmed`；此时 `matchesLocal: false` 只说明尚未证实一致，不证明构建不同，不应因此重装。
+App 内容校验失败时保留 `comparisonError` 与 `verification: unconfirmed`；Apple 此时返回 `matchesLocal: null`，Android 未确认时仍可能返回 false。两者都不证明构建不同，不应因此重装。
 
 安卓生命周期会保留部分执行证据：启动未确认时返回 `appLaunched: false`、`appTerminated`（null 表示未确认）、`launchError` 和 `execution`。删除/抹除失败保留 `completedSteps`、`failedStep`、`shutdown` 和 `deviceError`，不清空任务或近期 App 记录。先检查实际状态再继续；只有确认启动、仅画面失败时才只重试画面。install/info 的绝对路径按平台使用 iOS 模拟器 `.app` 或安卓 `.apk`。

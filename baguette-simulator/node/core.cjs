@@ -116,6 +116,16 @@ async function settledShot(device,p,result){
     return {...result,screenshot:shot,...(_modelImages?{_modelImages}:{})};}
   catch(error){return {...result,screenshot:{error:error.message}};}
 }
+async function viewerFallback(device,p,result,error){
+  // The existing viewer already reconnects its service. If it still cannot
+  // open, use an independent capture; never touch the launched App process.
+  const started=Date.now(),deadline=Math.min(p._deadline??Infinity,started+12000);
+  const out={...result,outcome:'partial',viewer:{ready:false,previewOpened:false,error:error.message},
+    nextAction:'Inspect the screenshot or retry viewer action=open. Do not repeat a confirmed App launch.'};
+  try{const {_modelImages,...shot}=await agent().screenshot(device,{_inline:p._inline,_deadline:deadline});out.screenshot=shot;if(_modelImages)out._modelImages=_modelImages;}
+  catch(e){out.screenshot={error:e.message};}
+  return {...out,recovery:{kind:'independent-screenshot',observed:!!out.screenshot.path,elapsedMs:Date.now()-started}};
+}
 const keyboardBusy=new Set();
 // Any key event makes iOS treat a hardware keyboard as attached and hide the on-screen one from then on.
 // A touch-only phone shows it on focus, so forget the hardware keyboard once typing is over
@@ -176,7 +186,8 @@ let androidImpl;
 function android(){return androidImpl||(androidImpl=require('./android/index.cjs').createAndroid({root:ROOT,run,children}));}
 const appleHost=process.platform==='darwin'&&process.arch==='arm64';
 async function dispatch(method,p={},deadline=Date.now()+110000) {
-  p={...p,_deadline:deadline};
+  if (method === 'screenshot' && Number.isFinite(p._observationBudgetMs)) deadline=Math.min(deadline,Date.now()+Math.max(1,Math.min(12000,p._observationBudgetMs)));
+  p={...p,_deadline:deadline,_startedAt:Date.now()};
   if(method.startsWith('android_setup_'))return android().dispatch(method,p);
   if(!methods.has(method))throw new Failure('UNKNOWN_TOOL','Unknown simulator operation');
   if(method==='environment'){
@@ -291,7 +302,10 @@ async function appleDispatch(method,p={},deadline=Date.now()+110000) {
     if(!real.startsWith(root+path.sep))return {bundleId,appPath:null};
     return {bundleId,appPath:real};
   }
-  if(method==='open_viewer')return {udid:device.udid,...await deviceViewer(device,p._locale),execution:'executed'};
+  if(method==='open_viewer'){
+    try{return {udid:device.udid,...await deviceViewer(device,p._locale),execution:'executed'};}
+    catch(error){return viewerFallback(device,p,{udid:device.udid,execution:'unknown'},error);}
+  }
   if(method==='boot') {
     // Upstream 0.1.98's automatic heal omits --set in its internal simctl calls.
     // Wait for this exact custom-set device ourselves; do not silently restart apps.
@@ -377,7 +391,7 @@ async function appleDispatch(method,p={},deadline=Date.now()+110000) {
     if(keyEvents&&platform(device)==='iOS')notes.push('Key events act like a hardware keyboard and hide the on-screen keyboard during input. About 3 seconds after the last input, the plugin attempts to clear that hardware-keyboard record; tap outside and refocus the field to check whether the keyboard returns. To check keyboard overlap without sending keys, use method=touch. Enter may submit a form or confirm a game screen; to only end editing, tap an empty area.');
     const typedResult={udid:device.udid,execution:'executed',...(used?{method:used}:{}),...(typed?.inputSource?{inputSource:typed.inputSource}:{}),...(keys.length?{keys:keys.map(k=>[...k.modifiers,k.code].join('+'))}:{}),note:notes.join(' ')};
     // Like tap: optionally wait for text and/or look at the result in the same call.
-    return p.observe===undefined&&p.until===undefined?typedResult:await agent().after(device,{observe:p.observe??(p.until?undefined:'none'),settle:p.settle,until:p.until,_inline:p._inline,_deadline:p._deadline},typedResult);
+    return p.observe===undefined&&p.until===undefined?typedResult:await agent().after(device,{observe:p.observe??(p.until?undefined:'none'),settle:p.settle,until:p.until,_inline:p._inline,_deadline:p._deadline,_startedAt:p._startedAt},typedResult);
     } catch(error){if(inputStarted&&error.execution==='not_executed')error.execution='unknown';throw error;}
   }
   if(method==='press'&&p.button==='release-input') {
@@ -466,7 +480,7 @@ async function appleDispatch(method,p={},deadline=Date.now()+110000) {
     if(p.showViewer===false)return settledShot(device,p,launched);
     let viewer;
     try{viewer={viewer:await deviceViewer(device,p._locale)};}
-    catch(error){viewer={outcome:'partial',viewer:{ready:false,previewOpened:false,error:error.message},note:'App launched, but viewer failed. Retry viewer action=open, not launch.'};}
+    catch(error){return viewerFallback(device,p,launched,error);}
     return settledShot(device,p,{...launched,...viewer});
   }
   if(method==='heal') {

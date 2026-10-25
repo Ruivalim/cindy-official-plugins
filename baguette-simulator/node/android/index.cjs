@@ -42,7 +42,7 @@ function createAndroid({root,run,children}){
       const result=await apps.launch(d,p);
       if(!result.appLaunched)return result;
       if(p.showViewer!==false)try{result.viewer=await viewer.open(d.udid,p._locale);}catch(e){result.viewer={ready:false,previewOpened:false,error:e.message};result.outcome='partial';result.nextAction='Retry viewer action=open; do not relaunch the App.';}
-      if(p.screenshot)try{const {_modelImages,...shot}=await agent.screenshot(d,p);result.screenshot=shot;if(_modelImages)result._modelImages=_modelImages;}catch(e){result.screenshot={error:e.message};}
+      if(p.screenshot||result.viewer?.previewOpened===false)try{const {_modelImages,...shot}=await agent.screenshot(d,{...p,_deadline:Math.min(p._deadline??Infinity,Date.now()+12000)});result.screenshot=shot;if(_modelImages)result._modelImages=_modelImages;}catch(e){result.screenshot={error:e.message};}
       return result;
     }
     if(method==='app_terminate'||method==='app_uninstall'){

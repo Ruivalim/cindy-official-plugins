@@ -52,22 +52,78 @@ test('bundle comparison detects equal-size equal-time resource changes; registra
   assert.equal((await apps.status({udid:A,wait:0})).job,job.job);
 });
 
-test('foreground App info bounds comparison and hashing without imposing its deadline on install jobs',async t=>{
+test('lightweight info stays bounded; full comparison uses a reusable job and preserves inconclusive failure',async t=>{
   const root=await temporary(t),source=path.join(root,'Game.app');await fs.mkdir(source);
   const plist={CFBundleSupportedPlatforms:['iPhoneSimulator'],CFBundleIdentifier:'test.example.game',CFBundleExecutable:'Game'};
   await fs.writeFile(path.join(source,'Game'),Buffer.alloc(256*1024));
-  for(const phase of ['compare','hash']){
-    let clock=0,comparing=false;
-    const apps=require(path.join(dir,'apps.cjs')).createApps({Failure,now:()=>phase==='hash'?(clock+=100):clock,
+    let comparing=false;const gate=deferred();
+    const apps=require(path.join(dir,'apps.cjs')).createApps({Failure,
       run:async(file,args,options)=>{
-        assert.ok(options.timeout<=1000-clock);
-        if(file.endsWith('plutil')){if(phase==='hash')clock=700;else clock+=100;return {stdout:JSON.stringify(plist)};}
-        comparing=true;assert.equal(options.timeout,700);clock+=options.timeout;
+        if(file.endsWith('plutil'))return {stdout:JSON.stringify(plist)};
+        comparing=true;assert.equal(options.timeout,1800000);await gate.promise;
         throw new Failure('COMMAND_FAILED','checksum comparison timed out');
-      },sim:async(_args,options)=>{assert.ok(options.timeout<=1000-clock);clock+=100;return {stdout:source};}});
-    if(phase==='hash')await assert.rejects(apps.info({udid:A},{appPath:source,_deadline:1000}),e=>e.code==='TIME_BUDGET_EXHAUSTED'&&e.execution==='not_executed');
-    else {const result=await apps.info({udid:A},{appPath:source,_deadline:1000});assert.equal(result.matchesLocal,false);assert.equal(result.verification,'unconfirmed');assert.equal(result.comparisonError.code,'COMMAND_FAILED');assert.match(result.note,/does not prove a different build/);assert.equal(comparing,true);assert.equal(clock,1000);}
+      },sim:async()=>({stdout:source})});
+    const light=await apps.info({udid:A},{appPath:source,verify:'none'});
+    assert.equal(light.matchesLocal,null);assert.equal(light.verification,'not_requested');assert.equal(comparing,false);
+    const job=await apps.info({udid:A},{appPath:source,wait:0});assert.equal(job.state,'running');
+    assert.equal((await apps.info({udid:A},{appPath:source,wait:0})).job,job.job);
+    gate.resolve();const result=await apps.status({udid:A,job:job.job,wait:85});
+    assert.equal(result.matchesLocal,null);assert.equal(result.verification,'unconfirmed');assert.equal(result.comparisonError.code,'COMMAND_FAILED');assert.equal(comparing,true);
+});
+
+test('whole-bundle receipts invalidate on preserved-time resource edits, additions, removals, container changes and expiry',async t=>{
+  const root=await temporary(t),source=path.join(root,'Build.app'),installed=path.join(root,'Installed.app');
+  const metadata={CFBundleSupportedPlatforms:['iPhoneSimulator'],CFBundleIdentifier:'test.example.game',CFBundleExecutable:'Game'};
+  for(const folder of [source,installed]){await fs.mkdir(folder);await fs.writeFile(path.join(folder,'Info.plist'),JSON.stringify(metadata));await fs.writeFile(path.join(folder,'Game'),'exe');await fs.writeFile(path.join(folder,'asset'),'old');}
+  let compares=0,clock=Date.now(),container=installed;
+  const apps=require(path.join(dir,'apps.cjs')).createApps({Failure,now:()=>clock,
+    sim:async()=>({stdout:container}),run:async(file,args)=>{if(file.endsWith('plutil'))return {stdout:await fs.readFile(args.at(-1),'utf8')};compares++;return exec(file,args);}});
+  const info=()=>apps.info({udid:A},{appPath:source,wait:85});
+  assert.equal((await info()).matchesLocal,true);assert.equal(compares,1);
+  assert.equal((await info()).verificationReused,true);assert.equal(compares,1);
+  const stamp=await fs.stat(path.join(installed,'asset'));
+  await fs.writeFile(path.join(installed,'asset'),'new');await fs.utimes(path.join(installed,'asset'),stamp.atime,stamp.mtime);
+  assert.equal((await info()).matchesLocal,false);assert.equal(compares,2,'ctime detects equal size and restored mtime');
+  await fs.writeFile(path.join(installed,'asset'),'old');assert.equal((await info()).matchesLocal,true);
+  await fs.writeFile(path.join(source,'added'),'resource');assert.equal((await info()).matchesLocal,false);
+  await fs.unlink(path.join(source,'added'));assert.equal((await info()).matchesLocal,true);
+  await fs.unlink(path.join(installed,'asset'));assert.equal((await info()).matchesLocal,false);
+  await fs.writeFile(path.join(installed,'asset'),'old');assert.equal((await info()).matchesLocal,true);
+  const before=compares;clock+=3600001;assert.equal((await info()).matchesLocal,true);assert.equal(compares,before+1);
+  const replacement=path.join(root,'Replacement.app');await fs.cp(installed,replacement,{recursive:true});container=replacement;
+  assert.equal((await info()).matchesLocal,true);assert.equal(compares,before+2);
+  assert.equal((await apps.info({udid:A},{appPath:source,verify:'full',wait:85})).verificationReused,undefined);assert.equal(compares,before+3);
+});
+
+test('a resource change during full comparison cannot create a reusable receipt',async t=>{
+  const root=await temporary(t),source=path.join(root,'Build.app');await fs.mkdir(source);await fs.writeFile(path.join(source,'Game'),'same');
+  let mutate=true;
+  const apps=require(path.join(dir,'apps.cjs')).createApps({Failure,sim:async()=>({stdout:source}),run:async(file)=>{
+    if(file.endsWith('plutil'))return {stdout:JSON.stringify({CFBundleIdentifier:'test.example.game',CFBundleExecutable:'Game'})};
+    if(mutate)await fs.writeFile(path.join(source,'asset'),'changed');return {stdout:''};
+  }});
+  const first=await apps.info({udid:A},{appPath:source,wait:85});
+  assert.equal(first.matchesLocal,null);assert.equal(first.comparisonError.code,'BUILD_CHANGED');
+  mutate=false;assert.equal((await apps.info({udid:A},{appPath:source,wait:85})).verificationReused,undefined);
+});
+
+test('missing optional platform metadata still permits verified unchanged installs; symlink edits invalidate receipts',async t=>{
+  const root=await temporary(t),source=path.join(root,'Build.app'),installed=path.join(root,'Installed.app');
+  const metadata={CFBundleIdentifier:'test.example.game',CFBundleExecutable:'Game'};
+  for(const folder of [source,installed]){
+    await fs.mkdir(folder);await fs.writeFile(path.join(folder,'Info.plist'),JSON.stringify(metadata));
+    await fs.writeFile(path.join(folder,'Game'),'exe');await fs.writeFile(path.join(folder,'asset'),'bytes');
+    await fs.symlink('asset',path.join(folder,'link'));
   }
+  let comparisons=0;
+  const apps=require(path.join(dir,'apps.cjs')).createApps({Failure,
+    sim:async args=>{assert.equal(args[0],'get_app_container','no reinstall');return {stdout:installed};},
+    run:async(file,args)=>{if(file.endsWith('plutil'))return {stdout:await fs.readFile(args.at(-1),'utf8')};comparisons++;return exec(file,args);}});
+  const unchanged=await apps.install({udid:A},{appPath:source},{terminate:async()=>assert.fail('no termination')});
+  assert.equal(unchanged.mode,'unchanged');assert.equal(unchanged.matchesLocal,true);
+  assert.equal((await apps.info({udid:A},{appPath:source})).verificationReused,true);assert.equal(comparisons,1);
+  await fs.unlink(path.join(installed,'link'));await fs.symlink('Game',path.join(installed,'link'));
+  assert.equal((await apps.info({udid:A},{appPath:source})).matchesLocal,false);assert.equal(comparisons,2);
 });
 
 test('installation comparison is already a pollable locked job, then settles as unchanged, sync or full',async t=>{
@@ -600,6 +656,19 @@ test('after/until/both and settling inherit the original request deadline',async
     assert.ok(f.state.time()<=100400);
     assert.ok(f.state.calls.every(([, ,options])=>options.timeout<=1000));
   }
+});
+
+test('slow capture after a real input acknowledgement consumes only observation budget and never repeats input',async()=>{
+  const f=agentFixture({clockStep:0,onDelay:(ms,s)=>s.advance(ms),onCommand:(_file,args,options,s)=>{
+    if(args[0]==='screenshot'){s.advance(options.timeout);throw new Failure('COMMAND_TIMEOUT','capture stalled');}
+  }});
+  const result=await f.agent.tap(f.device,{x:50,y:50,observe:'screenshot',settle:0,_deadline:110000});
+  assert.equal(result.execution,'executed');assert.ok(result.screenshot.error);assert.equal(result.observation,'unconfirmed');
+  assert.ok(result.timing.observationMs<=12000);assert.ok(f.state.time()<=12000);
+  assert.equal(f.state.inputs.filter(i=>i.type==='tap').length,1);
+  const count=f.state.inputs.length;
+  await assert.rejects(f.agent.screenshot(f.device,{_deadline:f.state.time()+1000}));
+  assert.equal(f.state.inputs.length,count,'independent observation cannot send input');
 });
 
 test('an exhausted corner lookup never poisons later independent screenshot geometry',async()=>{

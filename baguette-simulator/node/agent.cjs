@@ -280,7 +280,7 @@ function createAgent({binary, deviceSet, root, run, sim, Failure, spatialAction,
           }
         } finally { await fs.rm(copy, {force: true}); }
       }
-      return {udid: device.udid, path: file, mimeType: p.format === 'png' ? 'image/png' : 'image/jpeg', pixels: size, scale, screen: viewInfo(screen),
+      return {udid: device.udid, path: file, mimeType: p.format === 'png' ? 'image/png' : 'image/jpeg', pixels: size, scale, screen: viewInfo(screen), capturedAt: new Date(now()).toISOString(), screenshotAttached: !!inline,
         ...(inline ? {_modelImages: inline} : {}),
         ...(region ? {region} : {}), note: `${inline ? 'The screenshot is attached to this result and the user sees it in this tool step; do not import or re-embed it (the file at path is the same image).' : 'Open the file at path with your image tool.'} ${scale === 1 ? 'Image pixels are view points' : `Divide pixels by ${scale} for view points`}${region ? ` and add the region origin (${region.x}, ${region.y})` : ''}; ${platform(device) === 'tvOS' ? 'use press to navigate and select' : platform(device) === 'visionOS' ? 'pass view points to tap (spatial pinch)' : 'pass view points to tap and gesture'}.`};
     } catch (error) {
@@ -382,23 +382,37 @@ function createAgent({binary, deviceSet, root, run, sim, Failure, spatialAction,
   }
 
   async function after(device, p, result) {
+    const started = now(), inputMs = p._startedAt === undefined ? undefined : started - p._startedAt;
+    // Input has already settled. Observation gets its own short budget inside
+    // the original call deadline; no failure here can resend that input.
+    const callDeadline = p._deadline ?? Infinity;
+    p = {...p, _deadline: Math.min(callDeadline, started + (p.until ? 27000 : 12000))};
+    const finish = out => {
+      const failed = out.observationError || out.ui?.error || out.screenshot?.error || out.until?.met === false;
+      return {...out, timing: {...(inputMs === undefined ? {} : {inputMs}), observationMs: now() - started},
+        observation: failed ? 'unconfirmed' : out.screenshot?.path || out.ui || out.until?.met ? 'available' : 'not_requested',
+        ...(failed ? {nextAction: 'Observe with screenshot or wait_for; do not repeat the delivered input. Check the target before continuing.'} : {})};
+    };
     // `until`: the text the action should bring up; waiting for it replaces a guessed settle time.
     const until = typeof p.until === 'string' && p.until.trim() ? p.until.trim() : null;
     const observeMode = p.observe ?? (until ? 'none' : 'ui');
     let out = {...result};
     if (until) {
       forgetTree(device.udid);
-      const waited = await waitFor(device, {text: until, timeout: 15, _inline: p._inline, _deadline: p._deadline});
+      let waited;
+      try { waited = await waitFor(device, {text: until, timeout: 15, _inline: p._inline, _deadline: p._deadline}); }
+      catch (error) { return finish({...out, observationError: error.message}); }
       const {_modelImages, ...rest} = waited;
       out.until = rest;
       if (_modelImages) out._modelImages = _modelImages;
       // Not there: the wait already attached the screen; do not take another.
-      if (!waited.met) return out;
+      if (!waited.met) return finish(out);
+      p._deadline = Math.min(callDeadline, now() + 12000);
     }
-    if (observeMode === 'none') return out;
+    if (observeMode === 'none') return finish(out);
     if (!until) {
       try { await pause(number(p.settle, 'settle', 0, 5, 0.6) * 1000, p._deadline); }
-      catch (error) { return {...out, observationError: error.message}; }
+      catch (error) { return finish({...out, observationError: error.message}); }
     }
     forgetTree(device.udid);
     if (observeMode === 'ui' || observeMode === 'both') {
@@ -409,10 +423,11 @@ function createAgent({binary, deviceSet, root, run, sim, Failure, spatialAction,
       try { const {_modelImages, ...shot} = await screenshot(device, {_inline: p._inline, _deadline: p._deadline}); out.screenshot = shot; if (_modelImages) out._modelImages = _modelImages; }
       catch (error) { out.screenshot = {error: error.message}; }
     }
-    return out;
+    return finish(out);
   }
 
   async function tap(device, p) {
+    p = {...p, _startedAt: p._startedAt ?? now()};
     const target = await resolveTarget(device, p);
     const count = number(p.count, 'count', 1, 3, 1), duration = number(p.duration, 'duration', 0.02, 10, undefined);
     if (!Number.isInteger(count)) throw failure('INVALID_ARGUMENT', 'count must be an integer');
@@ -431,6 +446,7 @@ function createAgent({binary, deviceSet, root, run, sim, Failure, spatialAction,
   }
 
   async function gesture(device, p) {
+    p = {...p, _startedAt: p._startedAt ?? now()};
     const kind = p.kind;
     if (kind === 'scroll_to') {
       if(platform(device)!=='iOS')throw failure('UNSUPPORTED_INPUT','scroll_to requires an iOS accessibility tree. Use spatial dragging on Vision Pro or remote buttons on Apple TV.');

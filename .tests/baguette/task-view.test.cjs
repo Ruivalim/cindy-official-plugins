@@ -127,7 +127,7 @@ test('task binding preserves durable identity through every post-save status and
  }
 });
 
-function logicPage({taskView,preview=async()=>({ok:true}),bindingResult,targetResult={ok:true,sessionId:'task-1'}}={}){
+function logicPage({taskView,preview=async()=>({ok:true}),bindingResult,targetResult={ok:true,sessionId:'task-1'},toolResult,shotResult}={}){
  const code=require('node:fs').readFileSync('baguette-simulator/main.js','utf8');
  const buses=new Map();
  class BroadcastChannel{constructor(n){this.name=n;this.onmessage=null;(buses.get(n)||buses.set(n,new Set()).get(n)).add(this);}postMessage(data){for(const p of buses.get(this.name))if(p!==this)queueMicrotask(()=>p.onmessage?.({data}));}}
@@ -135,6 +135,8 @@ function logicPage({taskView,preview=async()=>({ok:true}),bindingResult,targetRe
  const cindy={onHostMessage:fn=>handler=fn,request:async()=>({ok:true,context:{locale:'en'}}),send:async p=>sent.push(p),
   preview:async p=>{previews.push(p);return preview(p);},
   node:{request:async r=>{calls.push(r);if(r.method==='device_hold')return {ok:true,result:{running:false}};
+   if(r.method==='screenshot'&&shotResult){if(shotResult instanceof Error)throw shotResult;return {ok:true,result:shotResult};}
+   if(r.method==='app'&&toolResult)return {ok:true,result:toolResult};
    if(r.method==='task_target')return {ok:true,result:targetResult};
    if(r.method==='task_state')return {ok:true,result:{ok:true,sessionId:r.params._task,device:null,devices:[],viewer:null}};
    if(r.method==='task_bind'&&bindingResult)return {ok:true,result:bindingResult};
@@ -143,9 +145,23 @@ function logicPage({taskView,preview=async()=>({ok:true}),bindingResult,targetRe
  vm.runInNewContext(code,{cindy,BroadcastChannel,Object,String,Promise,Set,RegExp,queueMicrotask,setTimeout});
  const page=new BroadcastChannel('baguette-pages');const pushed=[],replies=[];
  page.onmessage=({data})=>{if(data.type==='viewer')pushed.push(data);if(data.type==='response')replies.push(data);};
- return {call:args=>handler({type:'tool-call',tool:'open_viewer',callId:'c',args}),sent,previews,views,calls,page,pushed,replies};
+ return {call:(args,tool='open_viewer')=>handler({type:'tool-call',tool,callId:'c',args}),sent,previews,views,calls,page,pushed,replies};
 }
 const settle=()=>new Promise(r=>setTimeout(r,10));
+
+test('Host page failure observes once and retains a confirmed launch even when capture rejects',async()=>{
+ for(const explicit of [true,false])for(const shotResult of [{ok:true,path:'/fixture/frame.jpg',screenshotAttached:true,_modelImages:[{data:'fixture'}]},new Error('capture unavailable')]){
+  const f=logicPage({taskView:async()=>({ok:false,errorCode:'HOST_NOT_READY'}),
+   toolResult:{ok:true,udid:A,appLaunched:true,execution:'executed',viewer:{ready:true,url:'http://example.test/'}},shotResult});
+  await f.call({action:'launch',...(explicit?{udid:A}:{}),session_context:{session_id:'task-1'}},'app');
+  const out=f.sent[0];assert.equal(out.ok,true);assert.equal(out.result.appLaunched,true);assert.equal(out.result.execution,'executed');assert.equal(out.result.outcome,'partial');
+  assert.equal(f.calls.filter(c=>c.method==='app').length,1);assert.equal(f.calls.filter(c=>c.method==='screenshot').length,1);
+  assert.ok(f.calls.find(c=>c.method==='screenshot').params._observationBudgetMs<=12000);
+  assert.equal(f.calls.find(c=>c.method==='screenshot').params.udid,A,'observe the resolved device even when the caller omitted udid');
+  assert.equal(f.calls.find(c=>c.method==='screenshot').params.session_context.session_id,'task-1');
+  if(shotResult instanceof Error)assert.match(out.result.screenshot.error,/unavailable/);else assert.equal(out.images.length,1);
+ }
+});
 
 test('jump resolves the latest existing device binding without booting or rebinding',async t=>{
  const f=await runtimeFixture(t);

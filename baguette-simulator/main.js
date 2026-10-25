@@ -54,6 +54,7 @@ async function showViewer(url, udid, sessionId, locale) {
 
 cindy.onHostMessage(async function (msg) {
   if (msg.type !== 'tool-call') return;
+  const started = Date.now();
   try {
     const locale = await hostLocale();
     // Host ceiling is 120s; worker preflight is 3s + 5s.
@@ -69,7 +70,7 @@ cindy.onHostMessage(async function (msg) {
     const opening = msg.tool === 'open_viewer' || (msg.tool === 'viewer' && msg.args?.action === 'open');
     const viewer = result.viewer || (opening ? result : null);
     if (result.ok && viewer && viewer.ready && viewer.url) {
-      const shown = await showViewer(viewer.url, msg.args?.udid, msg.args?.session_context?.session_id, locale);
+      const shown = await showViewer(viewer.url, result.udid ?? msg.args?.udid, msg.args?.session_context?.session_id, locale);
       viewer.previewOpened = shown.previewOpened;
       if (shown.location) viewer.location = shown.location;
       if (shown.previewError) viewer.previewError = shown.previewError;
@@ -77,6 +78,19 @@ cindy.onHostMessage(async function (msg) {
     if (result.ok && viewer?.previewOpened === false) {
       result.outcome = 'partial';
       result.nextAction = 'Retry viewer action=open for this device. Do not repeat an App launch that already succeeded.';
+      // A Host page failure is separate from launch. Observe once, within the
+      // original Host budget, retaining the already completed device result.
+      const left = Math.min(12000, 110000 - (Date.now() - started));
+      if (!result.screenshot && left >= 1000) {
+        try {
+          const shot = await cindy.node.request({method:'screenshot',params:{udid:result.udid ?? msg.args?.udid,session_context:msg.args?.session_context,_inline:true,_observationBudgetMs:left},timeoutMs:left+1000});
+          if (shot.ok && shot.result?.ok !== false) {
+            const {ok, _modelImages, ...screen} = shot.result;
+            result.screenshot = screen;
+            if (_modelImages) result._modelImages = _modelImages;
+          } else result.screenshot = {error:shot.message || shot.result?.message || 'Observation unavailable; retry screenshot only.'};
+        } catch (error) { result.screenshot = {error:String(error.message || error)}; }
+      }
     }
     if (typeof result.met === 'boolean') result.goalMet = result.met;
     // Images go next to `result` (hosts without the field ignore them; the path stays in `result`).
