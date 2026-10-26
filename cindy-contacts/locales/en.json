@@ -1,6 +1,6 @@
 {
   "name": "Contacts",
-  "description": "AI keeps track of everyone you deal with. It reads your mail, calendar and chats and writes up each person: who they are, where you left off and what is still open. Starts with the last two weeks; go back further any time. Imports macOS Contacts and old Smart Contacts. Data stays on this computer.",
+  "description": "AI organizes people, exchanges and follow-ups from your mail, calendar and chats. Imports macOS and old Smart Contacts. Data is stored locally; on supported Cindy versions, enable encrypted sync between computers on the same account. Changes and deletions merge when both are online.",
   "whenToUse": "An unknown email, phone or Feishu/Slack/GitHub account; contacting, emailing or @-mentioning someone; preparing a meeting or reply and needing background or where things were left; news about a colleague, friend or client; tidying up, backfilling, deduplicating or importing contacts.",
   "tools": {
     "find": {

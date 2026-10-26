@@ -47,6 +47,7 @@ permission gate.
 | <img src="./cindy-github/assets/icon.png" width="22" alt=""> | GitHub | [`cindy-github`](./cindy-github) | Full GitHub workflow: issues / PRs / code review / Actions / releases |
 | <img src="./cindy-gitlab/assets/icon.png" width="22" alt=""> | GitLab | [`cindy-gitlab`](./cindy-gitlab) | GitLab (gitlab.com and self-hosted) issues / MRs / repository operations |
 | <img src="./cindy-mermaid/assets/icon.jpg" width="22" alt=""> | Mermaid | [`cindy-mermaid`](./cindy-mermaid) | Mermaid diagram source normalization and common syntax fixes |
+| <img src="./cindy-ping/assets/icon.png" width="22" alt=""> | Cindy Ping | [`cindy-ping`](./cindy-ping) | Configurable desktop emote wheel and project, conversation or companion delivery; macOS 14+; manual install |
 | <img src="./cindy-notion/assets/icon.png" width="22" alt=""> | Notion | [`cindy-notion`](./cindy-notion) | Read/write Notion pages, databases, and knowledge bases |
 | <img src="./cindy-web-search/assets/icon.png" width="22" alt=""> | Web Search | [`cindy-web-search`](./cindy-web-search) | Public web search (Cindy AI by default; optional user-provided Brave / Tavily / DeepSeek key) |
 | <img src="./world-bank-open-data/assets/icon.png" width="22" alt=""> | World Bank Open Data | [`world-bank-open-data`](./world-bank-open-data) | Public country, economic, social, and development indicators with no API key; staged rollout |
@@ -60,7 +61,7 @@ permission gate.
 | <img src="./qq-mail/assets/icon.png" width="22" alt=""> | QQ Mail | [`qq-mail`](./qq-mail) | Cindy stores the authorization code securely; search, read, organize, and send via IMAP/SMTP on demand |
 | <img src="./yahoo-mail/assets/icon.png" width="22" alt=""> | Yahoo Mail | [`yahoo-mail`](./yahoo-mail) | Cindy stores the app password securely; manage and send Yahoo Mail via IMAP/SMTP on demand |
 | <img src="./taptap-maker/assets/icon.png" width="22" alt=""> | TapTap Maker | [`taptap-maker`](./taptap-maker) | Account connection, project sync, builds, and official news tools |
-| <img src="./baguette-simulator/assets/icon.png" width="22" alt=""> | Baguette | [`baguette-simulator`](./baguette-simulator) | Opt-in Baguette iOS simulator with a private device set, sidebar controls, and acknowledged keyboard input; targeted rollout |
+| <img src="./baguette-simulator/assets/icon.png" width="22" alt=""> | Device Simulator | [`baguette-simulator`](./baguette-simulator) | Cindy's official Device Simulator (built on open-source Baguette) with a private device set and live sidebar control; replaces the retired embedded simulator; marketplace install |
 | <img src="./ios-simulator/assets/icon.png" width="22" alt=""> | iOS Simulator | [`ios-simulator`](./ios-simulator) | Host-owned embedded workflow; Host-authorized fallback hands off the exact task and device to a named external workflow; staged rollout |
 | <img src="./x-manager/assets/icon.png" width="22" alt=""> | X Manager | [`x-manager`](./x-manager) | Search X (Twitter) and post to it — xAI x_search with Grok-subscription / API-key fallback, posting via the official X API v2; currently in a targeted rollout |
 
@@ -75,12 +76,20 @@ The full path from idea to marketplace:
    duplicating each other's scenarios; same-provider product families
    (Gmail / Drive / Calendar) and same-protocol different providers
    (163 / iCloud / QQ mail) are fine, but a second generic web search is not.
-2. **Align** — open a
-   [new plugin proposal](https://github.com/makecindy/cindy-official-plugins/issues/new?template=new_plugin_proposal.yml)
-   describing the scenario, boundaries, and any autonomous Host capabilities
-   (network hosts, credentials, long-lived Node runtime). Wait for a maintainer ack before writing
-   code — it keeps you from building something that overlaps or won't be
-   accepted.
+2. **Check the standard** — admission and audience are judged by the
+   [admission and audience standard](.greptile/rules.md#插件准入与受众标准).
+   A plugin that fits needs no separate maintainer approval and no prior proposal.
+   A [proposal issue](https://github.com/makecindy/cindy-official-plugins/issues/new?template=new_plugin_proposal.yml)
+   or Draft PR may record the scenario, boundaries, and autonomous Host
+   capabilities (network hosts, credentials, long-lived Node runtime); it is not
+   an approval gate. `all` is only for plugins most users benefit from, that work
+   out of the box with no self-obtained third-party key or account, that are not
+   tied to one person's or one team's workflow, and that are stable. Popularity
+   or many submissions alone never justify `all`. Useful but niche plugins, or
+   plugins that need the user's own key or account, are accepted as opt-in
+   (`{ "emails": [] }`; users choose them in the marketplace). Very personal
+   plugins, pure demos (use `docs/` instead), and tasks the agent can already
+   do without a plugin are not accepted. `author` must be the real author.
 3. **Build** — follow the [harness-independent quick path](#harness-independent-quick-path)
    with any coding Agent or development environment. The repository documents
    the file format, runtime messages, validation command, and packaging format;
@@ -92,9 +101,13 @@ The full path from idea to marketplace:
 5. **Review** — CI validates each manifest and the Server/Desktop delivery
    limits within this repository, checks localization / provisioning,
    and dry-runs the exact package; automated review enforces the full ruleset in
-   [`.greptile/rules.md`](./.greptile/rules.md); a maintainer reviews against
-   the same [review standards](#review-standards). Walk through the self-check
-   list below before requesting review.
+   [`.greptile/rules.md`](./.greptile/rules.md); the maintainers apply the same
+   [review standards](#review-standards). Once checks, effective review, and
+   verification are satisfied, already-authorized merge automation may execute
+   without another confirmation for routine maintenance. A fitting admission
+   needs no extra decision. A plugin that uses or depends on a Cindy host
+   authorization still waits until that grant is approved and released; see
+   [Review standards](#review-standards).
 6. **Submit and approve** — merging to `main` submits changed packages to Global
    Plugin Platform. Only approved releases become available to compatible clients;
    rejection leaves the previous approved release in service. CN submission remains
@@ -103,7 +116,22 @@ The full path from idea to marketplace:
 ## Review standards
 
 Every official plugin is installed by real users who carry its security and
-experience risk, so review is strict by design. Four hard principles:
+experience risk. Review actual behavior, impact and evidence: routine packaging
+fixes, dependency maintenance, traceable generated artifacts and static images
+do not require human approval just because of their paths. Admission and
+audience that fit the standard need no separate maintainer approval; a mismatch
+is a concrete review finding. Real permission, credential, or publish-trust
+widening, undisclosed network access, and renaming or deleting a published
+plugin still need the maintainers' explicit decision. Review of a plugin also
+checks any Cindy host authorization it uses or depends on, besides scopes the
+plugin itself requests: which grant, whether the platform has approved it, and
+whether a host release contains it. If that grant changed or is not ready, do
+not merge, and plan the scopes that still need requesting together. Leave
+unused ones out. Other changes that fit the existing standard are still judged
+directly. Details are in
+[第三方平台授权](.greptile/rules.md#第三方平台授权).
+Separate code defects, verification gaps, boundary decisions, and platform
+approval. Four principles:
 
 1. **Pure sandbox by default; authorization follows the executor.** Regular
    plugins run in Cindy's isolated sandbox. Whether a plugin tool runs is decided
@@ -149,12 +177,15 @@ experience risk, so review is strict by design. Four hard principles:
 - [ ] User-facing errors are actionable; no raw status codes or stack traces
 - [ ] Four-language locales complete; `node --test .tests/localization.test.mjs`
       passes
-- [ ] Every changed plugin's packaged `.cindy` was installed and exercised on a
-      real device running a stable production or Beta Cindy build, and the PR
-      verification box is checked; when the plugin declares `minCindyVersion`,
-      the verified Cindy build is greater than or equal to it
-- [ ] `ghost.json.version` bumped; `provisioning.json` entry present with an
-      audience decision stated in the PR
+- [ ] Actual runtime evidence for affected paths, or linked valid prior evidence
+      with applicability across the full subsequent diff; accurate environment,
+      version, results and gaps. No fixed PR checkbox; green CI is not runtime proof
+- [ ] `ghost.json.version` bumped; `provisioning.json` audience matches the
+      standard (`all`, or opt-in `{ "emails": [] }`); `author` is the real author
+- [ ] Scopes the plugin requests are unchanged, and it does not use or depend on
+      a changed or unready Cindy host authorization; otherwise the pull request
+      lists those scopes and, for each host grant, platform approval and host
+      release
 - [ ] No credentials, real user data, `node_modules`, or unrelated generated
       files in the diff; fixtures use placeholder domains (`example.test`)
 - [ ] Bundled dependency changes reflected in `THIRD-PARTY-LICENSES.txt`
@@ -386,11 +417,11 @@ See the [dependency guide](docs/binary-dependencies.md) for migration steps,
 complete declaration examples and downloading PR verification packages.
 
 Before submitting to this official repository, add a `provisioning.json` entry
-and declare locale files for exactly `zh-CN`, `en`, `ja`, and `ko`, covering the
-plugin text and every tool description. Then follow
-[`CONTRIBUTING.md`](./CONTRIBUTING.md). You may first open a PR to obtain its test
-package; before merging, install and verify the exact `.cindy` on a real device
-running an eligible stable production or Beta Cindy build, then check the attestation.
+and locale files for `zh-CN`, `en`, `ja` and `ko`, covering plugin text and tool
+descriptions. Follow [`CONTRIBUTING.md`](./CONTRIBUTING.md). Open a PR to obtain a
+test package; authors or maintainers supply runtime and compatibility evidence
+appropriate to the affected behavior before merge. Valid evidence for unaffected
+paths can be reused without reinstalling after every wording change.
 
 `taptap-maker/vendor/taptap-maker/` ships the official `@taptap/maker@0.0.37`
 with the plugin. When upgrading, replace the published npm package content

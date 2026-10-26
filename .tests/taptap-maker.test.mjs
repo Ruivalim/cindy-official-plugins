@@ -60,7 +60,11 @@ class FakeBroadcastChannel {
   }
 }
 
-function createMainHarness(nodeResponder, readPreferences = async () => ({ ok: true, json: async () => ({}) })) {
+function createMainHarness(
+  nodeResponder,
+  readPreferences = async () => ({ ok: true, json: async () => ({}) }),
+  previewResponder = async () => ({ ok: true }),
+) {
   FakeBroadcastChannel.instances.length = 0;
   const nodeRequests = [];
   const previewRequests = [];
@@ -78,7 +82,7 @@ function createMainHarness(nodeResponder, readPreferences = async () => ({ ok: t
     },
     preview: async (request) => {
       previewRequests.push(request);
-      return { ok: true };
+      return previewResponder(request);
     },
     pick: async (request) => {
       pickRequests.push(request);
@@ -103,7 +107,9 @@ function createMainHarness(nodeResponder, readPreferences = async () => ({ ok: t
       URL,
       cindy,
       fetch: readPreferences,
-      setTimeout: () => 1,
+      AbortController,
+      setTimeout: (callback, delay) => delay === 2000 ? setTimeout(callback, delay) : 1,
+      clearTimeout,
     }),
   );
   assert.equal(typeof handler, 'function');
@@ -259,7 +265,7 @@ function imageSettingsHarness(readPreferences, writePreferences = async () => ({
   const elements = new Map();
   function element(id) {
     if (!elements.has(id)) elements.set(id, {
-      disabled: ['maker-image-enabled', 'maker-video-enabled', 'maker-audio-enabled'].includes(id),
+      disabled: ['maker-preview-enabled', 'maker-image-enabled', 'maker-video-enabled', 'maker-audio-enabled'].includes(id),
       checked: false, value: '', textContent: '',
       listeners: {},
       addEventListener(event, listener) { this.listeners[event] = listener; },
@@ -287,7 +293,8 @@ function imageSettingsHarness(readPreferences, writePreferences = async () => ({
   new Script(settingsSource).runInContext(context);
   return {
     toggle: element('maker-image-enabled'), video: element('maker-video-enabled'),
-    audio: element('maker-audio-enabled'), message: element('media-message'),
+    audio: element('maker-audio-enabled'), preview: element('maker-preview-enabled'),
+    message: element('media-message'),
   };
 }
 
@@ -444,6 +451,63 @@ test('设置加载期间禁用，默认开启；点击保存保留其它偏好�
   assert.equal(reopened.toggle.disabled, false);
 });
 
+test('预览开关默认开启，保存只更新自己的键并保留其它偏好', async () => {
+  assert.match(settingsHtml, /id="maker-preview-enabled" type="checkbox" role="switch" disabled/);
+  let preferences = { makerImageEnabled: false, unrelated: 'preserve' };
+  const read = async () => ({ ok: true, json: async () => ({ ...preferences }) });
+  const harness = imageSettingsHarness(read, async (next) => {
+    preferences = next;
+    return { ok: true };
+  });
+  assert.equal(harness.preview.disabled, true);
+  await new Promise(setImmediate);
+  assert.equal(harness.preview.checked, true);
+  assert.equal(harness.preview.disabled, false);
+  harness.preview.checked = false;
+  await harness.preview.listeners.change();
+  assert.deepEqual(preferences, { makerImageEnabled: false, unrelated: 'preserve', makerPreviewEnabled: false });
+  assert.equal(harness.message.textContent, '已保存');
+  const reopened = imageSettingsHarness(read);
+  await new Promise(setImmediate);
+  assert.equal(reopened.preview.checked, false);
+  assert.equal(reopened.preview.disabled, false);
+  assert.equal(reopened.toggle.checked, false);
+  assert.equal(reopened.video.checked, true);
+});
+
+test('预览开关保存失败恢复原显示并要求重新核对', async () => {
+  const harness = imageSettingsHarness(
+    async () => ({ ok: true, json: async () => ({}) }), async () => ({ ok: false }),
+  );
+  await new Promise(setImmediate);
+  harness.preview.checked = false;
+  await harness.preview.listeners.change();
+  assert.equal(harness.preview.checked, true);
+  assert.equal(harness.preview.disabled, true);
+  assert.match(harness.message.textContent, /未能确认保存结果/);
+});
+
+test('预览开关的设置页文案和工具说明覆盖四种语言', () => {
+  const messages = readSettingsMessages();
+  for (const locale of ['en', 'zh-CN', 'ja', 'ko']) {
+    assert.ok(messages[locale].previewEnabled, `${locale} previewEnabled`);
+    assert.ok(messages[locale].previewHint, `${locale} previewHint`);
+  }
+  const buildDescription = (source) => source.tools.find((tool) => tool.name === 'maker_build').description;
+  assert.match(buildDescription(manifest), /设置中关闭/);
+  const disabledHints = {
+    en: /turns this off in plugin settings/,
+    'zh-CN': /设置中关闭/,
+    ja: /設定でオフ/,
+    ko: /설정에서 끄면/,
+  };
+  for (const [locale, hint] of Object.entries(disabledHints)) {
+    const localized = JSON.parse(readFileSync(new URL(`locales/${locale}.json`, pluginRoot), 'utf8'));
+    assert.match(localized.tools.maker_build.description, hint, `${locale} maker_build description`);
+  }
+  assert.match(manualMd, /preview\.skipped/);
+});
+
 test('设置加载失败保持禁用；保存失败不显示已保存并要求核对', async () => {
   const failed = imageSettingsHarness(async () => ({ ok: false }));
   await new Promise(setImmediate);
@@ -555,7 +619,7 @@ test('account commands retain their existing output limit', async () => {
 test('manifest、手动安装策略和官方 Runtime 版本保持一致', () => {
   assert.equal(manifest.id, 'taptap-maker');
   assert.equal(manifest.author, 'Cindy');
-  assert.equal(manifest.version, '2.1.22');
+  assert.equal(manifest.version, '2.1.24');
   assert.equal(manifest.minCindyVersion, '0.1.64');
   assert.match(
     manifest.tools.find((tool) => tool.name === 'maker_build').description,
@@ -1265,6 +1329,201 @@ test('主工具只使用宿主注入的本地 workdir，并为长构建开启续
     card.html,
     /href="https:\/\/maker\.taptap\.cn\/app\/demo\?localDev=1&amp;hide_chat=1"/,
   );
+});
+
+const previewBuildSession = {
+  workdir_is_local: true,
+  workdir: '/tmp/trusted-maker',
+  session_id: 'session-1',
+};
+const previewBuildResult = {
+  content: [{ type: 'text', text: '- maker_url: https://maker.taptap.cn/app/demo?localDev=1' }],
+};
+const previewBuildLink = 'https://maker.taptap.cn/app/demo?localDev=1&hide_chat=1';
+
+async function buildWithPreviewPreferences(readPreferences) {
+  const harness = createMainHarness(async () => ({ ok: true, result: previewBuildResult }), readPreferences);
+  const build = await harness.call('maker_build', { session_context: previewBuildSession });
+  return { harness, build };
+}
+
+test('关闭构建后右侧预览时只返回链接，不打开右侧预览', async () => {
+  const { harness, build } = await buildWithPreviewPreferences(
+    async () => ({ ok: true, json: async () => ({ makerPreviewEnabled: false }) }),
+  );
+  assert.equal(build.ok, true);
+  assert.deepEqual(harness.previewRequests, []);
+  assert.equal(build.result.preview.ok, false);
+  assert.equal(build.result.preview.skipped, true);
+  assert.equal(build.result.preview.url, previewBuildLink);
+  assert.match(build.result.preview.message, /已在插件设置中关闭/);
+  assert.equal(build.result.preview_url, previewBuildLink);
+  assert.equal(build.result.user_facing_markdown, `[打开 TapTap Maker 预览](${previewBuildLink})`);
+  const card = harness.sentMessages.find((message) => message.type === 'card-update');
+  assert.match(card.html, /预览地址/);
+  assert.doesNotMatch(card.html, /已在右侧打开/);
+  assert.match(card.html, /href="https:\/\/maker\.taptap\.cn\/app\/demo\?localDev=1&amp;hide_chat=1"/);
+});
+
+test('未设置或开启预览开关时仍在右侧打开预览', async () => {
+  for (const preferences of [{}, { makerPreviewEnabled: true }]) {
+    const { harness, build } = await buildWithPreviewPreferences(
+      async () => ({ ok: true, json: async () => preferences }),
+    );
+    assert.equal(build.ok, true);
+    assert.deepEqual(JSON.parse(JSON.stringify(harness.previewRequests)), [{ url: previewBuildLink, sessionId: 'session-1' }]);
+    assert.equal(build.result.preview.ok, true);
+    assert.equal(build.result.preview.skipped, undefined);
+    const card = harness.sentMessages.find((message) => message.type === 'card-update');
+    assert.match(card.html, /已在右侧打开/);
+  }
+});
+
+test('预览开关读取失败或值非法时不打开右侧预览，构建结果和链接保持不变', async () => {
+  const failures = [
+    async () => ({ ok: false }),
+    async () => { throw new Error('kv unavailable'); },
+    async () => ({ ok: true, json: async () => null }),
+    async () => ({ ok: true, json: async () => [] }),
+    async () => ({ ok: true, json: async () => ({ makerPreviewEnabled: 'false' }) }),
+    async () => ({ ok: true, json: async () => ({ makerPreviewEnabled: null }) }),
+  ];
+  for (const readPreferences of failures) {
+    const { harness, build } = await buildWithPreviewPreferences(readPreferences);
+    assert.equal(build.ok, true);
+    assert.deepEqual(harness.previewRequests, []);
+    assert.equal(build.result.preview.skipped, true);
+    assert.match(build.result.preview.message, /设置读取失败/);
+    assert.equal(build.result.user_facing_markdown, `[打开 TapTap Maker 预览](${previewBuildLink})`);
+    assert.equal(harness.nodeRequests.length, 1);
+  }
+});
+
+const cloudDirtyBuildFailureText = [
+  '✗ Maker project submit failed; remote build was not started',
+  '',
+  '- project_root: /tmp/trusted-maker',
+  '- project_id: proj-1',
+  '- failure_stage: code_submit',
+  '- code_submit_status: failed',
+  '- remote_build_status: not_started',
+  '- branch: main',
+  '- status: failed_after_commit',
+  '- committed: yes',
+  '',
+  'note: Maker build was not started because submit did not produce a pushed state.',
+  '',
+  'push_recovery:',
+  '- committed_but_unpushed: yes',
+  '- retry_tool: maker_build_current_directory',
+  '- do_not_use_generic_git_push: yes',
+  '- user_message: 本地提交已经保留，但还没推送到 Maker 远端；请先按 failure.next_action 修复原因，再重试 Maker 提交/构建工具。',
+  '',
+  'failure:',
+  '- stage: push',
+  '- classification: remote_rejected',
+  '- retryable: no',
+  '- exit_code: 1',
+  '- stderr:',
+  '    remote: [pre-receive] cloud workspace has uncommitted changes that this push would overwrite:',
+  '    remote:   .project/settings.json',
+  '    remote: [pre-receive] commit them in the cloud (or via the Git commit API), pull, then push again',
+  '    To https://maker.example.test/git/project.git',
+  '   ! [remote rejected] HEAD -> main (pre-receive hook declined)',
+  '    error: failed to push some refs',
+  '- next_action: 远端已有新提交。不要新建分支、不要手动执行通用 git push；先询问用户是否 pull/rebase 当前 Maker 远端变更，再重试 maker_build_current_directory。',
+].join('\n');
+
+function buildFailureResponder(resultText, structuredContent = { success: false }) {
+  return async () => ({
+    ok: true,
+    result: {
+      isError: true,
+      structuredContent,
+      content: [{ type: 'text', text: resultText }],
+    },
+  });
+}
+
+test('云端工作区脏改动拒绝时附插件内可执行恢复步骤并保留执行态', async () => {
+  const harness = createMainHarness(buildFailureResponder(cloudDirtyBuildFailureText, {
+    success: false,
+    execution_state: 'executed',
+  }));
+  const build = await harness.call('maker_build', { session_context: previewBuildSession });
+  assert.equal(build.ok, true);
+  assert.equal(build.result.isError, true);
+  const text = build.result.content.map((item) => item.text).join('\n');
+  assert.match(text, /cloud workspace has uncommitted changes/);
+  assert.match(text, /征得同意后调用 maker_build 并传 confirm_remote_build_without_submit=true/);
+  assert.match(text, /git fetch origin/);
+  assert.match(text, /origin\/main merge（或 rebase）进本地 main/);
+  assert.match(text, /保留本地未推送提交/);
+  assert.match(text, /pull\/rebase 解决不了/);
+  assert.equal(build.result.structuredContent.execution_state, 'executed');
+  assert.match(build.result.structuredContent.message, /confirm_remote_build_without_submit=true/);
+  // 恢复指引只追加，不改写 Runtime 的失败详情。
+  assert.match(text, /- status: failed_after_commit/);
+});
+
+test('普通 remote_rejected 失败不附加云端脏工作区恢复步骤', async () => {
+  const plainRejectedText = cloudDirtyBuildFailureText.replace(
+    /remote: \[pre-receive\] cloud workspace[^\n]*\n[\s\S]*?error: failed to push some refs/,
+    '    To https://maker.example.test/git/project.git\n   ! [remote rejected] HEAD -> main (non-fast-forward)\n    error: failed to push some refs',
+  );
+  assert.doesNotMatch(plainRejectedText, /cloud workspace/);
+  const harness = createMainHarness(buildFailureResponder(plainRejectedText));
+  const build = await harness.call('maker_build', { session_context: previewBuildSession });
+  assert.equal(build.ok, true);
+  assert.equal(build.result.isError, true);
+  const text = build.result.content.map((item) => item.text).join('\n');
+  assert.doesNotMatch(text, /confirm_remote_build_without_submit/);
+  assert.doesNotMatch(text, /sync 提交/);
+  assert.match(build.result.structuredContent.message, /push_recovery/);
+  assert.doesNotMatch(build.result.structuredContent.message, /confirm_remote_build_without_submit/);
+});
+
+for (const stalledStage of ['fetch', 'json']) {
+  test(`/kv ${stalledStage} 永不返回时约 2 秒中止，保留构建成功和预览链接`, { timeout: 5000 }, async () => {
+    let requestSignal;
+    const startedAt = Date.now();
+    const { harness, build } = await buildWithPreviewPreferences(async (url, options) => {
+      assert.equal(url, '/kv');
+      requestSignal = options.signal;
+      const stalled = () => new Promise((_resolve, reject) => {
+        requestSignal.addEventListener('abort', () => reject(requestSignal.reason), { once: true });
+      });
+      return stalledStage === 'fetch' ? stalled() : { ok: true, json: stalled };
+    });
+    assert.equal(requestSignal.aborted, true);
+    assert.ok(Date.now() - startedAt >= 1900, 'must allow approximately two seconds before aborting');
+    assert.equal(build.ok, true);
+    assert.deepEqual(harness.previewRequests, []);
+    assert.equal(harness.nodeRequests.length, 1, 'must not rebuild or resubmit');
+    assert.equal(build.result.preview.skipped, true);
+    assert.equal(build.result.preview_url, previewBuildLink);
+    assert.match(build.result.preview.message, /设置读取失败/);
+    assert.equal(build.result.user_facing_markdown, `[打开 TapTap Maker 预览](${previewBuildLink})`);
+    const card = harness.sentMessages.find((message) => message.type === 'card-update');
+    assert.match(card.html, /预览地址/);
+    assert.doesNotMatch(card.html, /已在右侧打开/);
+  });
+}
+
+test('右侧预览打开失败时卡片不再声称已打开，且不算作用户关闭', async () => {
+  const harness = createMainHarness(
+    async () => ({ ok: true, result: previewBuildResult }),
+    undefined,
+    async () => ({ ok: false, message: 'host refused' }),
+  );
+  const build = await harness.call('maker_build', { session_context: previewBuildSession });
+  assert.equal(build.ok, true);
+  assert.equal(harness.previewRequests.length, 1);
+  assert.equal(build.result.preview.ok, false);
+  assert.equal(build.result.preview.skipped, undefined);
+  assert.equal(build.result.preview.message, 'host refused');
+  const card = harness.sentMessages.find((message) => message.type === 'card-update');
+  assert.doesNotMatch(card.html, /已在右侧打开/);
 });
 
 test('动态工具列表携带可信项目 root，并过滤固定工具', async () => {

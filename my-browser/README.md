@@ -298,6 +298,10 @@ A lost creation acknowledgement reuses the original creation key. Archived, dele
 Network verification survives extension service-worker restarts for the same document using browser-session storage. Reloads and other documents still require fresh public-address evidence. Chrome Web Store domains are protected by Chrome itself; the extension reports this restriction directly rather than suggesting a refresh. The Chrome store item ID and published install link are registered in `distribution.json`; the 0.4.13 update supersedes the previously submitted 0.4.12 package.
 
 
+## YouTube's new transcript panel (0.4.35 / Chrome 0.4.22)
+
+YouTube now marks many caption tracks as requiring a player-issued proof token, so the caption endpoint returns HTTP 200 with an empty body to the extension and the transcript fallback is the only source. Some videos open a new transcript panel (`PAmodern_transcript_view`) whose rows are `transcript-segment-view-model` elements instead of `ytd-transcript-segment-renderer`. Earlier versions waited for the old rows, timed out and reported `SUBTITLE_EMPTY`. The fallback now reads both panel types; in the new panel it takes the visible timestamp and text, skips chapter headers and the accessible duration label, and still rejects any row whose timestamp or text cannot be read. Opening, closing and restoring the panel and description are unchanged.
+
 ## Model switches no longer stop translation (0.4.33 / Chrome 0.4.20)
 
 Switching the model during translation (the plugin's model card or the task's own model menu) made the in-flight passage fail or hit a revision conflict, and the whole video stopped at "retry". The passage is now resent with the current settings only after the Host has rejected the old request or the old run is terminal and the task configuration revision actually changed, at most twice per passage. Runs the user cancelled or interrupted from the task, video switches and uncertain deliveries keep their existing rules and are never sent twice. Failures without a configuration change are still reported; the subtitle loop retries them twice with the existing backoff before stopping.

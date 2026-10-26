@@ -13,7 +13,26 @@ import './baguette/paste-compat.test.cjs';
 import './baguette/screen-pieces.test.cjs';
 import './baguette/chromium-touch-text.test.cjs';
 import './baguette/typed-keys.test.cjs';
-import './baguette/control-layout.test.cjs';
 import './baguette/fold-orientation.test.cjs';
 import './baguette/runtime.test.cjs';
 import './baguette/device-manager.test.cjs';
+import './baguette/defaults-routes.test.cjs';
+import './baguette/control-model.test.cjs';
+import './baguette/vendor-syntax.test.cjs';
+import './baguette/agent-tools.test.cjs';
+import './baguette/idle-in-use.test.cjs';
+import './baguette/task-view.test.cjs';
+import './baguette/viewer-session.test.cjs';
+import './baguette/review-invariants.test.cjs';
+import './baguette/page-rpc.test.cjs';
+import './baguette/device-identity.test.cjs';
+
+import "./baguette/platform-screen.test.cjs";
+import './baguette/platform-stage.test.cjs';
+import './baguette/trackpad.test.cjs';
+import './baguette/spatial.test.cjs';
+import './baguette/native-spatial-protocol.test.cjs';
+import './baguette/agent-health.test.cjs';
+import './baguette/android.test.cjs';
+
+import './baguette/android-parity.test.cjs';

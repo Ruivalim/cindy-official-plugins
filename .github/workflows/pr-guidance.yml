@@ -1,8 +1,8 @@
 name: PR contributor guidance
 
 # Posts / updates ONE sticky bilingual comment telling contributors exactly what
-# is still missing (device verification checkbox, DCO sign-off, pending
-# maintainer approval of fork CI), instead of leaving a bare red X.
+# needs action (DCO sign-off or maintainer approval of fork CI). Runtime
+# evidence is assessed during review, not inferred from a checkbox or identity.
 #
 # SECURITY: pull_request_target and workflow_run both run in the base-repo
 # context so they can comment on fork PRs. They therefore MUST NEVER check out,
@@ -68,62 +68,14 @@ jobs:
             echo "Draft pull request; skipping."
             exit 0
           fi
-          body="$(jq -r '.body // ""' pull.json)"
           author="$(jq -r '.user.login' pull.json)"
-          association="$(jq -r '.author_association' pull.json)"
           HEAD_SHA="$(jq -r '.head.sha' pull.json)"
           if [[ ! "${HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
             echo "Unexpected pull request head SHA; skipping."
             exit 1
           fi
 
-          gh api "repos/${REPO}/pulls/${PR}/files" --paginate > files.json
-          gh api "repos/${REPO}/git/trees/main?recursive=1" > tree.json
-
-          # Match pr-verify's changed-plugin gate without a checkout:
-          # HEAD plugins ≈ main ghost.json dirs − deleted + added; shared
-          # packaged files (LICENSE/NOTICE/TRADEMARKS) select every HEAD plugin.
-          jq -r '.tree[].path // empty | select(test("^[^/]+/ghost\\.json$")) | split("/")[0]' tree.json \
-            | sort -u > main-plugins.txt
-          jq -r '.[] | select(.status == "removed" and (.filename | test("^[^/]+/ghost\\.json$"))) | .filename | split("/")[0]' files.json \
-            | sort -u > deleted-plugins.txt
-          jq -r '.[] | select(.status == "added" and (.filename | test("^[^/]+/ghost\\.json$"))) | .filename | split("/")[0]' files.json \
-            | sort -u > added-plugins.txt
-          comm -23 main-plugins.txt deleted-plugins.txt > kept-plugins.txt
-          sort -u kept-plugins.txt added-plugins.txt > head-plugins.txt
-
-          : > changed-files.txt
-          jq -r '.[].filename' files.json >> changed-files.txt
-          jq -r '.[] | select(.previous_filename != null) | .previous_filename' files.json >> changed-files.txt
-
-          needs_attestation=false
-          if [[ -s head-plugins.txt ]]; then
-            if grep -Eq '^(LICENSE|NOTICE|TRADEMARKS\.md|TRADEMARKS\.zh-CN\.md)$' changed-files.txt; then
-              needs_attestation=true
-            else
-              while IFS= read -r file; do
-                [[ -z "${file}" || "${file}" != */* ]] && continue
-                dir="${file%%/*}"
-                if grep -qxF "${dir}" head-plugins.txt; then
-                  needs_attestation=true
-                  break
-                fi
-              done < changed-files.txt
-            fi
-          fi
-
           todo=()
-          # Match pr-verify: maintainers skip the device-verification checkbox.
-          maintainer=false
-          case "${association}" in
-            OWNER|MEMBER|COLLABORATOR) maintainer=true ;;
-          esac
-          if [[ "${author,,}" == "zqchris" ]]; then
-            maintainer=true
-          fi
-          if [[ "${needs_attestation}" == "true" && "${maintainer}" != "true" ]] && ! grep -Eq '^- \[[xX]\] \*\*(Cindy device verification / Cindy 实机验证|Production Cindy verification / 生产版 Cindy 验证)\*\*' <<<"${body}"; then
-            todo+=("**Cindy device verification / Cindy 实机验证** is unchecked. Download the package from the *Verify pull request* run → Artifacts, install on a stable/Beta Cindy device, record version/channel/SHA-256 under *Verification*, then check the box. / 实机验证未勾选：从 *Verify pull request* 的 Artifacts 下载测试包，在正式稳定版/Beta 实机安装验证，在「验证」一节记录版本/渠道/SHA-256 后勾选。")
-          fi
 
           # Recompute DCO from the current PR commits this run. Merge/bot
           # commits are exempt. A remediation commit only covers a SHA when
@@ -202,7 +154,7 @@ jobs:
             sleep "${GUIDANCE_RETRY_SLEEP:-2}"
           done
           if [[ "${verify_status}" == "waiting" || "${verify_conclusion}" == "action_required" ]]; then
-            todo+=("CI (*Verify pull request*) is waiting for a maintainer to approve workflows for this fork PR — nothing for you to fix; a maintainer has been notified. / CI 正在等待维护者批准 fork PR 的工作流运行，你无需操作。")
+            todo+=("CI (*Verify pull request*) is waiting for a maintainer to approve workflows for this fork PR — nothing for you to fix; maintainer action is required. / CI 正在等待维护者批准 fork PR 的工作流运行，你无需操作。")
           fi
 
           {
@@ -210,7 +162,7 @@ jobs:
             echo "### 🤖 Contributor checklist / 贡献检查清单"
             echo
             if [[ ${#todo[@]} -eq 0 ]]; then
-              echo "✅ No missing items detected by this bot. Remaining checks (version bump, tests, packaging) are reported by **Verify pull request**; maintainers will review. / 本机器人未发现缺失项；版本号、测试、打包由 **Verify pull request** 报告，维护者会继续 review。"
+              echo "✅ No DCO or fork-run action detected. See **Verify pull request** for build results. Runtime evidence and applicable approvals are assessed in review; this comment is not merge approval. / 未发现 DCO 或 fork 运行待办；构建结果见 **Verify pull request**。运行证据和适用批准由 review 核对，本评论不代表可合并。"
             else
               echo "Hi @${author}, the following items are still open / 以下事项尚待处理："
               echo
@@ -219,7 +171,7 @@ jobs:
               echo "Version bump (\`ghost.json\` \`version\` > main), tests and packaging are checked by **Verify pull request**; open its failed step for the exact message. / 版本号 bump、测试与打包由 **Verify pull request** 检查，失败时点开对应步骤查看具体原因。"
             fi
             echo
-            echo "<sub>Updated automatically for ${HEAD_SHA:0:7} (author association: ${association}). See CONTRIBUTING.md / CONTRIBUTING.zh-CN.md. 本评论自动更新。</sub>"
+            echo "<sub>Updated automatically for ${HEAD_SHA:0:7}. See CONTRIBUTING.md / CONTRIBUTING.zh-CN.md. 本评论自动更新。</sub>"
           } > comment.md
 
           existing="$(gh api "repos/${REPO}/issues/${PR}/comments" --paginate \

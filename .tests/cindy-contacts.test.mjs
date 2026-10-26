@@ -116,7 +116,7 @@ function makeWorker(env) {
   };
 }
 
-function boot({ libDir, legacyDb = '', systemFixture = '', locale = '' }) {
+function boot({ libDir, legacyDb = '', systemFixture = '', locale = '', deviceSync = null, timers = null }) {
   const library = makeLibrary(libDir);
   const worker = makeWorker({
     CINDY_CONTACTS_LEGACY_DB_FOR_TEST: legacyDb,
@@ -136,6 +136,7 @@ function boot({ libDir, legacyDb = '', systemFixture = '', locale = '' }) {
   const oneshots = [];
   const tasks = { created: [], sent: [], access: [], tooHigh: new Set(), reply: '已经记下了。', runStatus: 'completed', quick: { ok: true, text: '她在推进 Pi 清单。' } };
   const cindy = {
+    ...(deviceSync ? { deviceSync } : {}),
     ...(locale ? { request: async (req) => (req.kind === 'app-context' ? { ok: true, context: { locale } } : { ok: false }) } : {}),
     tasks: {
       capabilities: async () => ({ operations: ['create', 'get', 'send', 'getRun', 'readMessages'] }),
@@ -195,8 +196,8 @@ function boot({ libDir, legacyDb = '', systemFixture = '', locale = '' }) {
     return t;
   };
   // 任务轮询用的计时器在测试里加速。
-  const fastTimeout = (fn, ms) => unrefTimeout(fn, Math.min(ms, 20));
-  const ctx = vm.createContext({ cindy, BroadcastChannel: Channel, crypto: globalThis.crypto, console, setTimeout: fastTimeout, clearTimeout });
+  const fastTimeout = (fn, ms) => unrefTimeout(fn, deviceSync && ms >= 2000 ? ms : Math.min(ms, 20));
+  const ctx = vm.createContext({ cindy, BroadcastChannel: Channel, crypto: globalThis.crypto, TextEncoder, console, setTimeout: timers?.setTimeout || fastTimeout, clearTimeout: timers?.clearTimeout || clearTimeout });
   vm.runInContext(mainSource, ctx, { filename: 'main.js' });
   let n = 0;
   const call = (tool, args = {}) =>
@@ -218,6 +219,7 @@ function boot({ libDir, legacyDb = '', systemFixture = '', locale = '' }) {
       ch.postMessage({ kind: 'req', id, method, params });
     });
   const close = () => {
+    vm.runInContext('clearTimeout(syncTimer); syncStatus.supported = false;', ctx);
     for (const c of channels) c.close();
     worker.close();
     library.close();
@@ -228,7 +230,7 @@ function boot({ libDir, legacyDb = '', systemFixture = '', locale = '' }) {
   tap.onmessage = (ev) => {
     if (ev.data && ev.data.kind === 'event') events.push(ev.data);
   };
-  return { call, view, close, library, schedules, oneshots, tasks, events, ctx };
+  return { call, view, close, library, schedules, oneshots, tasks, events, ctx, deliver: async msg => { for (const listener of listeners) await listener(msg); } };
 }
 
 /* ───────── 旧版通讯录夹具（与旧版内置 schema 同构，数据全部为占位） ───────── */
@@ -1024,5 +1026,358 @@ test('人物页对话：记得上文；删改档案交给任务直接改；快�
     assert.equal((await a.view('ask', { contactId: p.id, text: '那就帮我删了吧' })).result.kind, 'task');
   } finally {
     a.close();
+  }
+});
+
+
+// Sync uses real Library SQLite transactions in two isolated stores. These cases protect
+// offline edits/deletion, unique identities, idempotent transfer and atomic failure.
+test('device sync merges offline fields and deletions without resurrecting stale contacts', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'contacts-sync-'));
+  fs.mkdirSync(path.join(dir, 'a')); fs.mkdirSync(path.join(dir, 'b'));
+  let a = boot({ libDir: path.join(dir, 'a') }), b = boot({ libDir: path.join(dir, 'b') });
+  const snapshot = async app => JSON.parse((await vm.runInContext('serial(syncSnapshot)', app.ctx)).text);
+  const apply = async (app, state) => { app.ctx.remoteState = structuredClone(state); return vm.runInContext('serial(() => syncApply(remoteState))', app.ctx); };
+  t.after(() => { a.close(); b.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  const person = ok(await a.call('save', { name: 'Example Contact', summary: 'before', identities: [{ platform: 'email', value: 'person@example.test' }] }));
+  await b.call('stats');
+  await apply(b, await snapshot(a));
+  const base = await snapshot(a);
+  ok(await a.call('save', { id: person.id, summary: 'A edit' }));
+  ok(await b.call('save', { id: person.id, narrative: 'B edit', open_loops: [{ text: 'Reply to example' }] }));
+  const as = await snapshot(a), bs = await snapshot(b);
+  await apply(a, bs); await apply(b, as);
+  for (const app of [a, b]) {
+    const contact = ok(await app.call('get', { id: person.id }));
+    assert.equal(contact.summary, 'A edit'); assert.equal(contact.narrative, 'B edit');
+  }
+  assert.deepEqual(await snapshot(a), await snapshot(b));
+  ok(await a.call('delete', { id: person.id, confirm: true }));
+  ok(await b.call('save', { id: person.id, summary: 'stale offline edit' }));
+  const deleted = await snapshot(a);
+  await apply(b, deleted); await apply(a, base);
+  assert.equal(ok(await a.call('stats')).people, 0);
+  assert.equal(ok(await b.call('stats')).people, 0);
+  // Crash/restart keeps the tombstone and still captures later local edits.
+  b.close(); b = boot({ libDir: path.join(dir, 'b') }); await b.call('stats');
+  await apply(b, base);
+  assert.equal(ok(await b.call('stats')).people, 0);
+});
+
+// P1: irreversible deletion used to retain contact/merge payload in sync metadata.
+// Unit regression through real tool + SQLite: disabled sync, rollback, restart and stale replay.
+test('device sync erases deleted payload atomically and migrates full tombstones', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'contacts-sync-erase-'));
+  for (const name of ['a', 'b']) fs.mkdirSync(path.join(dir, name));
+  let a = boot({ libDir: path.join(dir, 'a') });
+  const b = boot({ libDir: path.join(dir, 'b') });
+  t.after(() => { a.close(); b.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  const snapshot = async app => JSON.parse((await vm.runInContext('serial(syncSnapshot)', app.ctx)).text);
+  const apply = async (app, state) => { app.ctx.remoteState = structuredClone(state); return vm.runInContext('serial(() => syncApply(remoteState))', app.ctx); };
+  const stored = app => app.library.db('contacts.sqlite').prepare("SELECT value FROM plugin_meta WHERE key = 'device_sync_state'").get()?.value;
+  const source = ok(await a.call('save', { name: 'Private Source', narrative: 'private biography', identities: [{ platform: 'email', value: 'private@example.test' }] }));
+  const target = ok(await a.call('save', { name: 'Private Target' }));
+  assert.equal(stored(a), undefined);
+  await b.call('stats');
+  const beforeMerge = await snapshot(a);
+  const merge = ok(await a.call('merge', { source_id: source.id, target_id: target.id }));
+  const merged = await snapshot(a);
+  assert.ok(JSON.stringify(merged).includes('private biography'), 'live merge retains its undo snapshot');
+  await apply(b, merged);
+  // Both apps have sync disabled/unsupported, but deleting must still clean existing state.
+  const beforeDelete = stored(a);
+  const db = a.library.db('contacts.sqlite');
+  db.exec("CREATE TRIGGER fail_delete BEFORE DELETE ON contacts BEGIN SELECT RAISE(ABORT, 'test rollback'); END");
+  const failed = await a.call('delete', { id: target.id, confirm: true });
+  assert.equal(failed.ok, false);
+  assert.equal(stored(a), beforeDelete, 'sync cleanup must roll back with the business delete');
+  assert.equal(ok(await a.call('stats')).people, 1);
+  db.exec('DROP TRIGGER fail_delete');
+  ok(await a.call('delete', { id: target.id, confirm: true }));
+  const assertErased = app => {
+    const text = stored(app);
+    for (const payload of ['Private Source', 'Private Target', 'private biography', 'private@example.test']) assert.ok(!text.includes(payload), payload);
+    const state = JSON.parse(text);
+    for (const rows of Object.values(state.tables)) for (const entry of Object.values(rows)) if (!entry.alive[2]) assert.deepEqual(entry.fields, {});
+  };
+  assertErased(a); // Before any subsequent sync/capture call.
+  const deleted = await snapshot(a);
+  assert.deepEqual(deleted.tables.contact_merges[JSON.stringify([merge.mergeId])].fields, {});
+  await apply(b, deleted); assertErased(b);
+  // Simulate a snapshot persisted by the old build, including full deleted merge snapshots.
+  const old = JSON.parse(stored(a));
+  for (const [table, rows] of Object.entries(old.tables)) for (const [key, entry] of Object.entries(rows)) {
+    if (!entry.alive[2]) entry.fields = structuredClone(merged.tables[table]?.[key]?.fields || {});
+  }
+  old.tables.contacts[JSON.stringify([source.id])].fields = beforeMerge.tables.contacts[JSON.stringify([source.id])].fields;
+  db.prepare("UPDATE plugin_meta SET value = ? WHERE key = 'device_sync_state'").run(JSON.stringify(old));
+  a.close(); a = boot({ libDir: path.join(dir, 'a') }); await a.call('stats');
+  await snapshot(a); assertErased(a);
+  await apply(a, beforeMerge); await apply(a, old); assertErased(a);
+  await apply(b, old); assertErased(b);
+  assert.equal(ok(await a.call('stats')).people, 0);
+  assert.equal(ok(await b.call('stats')).people, 0);
+});
+
+// P1: children created offline after the other device deletes the parent were hidden
+// from SQL but retained/transmitted in CRDT. Exercise both arrival orders and restart.
+test('device sync erases concurrent children of a deleted contact', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'contacts-sync-children-'));
+  for (const name of ['a', 'b']) fs.mkdirSync(path.join(dir, name));
+  let a = boot({ libDir: path.join(dir, 'a') });
+  const b = boot({ libDir: path.join(dir, 'b') });
+  t.after(() => { a.close(); b.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  const snapshot = async app => JSON.parse((await vm.runInContext('serial(syncSnapshot)', app.ctx)).text);
+  const apply = async (app, state) => { app.ctx.remoteState = structuredClone(state); return vm.runInContext('serial(() => syncApply(remoteState))', app.ctx); };
+  const state = app => JSON.parse(app.library.db('contacts.sqlite').prepare("SELECT value FROM plugin_meta WHERE key = 'device_sync_state'").get().value);
+  const person = ok(await a.call('save', { name: 'Deleted parent' }));
+  const kept = ok(await a.call('save', { name: 'Retained parent' }));
+  await b.call('stats'); await apply(b, await snapshot(a));
+  ok(await a.call('delete', { id: person.id, confirm: true }));
+  const deleted = await snapshot(a);
+  ok(await b.call('log_event', { contact_id: person.id, text: 'private-event', date: '2026-10-19' }));
+  ok(await b.call('record', { items: [{ contact_id: person.id, title: 'private-exchange', summary: 'private-summary', occurred_at: '2026-10-19T12:00:00Z', channel: 'mail', ref: 'private-ref' }] }));
+  ok(await b.call('save', { id: person.id, identities: [{ platform: 'email', value: 'private@example.test' }], open_loops: [{ text: 'private-loop' }], groups: ['Shared group'] }));
+  ok(await b.call('relate', { from_id: kept.id, to_id: person.id, relation: 'private-relation' }));
+  ok(await b.call('log_event', { contact_id: kept.id, text: 'Keep this event', date: '2026-10-19' }));
+  const offline = await snapshot(b);
+  const childTables = ['contact_events', 'contact_interactions', 'contact_loops', 'contact_identities', 'contact_group_members', 'contact_relations'];
+  const childKeys = childTables.flatMap(table => Object.entries(offline.tables[table]).filter(([, e]) => [e.fields.contact_id?.[2], e.fields.from_id?.[2], e.fields.to_id?.[2]].includes(person.id)).map(([key]) => [table, key]));
+  assert.equal(childKeys.length, 6);
+  const assertErased = async app => {
+    const saved = state(app), outgoing = await snapshot(app);
+    for (const value of [saved, outgoing]) {
+      assert.ok(!JSON.stringify(value).includes('private-'));
+      assert.ok(!JSON.stringify(value).includes('private@example.test'));
+      for (const [table, key] of childKeys) { const entry = value.tables[table][key]; assert.ok(entry.pruned, 'derived cleanup retains only ownership versions'); assert.ok(Object.values(entry.pruned).every(version => version.length === 2)); assert.deepEqual(entry.fields, {}); }
+    }
+    assert.equal(ok(await app.call('stats')).people, 1);
+    assert.equal(ok(await app.call('get', { id: kept.id })).events[0].text, 'Keep this event');
+  };
+  await apply(a, offline); await apply(b, deleted);
+  await assertErased(a); await assertErased(b);
+  assert.deepEqual(await snapshot(a), await snapshot(b));
+  // Old builds could persist hidden children without a business row. Snapshot creation
+  // must clean those too, rather than requiring a fresh inbound transfer.
+  const legacy = state(a);
+  for (const [table, key] of childKeys) legacy.tables[table][key] = offline.tables[table][key];
+  a.library.db('contacts.sqlite').prepare("UPDATE plugin_meta SET value = ? WHERE key = 'device_sync_state'").run(JSON.stringify(legacy));
+  a.close(); a = boot({ libDir: path.join(dir, 'a') }); await a.call('stats');
+  await snapshot(a); await assertErased(a);
+  await apply(a, offline); await apply(b, offline);
+  await assertErased(a); await assertErased(b);
+  assert.deepEqual(await snapshot(a), await snapshot(b));
+});
+
+test('device sync reconciles independently imported identities and keeps linked exchanges', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'contacts-sync-'));
+  for (const name of ['a', 'b', 'c']) fs.mkdirSync(path.join(dir, name));
+  let a = boot({ libDir: path.join(dir, 'a') }), b = boot({ libDir: path.join(dir, 'b') });
+  const third = boot({ libDir: path.join(dir, 'c') });
+  t.after(() => { a.close(); b.close(); third.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  const snapshot = async app => JSON.parse((await vm.runInContext('serial(syncSnapshot)', app.ctx)).text);
+  const apply = async (app, state) => { app.ctx.remoteState = structuredClone(state); return vm.runInContext('serial(() => syncApply(remoteState))', app.ctx); };
+  const ca = ok(await a.call('save', { name: 'Example', identities: [{ platform: 'email', value: 'same@example.test' }], groups: ['Work'] }));
+  const cb = ok(await b.call('save', { name: 'Example Alias', identities: [{ platform: 'email', value: 'same@example.test' }], groups: ['Work'] }));
+  for (const [app, c, ref] of [[a, ca, 'a'], [b, cb, 'b']]) ok(await app.call('record', { items: [{ contact_id: c.id, occurred_at: '2026-10-19T00:00:00Z', channel: 'mail', title: ref, ref }] }));
+  const sa = await snapshot(a), sb = await snapshot(b);
+  await apply(a, sb); await apply(b, sa);
+  const rows = ok(await a.call('list')).contacts;
+  assert.equal(rows.length, 1);
+  const c = ok(await a.call('get', { id: rows[0].id }));
+  assert.equal(c.interactions.length, 2); assert.deepEqual(c.groups.map(g => g.name), ['Work']);
+  await apply(a, sb);
+  assert.equal(ok(await a.call('get', { id: rows[0].id })).interactions.length, 2);
+  // Removing the shared identity must not split the reconciled profile or exchanges,
+  // including on a device that never saw the identity-based reconciliation.
+  await third.call('stats'); await apply(third, sb);
+  ok(await a.call('save', { id: c.id, remove_identity_ids: c.identities.map(i => i.id) }));
+  const removed = await snapshot(a);
+  a.close(); a = boot({ libDir: path.join(dir, 'a') }); await a.call('stats');
+  for (const app of [a, b, third]) {
+    await apply(app, removed); await apply(app, sb);
+    assert.equal(ok(await app.call('list')).contacts.length, 1);
+    const retained = ok(await app.call('get', { id: c.id }));
+    assert.equal(retained.identities.length, 0);
+    assert.equal(retained.interactions.length, 2);
+  }
+  // Deleting the merged projection tombstones every underlying identity, across restart.
+  ok(await a.call('delete', { id: rows[0].id, confirm: true }));
+  await apply(b, await snapshot(a));
+  assert.equal(ok(await b.call('list')).contacts.length, 0);
+  // A malformed remote batch cannot partially erase a valid local contact.
+  const local = ok(await b.call('save', { name: 'Keep me' }));
+  const bad = await snapshot(b);
+  const badRow = bad.tables.contacts[JSON.stringify([local.id])];
+  badRow.fields.kind = [badRow.fields.kind[0] + 100, badRow.fields.kind[1], 'invalid-kind'];
+  await assert.rejects(apply(b, bad));
+  assert.equal(ok(await b.call('get', { id: local.id })).name, 'Keep me');
+});
+
+
+test('device sync transfers multiple chunks through the plugin request/reply entry and rejects a partial update', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'contacts-wire-'));
+  for (const name of ['a', 'b']) fs.mkdirSync(path.join(dir, name));
+  const apps = {}, pending = new Map(); let chunks = 0, drop = false, online = true, incompatible = false;
+  const transport = name => async req => {
+    if (req.op === 'status') return { ok: true, peers: online ? [{ deviceId: name === 'a' ? 'b' : 'a' }] : [] };
+    if (req.op === 'reply') { pending.get(req.requestId)?.(req.data); return { ok: true }; }
+    if (req.op === 'request') {
+      if (incompatible) return { ok: true, data: { error: 'SYNC_VERSION' } };
+      if (req.data.kind === 'chunk') { chunks++; if (drop && req.data.index === 1) return { ok: false, errorCode: 'SYNC_RESULT_UNKNOWN' }; }
+      const id = crypto.randomUUID(); let reply;
+      pending.set(id, value => { reply = structuredClone(value); });
+      await apps[req.peer].deliver({ type: 'device-sync-request', requestId: id, peer: name, data: structuredClone(req.data) });
+      pending.delete(id); return { ok: true, data: reply };
+    }
+  };
+  apps.a = boot({ libDir: path.join(dir, 'a'), deviceSync: transport('a') });
+  apps.b = boot({ libDir: path.join(dir, 'b'), deviceSync: transport('b') });
+  t.after(() => { apps.a.close(); apps.b.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  await apps.a.call('stats'); await apps.b.call('stats');
+  for (const app of Object.values(apps)) await vm.runInContext("serial(() => batch([setMetaStmt('device_sync_enabled', true)]))", app.ctx);
+  for (let i = 0; i < 35; i++) ok(await apps.a.call('save', { name: 'Record ' + i, narrative: 'Example content '.repeat(50) }));
+  drop = true;
+  await vm.runInContext('syncNow()', apps.a.ctx);
+  assert.equal(ok(await apps.b.call('stats')).people, 0, 'no partial rows committed');
+  drop = false;
+  await vm.runInContext('syncNow()', apps.a.ctx);
+  assert.equal(ok(await apps.b.call('stats')).people, 35);
+  assert.ok(chunks > 2);
+  await vm.runInContext('syncNow()', apps.b.ctx);
+  await vm.runInContext('syncNow()', apps.a.ctx);
+  assert.equal(vm.runInContext('syncStatus.phase', apps.a.ctx), 'synced');
+  // Disabled receivers keep their local data and report the actual status.
+  await vm.runInContext("serial(() => batch([setMetaStmt('device_sync_enabled', false)]))", apps.b.ctx);
+  ok(await apps.a.call('save', { name: 'Not yet shared' }));
+  await vm.runInContext('syncNow()', apps.a.ctx);
+  assert.equal(ok(await apps.b.call('stats')).people, 35);
+  assert.equal(vm.runInContext('syncStatus.error.code', apps.a.ctx), 'SYNC_PEER_DISABLED');
+  incompatible = true;
+  await vm.runInContext('syncNow()', apps.a.ctx);
+  assert.equal(vm.runInContext('syncStatus.error.code', apps.a.ctx), 'SYNC_VERSION');
+  assert.match(vm.runInContext('syncStatus.error.message', apps.a.ctx), /更新两台电脑上的通讯录插件/);
+  online = false;
+  await vm.runInContext('syncNow()', apps.a.ctx);
+  assert.equal(vm.runInContext('syncStatus.phase', apps.a.ctx), 'waiting');
+});
+
+
+// P1: derived cleanup must not defeat a later legitimate reassignment. Exercise
+// both arrival orders through real SQLite/sync, then replay and explicit deletion.
+test('device sync preserves a legitimately moved event regardless of cleanup arrival order', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'contacts-sync-move-'));
+  const apps = [];
+  t.after(() => { for (const app of apps) app.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  const snapshot = async app => JSON.parse((await vm.runInContext('serial(syncSnapshot)', app.ctx)).text);
+  const apply = async (app, state) => { app.ctx.remoteState = structuredClone(state); return vm.runInContext('serial(() => syncApply(remoteState))', app.ctx); };
+  for (const early of [true, false]) {
+    for (const name of ['a', 'b']) fs.mkdirSync(path.join(dir, `${early}-${name}`));
+    const a = boot({ libDir: path.join(dir, `${early}-a`) }), b = boot({ libDir: path.join(dir, `${early}-b`) }); apps.push(a, b);
+    const x = ok(await a.call('save', { name: 'X' })), y = ok(await a.call('save', { name: 'Y' }));
+    await b.call('stats'); await apply(b, await snapshot(a));
+    ok(await a.call('delete', { id: x.id, confirm: true }));
+    ok(await b.call('log_event', { contact_id: x.id, text: 'Moved event payload', date: '2026-10-19' }));
+    const before = await snapshot(b);
+    let cleaned;
+    if (early) {
+      await apply(a, before); cleaned = await snapshot(a);
+      assert.ok(!JSON.stringify(cleaned).includes('Moved event payload'));
+    }
+    ok(await b.call('merge', { source_id: x.id, target_id: y.id }));
+    const moved = await snapshot(b);
+    await apply(a, moved);
+    if (cleaned) await apply(b, cleaned);
+    await apply(b, await snapshot(a)); await apply(a, before);
+    for (const app of [a, b]) {
+      const contact = ok(await app.call('get', { id: y.id }));
+      assert.deepEqual(contact.events.map(e => e.text), ['Moved event payload']);
+      assert.equal(ok(await app.call('stats')).people, 1);
+    }
+    assert.deepEqual(await snapshot(a), await snapshot(b));
+    ok(await a.call('delete', { id: y.id, confirm: true }));
+    await apply(b, await snapshot(a)); await apply(a, moved); await apply(b, moved);
+    for (const app of [a, b]) {
+      assert.equal(ok(await app.call('stats')).people, 0);
+      assert.ok(!JSON.stringify(await snapshot(app)).includes('Moved event payload'));
+    }
+  }
+});
+
+test('device sync retains an offline event added to a contact merged on another device', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'contacts-merge-sync-'));
+  for (const name of ['a', 'b']) fs.mkdirSync(path.join(dir, name));
+  const a = boot({ libDir: path.join(dir, 'a') }), b = boot({ libDir: path.join(dir, 'b') });
+  t.after(() => { a.close(); b.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  const snapshot = async app => JSON.parse((await vm.runInContext('serial(syncSnapshot)', app.ctx)).text);
+  const apply = async (app, state) => { app.ctx.remoteState = structuredClone(state); return vm.runInContext('serial(() => syncApply(remoteState))', app.ctx); };
+  const from = ok(await a.call('save', { name: 'Source' })), to = ok(await a.call('save', { name: 'Target' }));
+  await b.call('stats'); await apply(b, await snapshot(a));
+  ok(await a.call('merge', { source_id: from.id, target_id: to.id, reason: 'same person' }));
+  ok(await b.call('log_event', { contact_id: from.id, text: 'Offline event', date: '2026-10-19' }));
+  const sa = await snapshot(a), sb = await snapshot(b);
+  await apply(a, sb); await apply(b, sa);
+  for (const app of [a,b]) {
+    assert.equal(ok(await app.call('list')).contacts.length, 1);
+    assert.ok(ok(await app.call('get', { id: to.id })).events.some(e => e.text === 'Offline event'));
+  }
+});
+
+test('device sync stops opposing offline merges without deleting either local target', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'contacts-conflict-sync-'));
+  for (const name of ['a', 'b']) fs.mkdirSync(path.join(dir, name));
+  const a = boot({ libDir: path.join(dir, 'a') }), b = boot({ libDir: path.join(dir, 'b') });
+  t.after(() => { a.close(); b.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  const snapshot = async app => JSON.parse((await vm.runInContext('serial(syncSnapshot)', app.ctx)).text);
+  const apply = async (app, value) => { app.ctx.remoteState = structuredClone(value); return vm.runInContext('serial(() => syncApply(remoteState))', app.ctx); };
+  const one = ok(await a.call('save', { name: 'One' })), two = ok(await a.call('save', { name: 'Two' }));
+  await b.call('stats'); await apply(b, await snapshot(a));
+  const merged = ok(await a.call('merge', { source_id: one.id, target_id: two.id, reason: 'duplicate' }));
+  ok(await b.call('merge', { source_id: two.id, target_id: one.id, reason: 'duplicate' }));
+  const sa = await snapshot(a), sb = await snapshot(b);
+  await assert.rejects(apply(a, sb), { code: 'SYNC_MERGE_CONFLICT' });
+  await assert.rejects(apply(b, sa), { code: 'SYNC_MERGE_CONFLICT' });
+  assert.equal(ok(await a.call('list')).contacts[0].id, two.id);
+  assert.equal(ok(await b.call('list')).contacts[0].id, one.id);
+  ok(await a.view('unmerge', { id: merged.mergeId }));
+  await apply(b, await snapshot(a));
+  await apply(a, await snapshot(b));
+  assert.deepEqual(await snapshot(a), await snapshot(b));
+  assert.equal(ok(await a.call('list')).contacts.length, 1);
+});
+
+// Regression: default-off startup must not duplicate business data or poll Library.
+// Real settings/SQL entry points, controlled timers; no wall-clock polling wait.
+test('device sync stays idle until enabled and stops polling when disabled', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'contacts-sync-idle-'));
+  const apps = [];
+  t.after(() => { for (const app of apps) app.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  for (const supported of [false, true]) {
+    const libDir = path.join(dir, String(supported)); fs.mkdirSync(libDir);
+    const scheduled = new Map(); let next = 0, requests = 0;
+    const timers = {
+      setTimeout: (fn, ms) => { const id = ++next; scheduled.set(id, { fn, ms }); return id; },
+      clearTimeout: id => scheduled.delete(id),
+    };
+    const app = boot({ libDir, timers, deviceSync: supported ? async () => { requests++; return { ok: true, peers: [] }; } : null });
+    apps.push(app);
+    ok(await app.call('save', { name: 'Local only' }));
+    const state = () => app.library.db('contacts.sqlite').prepare("SELECT value FROM plugin_meta WHERE key = 'device_sync_state'").get();
+    const polls = () => [...scheduled.entries()].filter(([, timer]) => timer.ms < 60000);
+    assert.equal(state(), undefined);
+    assert.equal(polls().length, 0);
+    if (!supported) continue;
+    ok(await app.view('deviceSync', { enabled: true }));
+    const [id, timer] = polls()[0]; scheduled.delete(id); await timer.fn();
+    assert.ok(state()); assert.equal(requests, 1);
+    const pendingPoll = polls()[0][1];
+    assert.equal(pendingPoll.ms, 15000);
+    ok(await app.view('deviceSync', { enabled: false }));
+    assert.equal(polls().length, 0);
+    // An already-dispatched callback must not re-arm after disabling.
+    await pendingPoll.fn();
+    assert.equal(polls().length, 0); assert.equal(requests, 1);
+    ok(await app.call('save', { name: 'Still local' }));
+    assert.equal(polls().length, 0);
   }
 });

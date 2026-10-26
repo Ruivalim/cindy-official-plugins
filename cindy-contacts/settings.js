@@ -8,6 +8,15 @@
   const STRINGS = {
     'zh-CN': {
       loading: '正在读取设置…',
+      sync: '设备同步', syncEnable: '与我的其他电脑同步通讯录', syncNow: '立即同步',
+      syncHint: '在同一 Cindy 账号的电脑上分别开启，两台电脑同时在线时自动同步。离线修改会保留，重连后合并；删除也会同步。加密传输，不消耗 AI 额度。',
+      syncUnsupported: '当前 Cindy 尚不支持插件设备同步，本地通讯录可继续使用。',
+      syncState: { off: '未开启', waiting: '等待其他电脑连接', syncing: '正在同步…', synced: '已与在线电脑同步', error: '同步暂未完成', unsupported: '需要支持插件同步的 Cindy 版本' },
+      syncLast: (w) => `上次确认同步：${w}`,
+      syncConflict: '两台电脑上的联系人合并发生冲突。请先撤销其中一次合并，再重新同步；本机资料已保留。',
+      syncVersion: '同步版本不兼容。请更新两台电脑上的通讯录插件后重试；本机资料已保留。',
+      syncError: '同步暂未完成，本机资料已保留。请检查两台电脑的连接及同步设置后重试。',
+
       auto: '每天自动整理',
       autoBtn: '打开自动化页设置', autoAgain: '重新打开自动化页',
       autoHint: '会打开 Cindy 的自动化页，名称和要做的事已经填好；在那里选模型、确认频率后点保存。保存后每天整理一次，每次都会用到 AI 额度。',
@@ -28,6 +37,15 @@
     },
     en: {
       loading: 'Loading settings…',
+      sync: 'Device sync', syncEnable: 'Sync contacts with my other computers', syncNow: 'Sync now',
+      syncHint: 'Enable on each computer using the same Cindy account. Changes merge when both computers are online, including offline edits and deletions. Encrypted transfer; no AI quota used.',
+      syncUnsupported: 'This Cindy version does not support plugin device sync. Local contacts remain available.',
+      syncState: { off: 'Off', waiting: 'Waiting for another computer', syncing: 'Syncing…', synced: 'Synced with online computers', error: 'Sync not completed', unsupported: 'A Cindy version supporting plugin sync is required' },
+      syncLast: (w) => `Last confirmed sync: ${w}`,
+      syncConflict: 'Conflicting contact merges on two computers. Undo one merge, then sync again. Local data is preserved.',
+      syncVersion: 'Sync versions are incompatible. Update the Contacts plugin on both computers, then retry. Local data is preserved.',
+      syncError: 'Sync has not completed. Local data is preserved. Check both computers’ connections and sync settings, then retry.',
+
       auto: 'Daily tidy-up',
       autoBtn: 'Set up in Automations', autoAgain: 'Open Automations again',
       autoHint: 'Opens Cindy’s Automations page with the name and instructions filled in. Pick a model, check the schedule and save. It then tidies up once a day; each run uses AI quota.',
@@ -81,7 +99,7 @@
   channel.onmessage = (ev) => {
     const m = ev.data;
     if (!m || m.kind !== 'res' || !pending.has(m.id)) {
-      if (m && m.kind === 'event' && m.name === 'changed') load();
+      if (m && m.kind === 'event' && ['changed', 'sync'].includes(m.name)) load();
       return;
     }
     const p = pending.get(m.id);
@@ -120,6 +138,13 @@
       h += `<p class="hint">${esc(T.noSchedule)}</p>`;
     }
     h += '</div></div>';
+    const ds = m.deviceSync;
+    h += `<div class="item"><div class="label">${esc(T.sync)}</div><div class="body">`;
+    if (ds?.supported) {
+      h += `<div class="checks"><label><input type="checkbox" id="deviceSync"${ds.enabled ? ' checked' : ''}>${esc(T.syncEnable)}</label></div><p class="hint">${esc(T.syncHint)}</p>`;
+      if (ds.enabled) h += `<button class="pill" type="button" id="syncNow">${esc(T.syncNow)}</button><p class="status">${esc(T.syncState[ds.phase] || T.syncState.waiting)}</p>${ds.lastAt ? `<p class="hint">${esc(T.syncLast(when(ds.lastAt)))}</p>` : ''}${ds.error ? `<p class="err">${esc(ds.error.code === 'SYNC_MERGE_CONFLICT' ? T.syncConflict : ds.error.code === 'SYNC_VERSION' ? T.syncVersion : LOCALE === 'zh-CN' ? ds.error.message : T.syncError)}</p>` : ''}`;
+    } else h += `<p class="hint">${esc(T.syncUnsupported)}</p>`;
+    h += '</div></div>';
     h += `<div class="item"><div class="label">${esc(T.days)}</div><div class="body">${seg('initialDays', [7, 14, 30], T.daysOpt)}<p class="hint">${esc(T.daysHint)}</p></div></div>`;
     h += `<div class="item"><div class="label">${esc(T.sources)}</div><div class="body"><div class="checks">`;
     for (const k of ['mail', 'calendar', 'im', 'cindy', 'github']) {
@@ -156,6 +181,11 @@
   document.addEventListener('click', async (e) => {
     const b = e.target.closest('button');
     if (!b) return;
+    if (b.id === 'syncNow') {
+      b.disabled = true;
+      try { await rpc('deviceSync', {}); await load(); } catch (err) { S.error = T.failed + err.message; render(); }
+      return;
+    }
     if (b.id === 'openAuto') {
       b.disabled = true;
       try {
@@ -175,6 +205,9 @@
   document.addEventListener('change', (e) => {
     const t = e.target;
     if (t.dataset && t.dataset.source) save({ sources: { [t.dataset.source]: t.checked } });
+    if (t.id === 'deviceSync') {
+      rpc('deviceSync', { enabled: t.checked }).then(load).catch(err => { S.error = T.failed + err.message; render(); });
+    }
     if (t.id === 'macAutoSync') save({ macAutoSync: t.checked });
   });
 

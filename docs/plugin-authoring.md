@@ -10,6 +10,10 @@ Forge and a particular harness are not prerequisites. See the
 Manifest, and package format, and [Contributing](../CONTRIBUTING.md) for official
 publishing requirements. This document adds migration mappings and common runtime calls.
 
+Mail plugins should reuse the [shared compose workflow](mail-compose.md) for
+editable draft cards, autosave, unified sends and task continuation. Keep
+provider account, MIME and transport differences in adapters.
+
 ## Capability declarations are not a client support gate
 
 Plugin development must not wait for Cindy client capability releases. Within a
@@ -84,7 +88,7 @@ existing capabilities, not a requirement to add capabilities the plugin never ha
 | `session-context` | `sessionContext: true` | Host-injected trusted session context |
 | `pick` | `pick: true` | User directory picker |
 | `workspace` | `workspace: true` | Workspace session entry |
-| `ios-simulator` | `iosSimulator: true` | Host embedded simulator entry; retain accompanying Skill and other declarations |
+| `ios-simulator` | `iosSimulator: true` | Retired Host embedded simulator; current Hosts reject new installs that declare it. Kept only for reading legacy manifests |
 
 Boolean capabilities must be literal `true` when present; omit unused ones rather
 than setting `false` or `null`. Keep independent fields such as `manual`, `setup`,
@@ -347,13 +351,22 @@ proof of account connection.
    ZIP a working directory: a local credential file can enter the archive. A harness
    packaging uncommitted work must use an explicit reviewed file list. Inspect
    every final archive for expected files, no outer plugin directory, and no
-   credentials; device verification must cover the submitted contents.
-4. Install the final package in a stable production or Beta Cindy build meeting its real
-   minimum, exercise core tools and failures, and check retained capabilities.
-   The Agent does this when authorized operating tools are available; otherwise
-   explicitly hand off the unverified steps. Never falsely check the author's
-   verification box. CI reads the PR attestation; it does not collect device
-   evidence, prove the minimum version correct, or compare migration capabilities.
+   credentials; verification evidence must apply to the submitted contents.
+4. Provide real runtime evidence for affected paths under the
+   [review contract](../.greptile/rules.md#运行验证与证据复用). For installation,
+   migration or tool behavior changes, exercise the relevant package in a Cindy
+   environment meeting its actual requirements, including failure paths and
+   retained capabilities. Record the tested package/source, Cindy version/channel,
+   scenarios, results and gaps. Identify development builds truthfully; they do
+   not establish compatibility with released clients without applicable evidence.
+   Reuse prior evidence only with an explanation of why the full diff from the
+   tested version to the current submission leaves those paths unaffected; an
+   older package's test is not a claim that the latest package was installed.
+   Authors or maintainers may supply evidence. The Agent performs authorized
+   operations when available; otherwise explicitly hand off unverified steps.
+   No fixed verification checkbox is required or read by CI. Green CI does not
+   collect runtime evidence, prove the minimum version correct, or compare
+   migration capabilities.
 
 ## Interpreting documentation and comments
 
@@ -367,3 +380,22 @@ do not authorize reinstating installation permission gates. Use this reference,
 Contributing, and the target Host's actual interfaces for current behavior.
 Keep both languages synchronized; correcting wording does not require changing
 plugin packages, Host behavior, or CI restrictions.
+
+## Same-account device synchronization
+
+The optional `deviceSync: true` capability uses `cindy.deviceSync` on supporting
+Hosts. Probe the function before use; older Hosts keep local functionality.
+`status` lists online desktops, `request` sends bounded JSON to the same plugin
+(namespace + id), and the peer receives a `device-sync-request` message and calls
+`reply` only after committing its data. Each envelope is at most 64 KiB; timeout
+returns `SYNC_RESULT_UNKNOWN`, so only idempotent operations may be retried after
+reconciliation. The Host encrypts transport and binds account, peer, installation
+revision and plugin identity. The plugin owns persistence, conflict resolution
+and tombstones. Use `launch: resident` when automatic reception is required.
+Both computers need a Host implementing this API; this declaration alone does
+not add support to released clients. Mobile remains a controller of a desktop.
+
+Contacts uses this optional capability with an explicit per-device setting.
+Local data remains usable on its existing minimum Cindy version. Synchronization
+needs two online same-account desktops with the new Host API, and the exact
+Host/plugin combination still requires stable/Beta two-device verification.

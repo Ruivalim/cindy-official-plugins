@@ -26,16 +26,15 @@ test('every printable US-layout ASCII character maps to its physical key, shifte
  assert.deepEqual(textChords('Hi!').map(x=>Array.from(x)),[[11,2],[12,0],[30,2]]);
 });
 test('non-typeable text is refused instead of being mistyped',()=>{
- for(const text of ['中文','é','🙂','a\tb','a\u0000b','',undefined,5,'ok\u007f'])assert.equal(typeable(text),false,String(text));
- assert.throws(()=>textChords('café'));
+ for(const text of ['中文','é','🙂','a\u0000b','ok\u007f'])assert.equal(typeable(text),false,String(text));
+ for(const text of ['café','a\tb','',undefined,5])assert.throws(()=>textChords(text),String(text));
  assert.throws(()=>chord('Nope'));
 });
 
 function harness(){
  const calls=[];let typedAction;
- const context={module:{exports:{}},__dirname:path.resolve('baguette-simulator/node'),process:{platform:'darwin',arch:'arm64'},require(name){
+ const context={module:{exports:{}},setTimeout,clearTimeout,__dirname:path.resolve('baguette-simulator/node'),process:{platform:'darwin',arch:'arm64',env:{}},require(name){
   if(name==='./viewer.cjs')return {openViewer:async(_b,_s,_c,_u,action)=>{typedAction=action;return {}}};
-  if(name==='./keys.cjs')return require('../../baguette-simulator/node/keys.cjs');
   if(name==='node:fs/promises')return {mkdir:async()=>{}};
   if(name==='node:child_process')return {execFile(file,args,options,callback){
    const call={file,args,options};calls.push(call);let output='';
@@ -45,7 +44,7 @@ function harness(){
    queueMicrotask(()=>callback(null,output,''));
    return {stdin:{on(){},end(){}}};
   }};
-  return require(name);
+  return require(name.startsWith('./')?path.resolve('baguette-simulator/node',name):name);
  }};
  vm.runInNewContext(fs.readFileSync(path.resolve('baguette-simulator/node/core.cjs'),'utf8'),context);
  return {calls,async action(p){if(!typedAction)await context.module.exports.dispatch('open_viewer',{udid});return typedAction({udid,...p});}};

@@ -41,6 +41,7 @@
 | <img src="./cindy-github/assets/icon.png" width="22" alt=""> | GitHub | [`cindy-github`](./cindy-github) | GitHub issue / PR / code review / Actions / release 全流程操作 |
 | <img src="./cindy-gitlab/assets/icon.png" width="22" alt=""> | GitLab | [`cindy-gitlab`](./cindy-gitlab) | GitLab（gitlab.com 及自建实例）issue / MR / 仓库操作 |
 | <img src="./cindy-mermaid/assets/icon.jpg" width="22" alt=""> | Mermaid | [`cindy-mermaid`](./cindy-mermaid) | Mermaid 图表源码规范化与常见语法修复 |
+| <img src="./cindy-ping/assets/icon.png" width="22" alt=""> | Cindy Ping | [`cindy-ping`](./cindy-ping) | 可配置桌面表情轮盘，向项目、会话或伙伴投递；仅 macOS 14+；手动安装 |
 | <img src="./cindy-notion/assets/icon.png" width="22" alt=""> | Notion | [`cindy-notion`](./cindy-notion) | Notion 页面、数据库与知识库读写 |
 | <img src="./cindy-web-search/assets/icon.png" width="22" alt=""> | Web Search | [`cindy-web-search`](./cindy-web-search) | 公网搜索（默认 Cindy AI，可选用户自备 Brave / Tavily / DeepSeek Key） |
 | <img src="./world-bank-open-data/assets/icon.png" width="22" alt=""> | 世界银行公开数据 | [`world-bank-open-data`](./world-bank-open-data) | 无需 API Key，查询全球国家、经济、社会与发展指标；定向灰度 |
@@ -54,7 +55,7 @@
 | <img src="./qq-mail/assets/icon.png" width="22" alt=""> | QQ 邮箱 | [`qq-mail`](./qq-mail) | Cindy 安全保存授权码，按需通过 IMAP/SMTP 搜索、阅读、整理和发送 |
 | <img src="./yahoo-mail/assets/icon.png" width="22" alt=""> | Yahoo Mail | [`yahoo-mail`](./yahoo-mail) | Cindy 安全保存应用密码，按需通过 IMAP/SMTP 管理和发送邮件 |
 | <img src="./taptap-maker/assets/icon.png" width="22" alt=""> | TapTap Maker | [`taptap-maker`](./taptap-maker) | 账号连接、项目同步、构建与官方动态工具 |
-| <img src="./baguette-simulator/assets/icon.png" width="22" alt=""> | Baguette | [`baguette-simulator`](./baguette-simulator) | 显式选用 Baguette 的独立 iOS 模拟器、侧边栏恢复与按键释放；定向发布 |
+| <img src="./baguette-simulator/assets/icon.png" width="22" alt=""> | 设备模拟器 | [`baguette-simulator`](./baguette-simulator) | Cindy 官方设备模拟器（基于开源 Baguette），独立设备、侧边栏实时画面与操作；替代已下线的内置模拟器，市场安装 |
 | <img src="./ios-simulator/assets/icon.png" width="22" alt=""> | iOS 模拟器 | [`ios-simulator`](./ios-simulator) | Cindy 主机托管的内嵌工作流；主机授权回退时将原始任务和精确设备交给指定外部工作流；定向灰度 |
 | <img src="./x-manager/assets/icon.png" width="22" alt=""> | X Manager | [`x-manager`](./x-manager) | 在 X（Twitter）上搜舆情、发帖——xAI x_search，Grok 订阅 / API key 双通道降级，发帖走 X 官方 API v2；目前定向灰度中 |
 
@@ -67,10 +68,17 @@
 1. **想法**——先对照上表确认不重叠。官方插件避免场景重复；同一服务商的产品
    家族（Gmail / Drive / Calendar）、同一协议的不同服务商（163 / iCloud / QQ
    邮箱）属合理共存，但「又一个通用网页搜索」不是。
-2. **对齐**——开一个
-   [新插件提案 issue](https://github.com/makecindy/cindy-official-plugins/issues/new?template=new_plugin_proposal.yml)，
-   说明场景、边界和所需能力（网络域名、凭证类型、是否需要 Node Runtime）。
-   **拿到维护者确认后再动手写代码**——避免做出重叠或不会被接受的东西。
+2. **对照标准**——新插件和 audience 按
+   [插件准入与受众标准](.greptile/rules.md#插件准入与受众标准)直接判定。
+   符合标准不另要维护者批准，也不必先开提案。
+   [提案 issue](https://github.com/makecindy/cindy-official-plugins/issues/new?template=new_plugin_proposal.yml)
+   或 Draft PR 可以写下场景、边界和所需能力（网络域名、凭证类型、是否需要 Node
+   Runtime），但不是批准门禁。`all` 只给多数用户受益、开箱即用且无需自备第三方
+   密钥或账号、不绑定某一个人或某一个团队的流程、质量稳定的插件。热度或投稿数量
+   本身不能作为 `all` 的理由。有用但小众，或需要用户自己的密钥或账号，按自选接受
+   （`{ "emails": [] }`，用户在市场自行选择）。非常个人的插件、纯演示（改放
+   `docs/`），以及 Agent 不装插件就能直接完成的事，不予接受。`author` 必须是
+   真实作者。
 3. **开发**——在任意 coding Agent 或开发环境中按照
    [工具无关的快速路径](#工具无关的快速路径)操作。文件格式、运行时消息、校验命令和
    打包格式都由本仓库说明，不要求 Cindy 专用的插件制作工具。
@@ -82,13 +90,24 @@
    provisioning 门禁，并对真实包做 dry-run；
    自动 review 按
    [`.greptile/rules.md`](./.greptile/rules.md) 的完整规则执行；维护者按同一套
-   [审查标准](#审查标准)人工审查。请求 review 前先过一遍下方自查清单。
+   [审查标准](#审查标准)核对真实风险与验证证据。必要检查、有效 review 与必要验收
+   满足后，已有授权的合并程序可执行，无需为普通维护再请求确认。符合标准的准入
+   不另等决定。插件用到或依赖的 Cindy 本体授权有变化或未就绪时仍先不合，见
+   [审查标准](#审查标准)。
 6. **提交并上架**——合入 `main` 后，变更包会提交到海外 Plugin Platform，审核通过
    后才会下发给兼容客户端；拒绝不会影响此前已批准的版本。国内推包逻辑保持移除。
 
 ## 审查标准
 
-每个官方插件都会被真实用户安装，安全与体验风险由用户承担，因此审查从严。
+每个官方插件都会被真实用户安装，审查按实际行为、影响与证据判断。普通打包修复、
+依赖维护、可追溯生成物与静态图片不因路径转人工。符合标准的准入与受众不另要
+维护者批准；与标准不符是具体审查意见。实际扩大权限、凭证或发布信任，未声明的
+网络访问，以及重命名或删除已发布插件，仍需维护者的明确决定。审插件时，除插件
+自己申请的 scope，还要核对它用到或依赖的 Cindy 本体（宿主）授权：依赖哪项、平台
+是否已批准、宿主是否已发布。本体授权有变化或未就绪先不合，并把需要申请的范围
+一起规划，用不上的不要申请。其它符合现有标准的改动仍直接判定。细则见
+[第三方平台授权](.greptile/rules.md#第三方平台授权)。
+代码缺陷、验收待办、边界决定与平台批准分别列出。
 四条硬原则：
 
 1. **默认纯沙箱，授权跟随执行者**：普通插件运行在 Cindy 的隔离沙箱中。插件工具
@@ -122,11 +141,12 @@
 - [ ] 每个 tool 的 `description` 与实际行为一致——能力、限制、返回值、副作用
 - [ ] 面向用户的报错可行动；无裸状态码、无英文堆栈
 - [ ] 四语言 locale 齐全；`node --test .tests/localization.test.mjs` 通过
-- [ ] 每个改动插件都已在运行正式稳定版或 Beta 版 Cindy 的实际设备上安装真实 `.cindy` 包并
-      验证核心功能，且已勾选 PR 验证项；插件声明 `minCindyVersion` 时，验证所用
-      Cindy 版本不低于该最低版本
-- [ ] `ghost.json.version` 已 bump；`provisioning.json` 有对应条目且 PR 描述里
-      写明 audience 决策
+- [ ] 已提供受影响场景的真实运行证据，或链接仍适用的已有记录并说明完整差异；
+      环境、版本、结果与未测项如实标明。无需固定的 PR 验收勾选项，CI 绿灯不代表实测
+- [ ] `ghost.json.version` 已 bump；`provisioning.json` 的 audience 符合标准
+      （`all`，或自选 `{ "emails": [] }`）；`author` 是真实作者
+- [ ] 插件自己申请的 scope 无变化，也不依赖有变化或未就绪的 Cindy 本体授权；
+      否则说明已列出这些 scope，以及每项本体授权的平台批准和宿主发布状态
 - [ ] diff 中无凭证、真实用户数据、`node_modules` 或无关生成文件；fixture 用
       `example.test` 类占位域名
 - [ ] 内嵌依赖有增减或升级的已同步 `THIRD-PARTY-LICENSES.txt`
@@ -291,7 +311,7 @@ node scripts/validate-plugin-manifest.mjs ./my-plugin
 不能在外层再套一层 `my-plugin/`。本地开发可用下方 Forge 入口或经审查的显式文件清单
 打包。提交源码后，PR CI 会提供可下载的验证包；本地复现仓库构建是可选路径：
 
-小二进制（每个插件所有平台合计不超过 10 MiB）可以直接入仓，沿用许可证、人工审查和总包大小规则。
+小二进制（每个插件所有平台合计不超过 10 MiB）可以直接入仓，沿用许可证、来源审查和总包大小规则。
 大依赖按需使用[打包时依赖声明机制](docs/binary-dependencies.zh-CN.md)，不提交到 Git。
 Python 3.11+ 仅是依赖收集器的构建环境要求，本地复现该步骤才需安装；
 不要求作者为了开发插件配置 Python。旧插件保持原工具链。
@@ -317,9 +337,9 @@ unzip -Z1 /tmp/my-plugin-1.0.0.cindy
 
 提交到官方仓库前，还必须补充 `provisioning.json` 条目，并在 Manifest 中声明恰好
 `zh-CN`、`en`、`ja`、`ko` 四份 locale 文件，完整覆盖插件文案和全部工具描述；随后
-按 [`CONTRIBUTING.zh-CN.md`](./CONTRIBUTING.zh-CN.md) 自查。可以先开 PR 取得验证包，
-但合并前必须在符合最低版本要求的 Cindy 正式稳定版或 Beta 版实机上安装真实
-`.cindy` 包完成验证，再勾选实机验证项。
+按 [`CONTRIBUTING.zh-CN.md`](./CONTRIBUTING.zh-CN.md) 自查。可以先开 PR 取得验证包；
+合并前按实际影响提供运行与兼容性证据，作者或维护者均可验证。未受影响路径可
+沿用有效记录，不要求每次改措辞都重新安装整个插件。
 
 `taptap-maker/vendor/taptap-maker/` 固定随插件分发官方
 `@taptap/maker@0.0.37`。升级时应整体替换 npm 包发布内容并同步更新插件版本，

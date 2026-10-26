@@ -1,10 +1,24 @@
 'use strict';
 const text = {
-  en:{title:'Your simulators',intro:'See what is running. Stop it whenever you want.',refresh:'Refresh',allow:'Allow simulators to run',allowHint:'Turning this off shuts down all Baguette devices and blocks AI from starting them. Turning it on does not start a device.',idle:'Automatically stop when idle',m15:'After 15 minutes',m30:'After 30 minutes',m60:'After 1 hour',manual:'Manual stop only',idleHint:'Device input and AI operations renew the timer. Watching the screen or refreshing status does not. Shutdown ends apps and their connections; data is kept.',devices:'Devices on this Mac',stopAll:'Stop all devices',stopHint:'Use these controls before disabling the plugin in Cindy. A forced plugin exit may leave devices running. Closing a preview only closes the picture.',viewerTitle:'What opening the viewer enables',viewerHint:'The viewer can control input, rotate, shake, install apps or files, change location, motion, status bar and network conditions, and capture screenshots or recordings. Camera and location access require your interaction. Map search contacts OpenStreetMap. Copy/paste replaces the respective clipboard. Switching shuts down the source, starts the target, and may automatically install the last app bundle, replacing the same bundleId app on the target. Source app data and credentials are not copied. Changes and captures happen when you use those controls.',checking:'Checking devices…',paused:'Simulator operation is off. AI cannot start devices.',running:'Running devices: ',stopped:'All devices are shut down.',empty:'No Baguette devices yet. Ask Cindy to set up a simulator when needed.',boot:'Start device',shutdown:'Shut down',viewer:'Open controls',booted:'Running',off:'Shut down',busyState:'Changing state',working:'Working…',saved:'Saved. Device data is preserved.',failed:'The operation could not be confirmed. Refresh to check the actual device state.',busy:'Another device operation is in progress. Wait for it to finish, then try again.',disabled:'Simulator operation is off. Turn on the switch above first.',timeout:'No response from Baguette. Reopen the plugin page and check device status.',partial:'Operation is disabled, but some devices could not be confirmed shut down. Refresh and use Shut down for any remaining device.',settingsUnreadable:'Settings cannot be read. Starting and settings changes are blocked; you can still shut down devices. Restore the settings file, then refresh.',readFailed:'Could not read device status. Refresh to try again.',shutdownDone:'Device shut down. Apps and their connections have stopped.',previewNeedsSession:'Cindy needs an open conversation to display the viewer. Select a conversation and ask Baguette to open the view. Shutdown remains available here.',previewFailed:'The controls could not be opened. Refresh and try Open controls again.'},
-  'zh-CN':{title:'我的模拟器',intro:'看见运行状态，随时自己关闭。',refresh:'刷新',allow:'允许运行模拟器',allowHint:'关闭后停止全部 Baguette 设备，并阻止 AI 再启动。重新打开开关不会自动开机。',idle:'闲置后自动关闭',m15:'15 分钟后',m30:'30 分钟后',m60:'1 小时后',manual:'仅手动关闭',idleHint:'操作设备或 AI 调用会重新计时；仅观看画面、刷新状态不会。关闭会结束 App 和连接，保留数据。',devices:'这台 Mac 上的设备',stopAll:'关闭全部设备',stopHint:'在 Cindy 中停用插件前，请先用这里的开关关闭设备。强制退出插件不保证设备已关机。关闭预览只关闭画面。',viewerTitle:'打开控制页后可做什么',viewerHint:'控制页可操作输入、旋转、摇动、安装 App 或文件，修改位置、运动、状态栏和网络条件，以及截图、录屏。摄像头和本机定位由你主动操作授权。地图搜索会访问 OpenStreetMap；复制粘贴会替换对应剪贴板。切换会关闭原设备、启动目标设备，并可能自动安装最近的应用包，替换目标上相同 bundleId 的 App；不会复制源 App 数据或凭证。设备变更和采集只在使用相应控件时执行。',checking:'正在检查设备…',paused:'运行许可已关闭，AI 无法启动设备。',running:'正在运行的设备：',stopped:'全部设备已关闭。',empty:'还没有 Baguette 设备，需要时可以让 Cindy 帮你准备。',boot:'启动设备',shutdown:'关闭设备',viewer:'打开控制页',booted:'运行中',off:'已关闭',busyState:'状态切换中',working:'正在处理…',saved:'已保存，设备数据保留。',failed:'尚未确认操作结果，请刷新查看设备实际状态。',busy:'设备正在执行其他操作，请等操作完成后再试。',disabled:'运行许可已关闭，请先打开上方开关。',timeout:'Baguette 未响应，请重新打开插件页并核对设备状态。',partial:'运行许可已关闭，但部分设备尚未确认关机。请刷新，并关闭仍在运行的设备。',settingsUnreadable:'无法读取设置，已禁止启动和修改设置；仍可关闭设备。请恢复设置文件后刷新。',readFailed:'未能读取设备状态，请点击刷新重试。',shutdownDone:'设备已关闭，其中的 App 和连接已停止。',previewNeedsSession:'Cindy 需要一个已打开的会话来显示画面。请进入会话，让 Baguette 打开画面；这里仍可直接关闭设备。',previewFailed:'控制页未能打开，请刷新后再点击“打开控制页”。'}
+  en:{allow:'Allow simulators to run',allowHint:'Off shuts down every device and keeps AI from starting one.',idle:'Stop automatically when idle',idleHint:'Not stopped while a viewer is open or a tool or script is using the device. Apps quit; data is kept.',m15:'After 15 minutes',m30:'After 30 minutes',m60:'After 1 hour',manual:'Only manually',
+    devices:'Devices',add:'Add device',stopAll:'Stop all',refresh:'Refresh',boot:'Start',shutdown:'Stop',viewer:'Open',booted:'Running',off:'Off',busyState:'Working…',
+    emptyTitle:'No simulators yet',emptyBody:'Create a device to run iOS and Android apps here.',createFirst:'Create a device',creating:'Creating…',created:'Device created. Start it when you need it.',
+    orCustom:'Need another model? Ask Cindy to create it.',needXcode:'Needs full Xcode with an iOS runtime installed before a device can be created.',
+    moreTitle:'What the live view can do',moreViewer:'Both platforms share touch, keyboard, rotation, shake and screenshots. Android adds Back. iOS advanced tools also offer location, motion, remote notification injection (may trigger app behavior), network, camera and recording; map search contacts OpenStreetMap. Use tools for Android state and logs. Copy/paste replaces the clipboard. Switching only selects a device. Devices and Apps keep running; nothing starts or transfers automatically. Start a stopped device explicitly.',
+    moreStop:'Stop devices here before disabling the plugin. Closing the live view does not stop a device.',
+    checking:'Checking devices…',paused:'Starting simulators is disabled. AI cannot start a device.',running:(n)=>`${n} running`,stopped:'All devices are off.',working:'Working…',saved:'Saved.',failed:'Could not confirm. Refresh to see the actual state.',busy:'Another operation is running. Try again in a moment.',disabled:'Simulators are off. Turn them on above first.',timeout:'No response from the simulator service. Reopen this page.',partial:'Shutdown is not fully confirmed. Refresh the device status before continuing.',settingsUnreadable:'Settings cannot be read. Starting is blocked; stopping still works. Restore the settings file and refresh.',readFailed:'Could not read device status.',shutdownDone:'Device stopped.',previewNeedsSession:'Open a conversation first, then open the live view from there. Stopping still works here.',previewFailed:'The live view did not open. Refresh and try again.'},
+  'zh-CN':{allow:'允许运行模拟器',allowHint:'关闭后会关掉所有设备，AI 也不能再启动。',idle:'闲置后自动关闭',idleHint:'画面开着、或有工具和脚本在操作时不会关闭。关闭时 App 退出，数据保留。',m15:'15 分钟后',m30:'30 分钟后',m60:'1 小时后',manual:'仅手动',
+    devices:'设备',add:'添加设备',stopAll:'全部关闭',refresh:'刷新',boot:'启动',shutdown:'关闭',viewer:'打开画面',booted:'运行中',off:'已关闭',busyState:'处理中…',
+    emptyTitle:'还没有模拟器',emptyBody:'创建一台，就能在这里运行和测试 iOS 和安卓 App。',createFirst:'创建设备',creating:'正在创建…',created:'已创建。需要时再启动它。',
+    orCustom:'想要别的机型？直接让 Cindy 创建。',needXcode:'需要先安装完整的 Xcode 和一个 iOS 运行时，才能创建设备。',
+    moreTitle:'画面里可以做什么',moreViewer:'两端共用触摸、输入、旋转、摇一摇和截图，安卓另有返回。iOS 高级面板还提供定位、运动、注入远程通知（可能触发 App 行为）、网络、摄像头和录屏，地图访问 OpenStreetMap；安卓状态和日志使用工具。复制粘贴会替换剪贴板。切换只选择设备，原设备与 App 继续运行，不自动启动或搬运 App；已关闭的设备需要手动启动。',
+    moreStop:'停用插件前先在这里关闭设备。关闭画面不会关闭设备。',
+    checking:'正在检查设备…',paused:'已禁止启动模拟器，AI 无法启动设备。',running:(n)=>`${n} 台运行中`,stopped:'所有设备已关闭。',working:'正在处理…',saved:'已保存。',failed:'没能确认结果，请刷新查看实际状态。',busy:'有其他操作正在进行，稍后再试。',disabled:'模拟器已关闭，请先打开上方开关。',timeout:'模拟器服务没有响应，请重新打开本页。',partial:'关机尚未全部确认，请刷新设备状态后再继续。',settingsUnreadable:'无法读取设置：暂时不能启动，仍可关闭设备。恢复设置文件后刷新。',readFailed:'没能读取设备状态。',shutdownDone:'设备已关闭。',previewNeedsSession:'先打开一个对话，再从对话里打开画面；这里仍可关闭设备。',previewFailed:'画面没有打开，请刷新后重试。'}
 };
-let T=text.en,state=null,busy=false,reading=false,readFailed=false;
+const M=globalThis.CindySimModel;
+let T=text.en,state=null,busy=false,reading=false,readFailed=false,catalog=null;
 const $=id=>document.getElementById(id), channel=new BroadcastChannel('baguette-settings'), pending=new Map();
+const GLYPH={iphone:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="20" x="5" y="2" rx="2.5"/><path d="M12 18h.01"/></svg>',ipad:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="20" x="4" y="2" rx="2"/><path d="M12 18h.01"/></svg>',empty:'<svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="20" x="5" y="2" rx="2.5"/><path d="M12 18h.01"/></svg>'};
 function message(value,error=false){$('message').textContent=value;$('message').classList.toggle('error',error);}
 async function rpc(action,params={}){
   // Logic pages start on demand; opening settings alone does not start one.
@@ -12,58 +26,76 @@ async function rpc(action,params={}){
   if(!wake.ok)throw Error(T.timeout);
   const id=crypto.randomUUID();
   return new Promise((resolve,reject)=>{
-    const send=()=>channel.postMessage({type:'request',id,action,...params});
-    // Only read-only status may retry while the listener becomes ready.
-    // Never replay a device mutation after an uncertain response.
-    const retry=action==='status'?setInterval(send,500):null;
-    const timer=setTimeout(()=>{clearInterval(retry);pending.delete(id);reject(Error(T.timeout));},action==='status'?20000:125000);
-    pending.set(id,{resolve,timer,retry});send();
+    const send=()=>{const p=pending.get(id);clearTimeout(p.timer);p.timer=setTimeout(expire,125000);channel.postMessage({type:'request',id,action,...params});};
+    // Only repeat the readiness probe; dispatch every operation once.
+    const probe=()=>channel.postMessage({type:'ping',id});
+    const retry=setInterval(probe,500);
+    const expire=()=>{clearInterval(retry);pending.delete(id);reject(Error(T.timeout));};
+    const timer=setTimeout(expire,125000);
+    pending.set(id,{resolve,timer,retry,send});probe();
   });
 }
-channel.onmessage=({data:m})=>{if(m?.type!=='response')return;const p=pending.get(m.id);if(!p)return;pending.delete(m.id);clearTimeout(p.timer);clearInterval(p.retry);p.resolve(m.result);};
+channel.onmessage=({data:m})=>{
+  const p=pending.get(m?.id);if(!p)return;
+  if(m.type==='ready'){if(!p.send)return;clearInterval(p.retry);const send=p.send;p.send=null;send();return;}
+  if(m.type!=='response')return;pending.delete(m.id);clearTimeout(p.timer);clearInterval(p.retry);p.resolve(m.result);
+};
 function errorText(r){return ({BUSY:T.busy,RUNTIME_DISABLED:T.disabled,STOP_INCOMPLETE:T.partial,PREVIEW_FAILED:T.previewFailed,PREVIEW_NEEDS_SESSION:T.previewNeedsSession})[r?.errorCode]||T.failed;}
+function h(tag,attrs={},children=[]){const n=document.createElement(tag);for(const [k,v] of Object.entries(attrs)){if(v==null||v===false)continue;if(k==='class')n.className=v;else if(k==='text')n.textContent=v;else if(k==='html')n.innerHTML=v;else if(k.startsWith('on'))n.addEventListener(k.slice(2),v);else n.setAttribute(k,v===true?'':v);}for(const c of [].concat(children))if(c)n.append(c);return n;}
 function render(){
   if(!state)return;
-  const locked=busy||reading;
+  const locked=busy||reading,enabled=state.settings.enabled&&!state.settingsError;
   if(!busy){$('enabled').checked=state.settings.enabled;$('idle').value=String(state.settings.idleMinutes);}
   $('enabled').disabled=locked||!!state.settingsError;$('idle').disabled=locked||!!state.settingsError;
   const running=state.devices.filter(d=>d.state!=='Shutdown').length;
-  $('runtime').textContent=(state.settingsError?T.settingsUnreadable+' ':!state.settings.enabled?T.paused+' ':'')+(running?T.running+running:T.stopped);
-  $('stop-all').disabled=locked||!running;
+  $('stop-all').hidden=!running;$('stop-all').disabled=locked;
+  $('add').hidden=!state.devices.length;$('add').disabled=locked||!enabled;
   const list=$('devices');list.replaceChildren();
-  if(!state.devices.length){const empty=document.createElement('p');empty.textContent=T.empty;list.append(empty);}
-  for(const device of state.devices){
-    const row=document.createElement('div');row.className='device';
-    const label=document.createElement('div'),name=document.createElement('div'),meta=document.createElement('div');
-    name.className='device-name';name.textContent=device.name;meta.className='device-meta';
-    meta.textContent=device.state==='Booted'?T.booted:device.state==='Shutdown'?T.off:T.busyState;
-    label.append(name,meta);row.append(label);const actions=document.createElement('div');actions.className='actions';
-    for(const action of device.state==='Shutdown'?['boot']:device.state==='Booted'?['viewer','shutdown']:['shutdown']){
-      const button=document.createElement('button');button.textContent=T[action];button.disabled=locked||(action!=='shutdown'&&!state.settings.enabled);
-      if(action==='shutdown')button.className='danger';button.onclick=()=>perform(action,{udid:device.udid});actions.append(button);
-    }
-    row.append(actions);list.append(row);
+  if(!state.devices.length){
+    list.append(h('div',{class:'empty'},[h('div',{class:'glyph',html:GLYPH.empty}),h('h4',{text:T.emptyTitle}),h('p',{text:T.emptyBody}),
+      h('button',{class:'btn cta',text:T.createFirst,disabled:locked||!enabled,onclick:()=>createDefault()}),h('p',{class:'sub',text:T.orCustom})]));
   }
+  for(const device of M.deviceRows(state.devices,null,document.documentElement.lang)){
+    const raw=state.devices.find(d=>d.udid===device.udid);
+    const actions=raw.state==='Shutdown'?['boot']:raw.state==='Booted'?['viewer','shutdown']:['shutdown'];
+    list.append(h('div',{class:'device'},[
+      h('span',{class:'glyph',html:GLYPH[device.family]}),
+      h('div',{class:'text'},[h('div',{class:'name',text:device.name}),h('div',{class:'meta'},[h('span',{class:'dot','data-tone':device.tone}),h('span',{text:device.meta})])]),
+      h('div',{class:'actions'},actions.map(action=>h('button',{class:'btn sm'+(action==='shutdown'?' danger':action==='viewer'?'':' quiet'),text:T[action],disabled:locked||(action!=='shutdown'&&!enabled),onclick:()=>perform(action,{udid:device.udid})}))),
+    ]));
+  }
+  const banner=state.settingsError?T.settingsUnreadable:!state.settings.enabled?T.paused:null;
+  if(banner)message(banner,!!state.settingsError);else if(!readFailed&&!busy&&$('message').textContent&&[T.paused,T.settingsUnreadable].includes($('message').textContent))message('');
 }
 async function refresh(){
   if(reading||busy)return;reading=true;$('refresh').disabled=true;render();
-  try{const result=await rpc('status');if(!result.ok)throw Error(errorText(result));state=result;if(readFailed)message('');readFailed=false;render();}
-  catch(e){readFailed=true;state=null;$('runtime').textContent=T.readFailed;$('enabled').disabled=$('idle').disabled=$('stop-all').disabled=true;$('devices').replaceChildren();message(e.message,true);}
+  try{const result=await rpc('status');if(!result.ok)throw Error(errorText(result));state=result;if(readFailed||$('message').textContent===T.checking)message('');readFailed=false;render();}
+  catch(e){readFailed=true;state=null;$('enabled').disabled=$('idle').disabled=true;$('stop-all').hidden=$('add').hidden=true;$('devices').replaceChildren();message(e.message||T.readFailed,true);}
   finally{reading=false;$('refresh').disabled=false;render();}
 }
 async function perform(action,params={}){
   if(busy)return;busy=true;render();message(T.working);
-  try{const result=await rpc(action,params);if(result.settings&&result.devices)state=result;if(!result.ok)throw Error(errorText(result));message(action==='shutdown'||action==='stopAll'?T.shutdownDone:T.saved);}
+  try{const result=await rpc(action,params);if(result.settings&&result.devices)state=result;if(!result.ok)throw Error(errorText(result));message(action==='shutdown'||action==='stopAll'?T.shutdownDone:action==='create'?T.created:T.saved);}
   catch(e){message(e.message,true);}
+  finally{busy=false;await refresh();render();}
+}
+async function createDefault(){
+  if(busy)return;busy=true;render();message(T.creating);
+  try{
+    const result=await globalThis.CindySimPages.createDevice({lang:document.documentElement.lang});
+    message(result?T.created:'');
+  }catch(e){message(e.message,true);}
   finally{busy=false;await refresh();render();}
 }
 $('enabled').onchange=()=>perform('save',{enabled:$('enabled').checked,idleMinutes:Number($('idle').value)});
 $('idle').onchange=()=>perform('save',{enabled:$('enabled').checked,idleMinutes:Number($('idle').value)});
-$('stop-all').onclick=()=>perform('stopAll');$('refresh').onclick=refresh;
+$('stop-all').onclick=()=>perform('stopAll');$('refresh').onclick=refresh;$('add').onclick=createDefault;
+$('android-setup').onclick=()=>globalThis.CindySimPages.setupAndroid(document.documentElement.lang);
 (async()=>{
   try{const r=await(await fetch('/app-context')).json();T=text[r.context?.locale]||text.en;}catch{}
   document.documentElement.lang=T===text['zh-CN']?'zh-CN':'en';
+  $('android-setup').textContent=T===text['zh-CN']?'安装安卓环境…':'Set up Android…';
   for(const el of document.querySelectorAll('[data-i18n]'))el.textContent=T[el.dataset.i18n];
-  $('runtime').textContent=T.checking;await refresh();
+  message(T.checking);await refresh();
   setInterval(()=>{if(!document.hidden)refresh();},10000);
 })();

@@ -37,11 +37,11 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
-function previewCardHtml(url) {
+function previewCardHtml(url, opened) {
   var safeUrl = escapeHtml(url);
   return [
     '<div style="padding:12px;border:1px solid var(--border-default);border-radius:10px;">',
-    '<div style="font-weight:600;">TapTap Maker 预览已在右侧打开</div>',
+    '<div style="font-weight:600;">' + (opened ? 'TapTap Maker 预览已在右侧打开' : 'TapTap Maker 预览地址') + '</div>',
     '<div style="margin-top:6px;color:var(--text-secondary);">如需在浏览器中打开：</div>',
     '<a href="' + safeUrl + '" style="display:block;margin-top:4px;word-break:break-all;">',
     safeUrl,
@@ -171,6 +171,24 @@ async function listMakerTools(workdir) {
   return tools.filter(function visible(tool) {
     return isObject(tool) && typeof tool.name === 'string' && !FIXED_MAKER_TOOLS[tool.name];
   });
+}
+
+// 返回 true / false；缺省视为开启，读取失败或值类型非法返回 null（不打开右侧预览，只返回链接）。
+async function readPreviewSetting() {
+  var controller = new AbortController();
+  var timer = setTimeout(function () { controller.abort(); }, 2000);
+  try {
+    var response = await fetch('/kv', { signal: controller.signal });
+    if (!response.ok) return null;
+    var preferences = await response.json();
+    if (!isObject(preferences)) return null;
+    if (!Object.prototype.hasOwnProperty.call(preferences, 'makerPreviewEnabled')) return true;
+    return typeof preferences.makerPreviewEnabled === 'boolean' ? preferences.makerPreviewEnabled : null;
+  } catch (_error) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function callMakerTool(name, args, longRunning) {
@@ -357,6 +375,32 @@ function makerFailureDetails(message) {
     details.reason = 'INSUFFICIENT_BALANCE';
   }
   return details;
+}
+
+// 远端 pre-receive 以「云端工作区有未提交改动」拒绝推送（如 get_ad_config 写入的
+// .project/settings.json）。Runtime 的 next_action 会误导为 pull/rebase，但插件外没有
+// 提交云端工作区的入口；这里换成已验证可行的插件内恢复步骤（makecindy/cindy#7001）。
+var MAKER_CLOUD_DIRTY_REJECTION = /cloud workspace has uncommitted changes that this push would overwrite/i;
+var MAKER_CLOUD_DIRTY_RECOVERY = [
+  '推送被拒的原因是云端工作区存在未提交改动（常见来源是 get_ad_config 把广告配置写入 .project/settings.json），不是远端有新提交；pull/rebase 解决不了，本地提交已保留。插件内已验证的恢复步骤：',
+  '1. 先向用户说明：下一步只构建云端现有版本、不包含本地改动，目的是让云端把未提交改动生成 sync 提交；征得同意后调用 maker_build 并传 confirm_remote_build_without_submit=true。云端构建完成后会自动生成 sync 提交，把 .project/settings.json 等未提交改动入库。',
+  '2. 让本地 AI 执行 git fetch origin，再把 origin/main merge（或 rebase）进本地 main，保留本地未推送提交；不要用无参数 git pull，也不要手动执行通用 git push。',
+  '3. 重新正常调用 maker_build（不传该参数）：此时本地 main 仅领先远端，会推送本地提交并完成构建。',
+  '不要手动复制或猜测云端配置。',
+].join('\n');
+
+function makerResultMentionsCloudDirtyRejection(result) {
+  return MAKER_CLOUD_DIRTY_REJECTION.test(makerResultText(result));
+}
+
+function makerBuildFailureResult(result) {
+  var sanitized = sanitizeMakerFailure(result);
+  if (!isObject(sanitized) || !makerResultMentionsCloudDirtyRejection(result)) return sanitized;
+  var message = makerResultText(sanitized) + '\n\n' + MAKER_CLOUD_DIRTY_RECOVERY;
+  var details = Object.assign({}, sanitized.structuredContent);
+  delete details.success;
+  delete details.message;
+  return makerErrorResult(message, details);
 }
 
 function makerDiagnosticPayload(text, label) {
@@ -712,22 +756,35 @@ async function handleTool(message) {
       Object.assign({}, args, { target_dir: buildContext.workdir }),
       true,
     );
-    if (makerResultIsFailure(built)) return sanitizeMakerFailure(built);
+    if (makerResultIsFailure(built)) return makerBuildFailureResult(built);
     var previewUrl = previewUrlFromResult(built);
     if (!previewUrl) return built;
     var preview;
-    try {
-      preview = await cindy.preview({
-        url: previewUrl,
-        ...(typeof buildContext.session_id === 'string' ? { sessionId: buildContext.session_id } : {}),
-      });
-    } catch (error) {
-      preview = { ok: false, message: errorMessage(error) };
+    var previewSetting = await readPreviewSetting();
+    if (previewSetting !== true) {
+      // 用户关闭了右侧预览，或设置读不出来：构建已成功，只返回链接，不打开、不聚焦、不刷新右侧面板。
+      preview = {
+        ok: false,
+        skipped: true,
+        message: previewSetting === false
+          ? '已在插件设置中关闭构建后自动打开右侧预览，请用下面的链接在浏览器中打开'
+          : '右侧预览设置读取失败，本次未打开右侧预览，请用下面的链接在浏览器中打开',
+      };
+    } else {
+      try {
+        preview = await cindy.preview({
+          url: previewUrl,
+          ...(typeof buildContext.session_id === 'string' ? { sessionId: buildContext.session_id } : {}),
+        });
+      } catch (error) {
+        preview = { ok: false, message: errorMessage(error) };
+      }
     }
     return Object.assign({}, built, {
       preview: preview && preview.ok === true
         ? { ok: true, url: previewUrl }
-        : { ok: false, url: previewUrl, message: preview && preview.message ? preview.message : '右侧预览打开失败' },
+        : { ok: false, url: previewUrl, ...(preview && preview.skipped === true ? { skipped: true } : {}),
+          message: preview && preview.message ? preview.message : '右侧预览打开失败' },
       preview_url: previewUrl,
       user_facing_markdown: '[打开 TapTap Maker 预览](' + previewUrl + ')',
     });
@@ -779,7 +836,7 @@ async function sendToolResult(message) {
           callId: message.callId,
           v: 2,
           state: 'done',
-          html: previewCardHtml(result.preview_url),
+          html: previewCardHtml(result.preview_url, isObject(result.preview) && result.preview.ok === true),
         });
       } catch (_error) {
         // 卡片只是可点击地址的补充；右侧预览和构建结果不受影响。

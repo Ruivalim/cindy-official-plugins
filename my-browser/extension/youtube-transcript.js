@@ -4,6 +4,10 @@
   // timedtext returns an empty response; no tokens, cookies or private APIs.
   async function read(expectedURL) {
     const panelSelector='ytd-engagement-panel-section-list-renderer[target-id*="transcript"]';
+    // YouTube serves either the classic transcript renderer or the modern
+    // view-model panel (target-id PAmodern_transcript_view). Chapter headers in
+    // the modern panel are separate elements and never match these rows.
+    const segmentSelector='ytd-transcript-segment-renderer, transcript-segment-view-model';
     const expanded=p=>p?.getAttribute('visibility')==='ENGAGEMENT_PANEL_VISIBILITY_EXPANDED';
     const visible=selector=>[...document.querySelectorAll(selector)].find(n=>n.getClientRects().length);
     const existing=[...document.querySelectorAll(panelSelector)].find(expanded);
@@ -39,8 +43,8 @@
       const deadline=Date.now()+12000;let signature='',stable=0;
       while(Date.now()<deadline){
         current();
-        const panel=[...document.querySelectorAll(panelSelector)].find(p=>expanded(p)&&p.querySelector('ytd-transcript-segment-renderer'));
-        const nodes=[...(panel?.querySelectorAll('ytd-transcript-segment-renderer')||[])];
+        const panel=[...document.querySelectorAll(panelSelector)].find(p=>expanded(p)&&p.querySelector(segmentSelector));
+        const nodes=[...(panel?.querySelectorAll(segmentSelector)||[])];
         if(nodes.length>10000)throw Error('SUBTITLE_TOO_LARGE');
         const next=nodes.length+':'+nodes.at(-1)?.textContent;
         if(nodes.length&&next===signature)stable++;else stable=0;
@@ -50,9 +54,9 @@
           const rows=nodes.map(n=>{
             const data=n.data?.transcriptSegmentRenderer||n.data;
             const exact=Number(data?.startMs)/1000,end=Number(data?.endMs)/1000;
-            const stamp=n.querySelector('.segment-timestamp')?.textContent.trim();
+            const stamp=n.querySelector('.segment-timestamp, .ytwTranscriptSegmentViewModelTimestamp')?.textContent.trim();
             const start=Number.isFinite(exact)?exact:/^\d+(?::\d{2}){1,2}$/.test(stamp||'')?stamp.split(':').reduce((sum,x)=>sum*60+Number(x),0):NaN;
-            const text=n.querySelector('.segment-text')?.textContent.trim()||'';
+            const text=n.querySelector('.segment-text, .ytAttributedStringHost')?.textContent.trim()||'';
             bytes+=text.length*2;
             if(text.length>4000||bytes>2000000)throw Error('SUBTITLE_TOO_LARGE');
             return {start,end,text};

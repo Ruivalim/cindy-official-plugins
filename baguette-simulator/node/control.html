@@ -1,6 +1,44 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Baguette Simulator</title>
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Device Simulator</title>
 <link rel="stylesheet" href="/control.css">
-<div id="settings"><header><strong>Baguette</strong><span id="status" role="status">Checking device…</span><label>View size <select id="zoom" aria-label="View size"><option value="0.5">50%</option><option value="0.75">75%</option><option value="1" selected>100%</option><option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option></select></label><button id="fullscreen" aria-pressed="false">Full-screen device</button><button id="release">Release keys</button><button id="recover">Recover view</button><button id="shutdown" class="danger">Shut down device</button></header><div class="hint">Shutdown ends apps and connections. Device data is kept. <span id="idle"></span></div><section class="devices" aria-label="Test devices"><div class="device-row"><label class="device-picker">Test device<select id="device-select"></select></label><button id="device-switch" disabled>Switch</button><button id="device-add" disabled>Add device</button><button id="device-edit" disabled>Edit name</button></div><p id="device-context"></p><p id="device-progress" role="status"></p></section></div><button id="settings-fab" type="button" aria-label="Display settings" title="Display settings" aria-controls="settings" aria-expanded="false">⚙︎</button>
-<dialog id="device-dialog" aria-labelledby="device-dialog-title"><form id="device-form"><h2 id="device-dialog-title"></h2><p id="device-explanation"></p><label>Device name<input id="device-name" maxlength="80" required autocomplete="off"></label><div id="device-options"><label>Model<select id="device-model" required></select></label><label>iOS version<select id="device-runtime" required></select></label></div><p id="device-error" role="alert"></p><div class="dialog-actions"><button type="button" id="device-new-model">Create with another model</button><button type="button" id="device-cancel">Cancel</button><button type="submit" id="device-save"></button></div></form></dialog>
-<div id="notice" role="status"></div><div id="viewport"><div id="stage"><iframe id="screen" title="iOS Simulator" allow="clipboard-read; clipboard-write"></iframe></div></div>
-<script src="/control.js"></script><script src="/devices.js"></script></html>
+<header class="bar" role="toolbar">
+  <button class="pill" id="device-chip" aria-haspopup="menu" aria-expanded="false"><span class="dot" id="chip-dot" data-tone="busy"></span><span class="name" id="chip-name">…</span><svg class="chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+  <div class="title" id="title" hidden><span class="dot" id="title-dot" data-tone="busy"></span><span class="text"><strong id="title-name"></strong><span id="title-sub"></span></span></div>
+  <span class="sr" id="status" role="status" aria-live="polite"></span>
+  <span class="grow"></span>
+  <div class="zoom" id="zoom" role="group">
+    <button class="icon-btn" id="zoom-out"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+    <button class="zoom-label" id="zoom-label" aria-haspopup="menu" aria-expanded="false"></button>
+    <button class="icon-btn" id="zoom-in"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+  </div>
+  <button class="icon-btn" id="btn-more" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+</header>
+<main class="stage" id="stage">
+  <div class="scroll" id="scroll"><div class="frame" id="frame"><iframe id="screen" title="Device Simulator" allow="clipboard-read; clipboard-write"></iframe></div></div>
+  <div class="overlay" id="overlay" hidden></div>
+  <div class="dock" id="dock"></div>
+  <div class="tools" id="tools" role="toolbar" hidden>
+    <div class="tool-group">
+      <button class="tool" id="btn-home"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
+      <button class="tool" id="btn-shot"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></button>
+      <button class="tool tool-caret" id="btn-shot-menu" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m3 4.5 3 3 3-3"/></svg></button>
+    </div>
+    <div class="tool-group">
+      <button class="tool" id="btn-rotl"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
+      <button class="tool" id="btn-rotr"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
+    </div>
+<div class="tool-group tv-remote" id="tv-remote" role="group" aria-label="Apple TV" hidden><button class="tool" data-remote="up" title="Up" aria-label="Up">↑</button><button class="tool" data-remote="left" title="Left" aria-label="Left">←</button><button class="tool" data-remote="select" title="Select" aria-label="Select">●</button><button class="tool" data-remote="right" title="Right" aria-label="Right">→</button><button class="tool" data-remote="down" title="Down" aria-label="Down">↓</button><button class="tool" data-remote="back" title="Back" aria-label="Back">↩</button><button class="tool" data-remote="play-pause" title="Play/Pause" aria-label="Play/Pause">⏯</button></div>
+    <div class="tool-group" id="posture" role="radiogroup" hidden>
+      <button class="tool" data-pose="shut" role="radio"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.3 3.25h9.1a3 3 0 0 1 3 3v11.5a3 3 0 0 1-3 3H6.3a.7.7 0 0 1-.7-.7V3.95a.7.7 0 0 1 .7-.7z"/><circle cx="15.4" cy="6.3" r=".9" fill="currentColor" stroke="none"/><path d="M9.9 18.55h4.2" stroke-width="1.1"/></svg></button>
+      <button class="tool" data-pose="open" role="radio"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.7 6.8Q2.7 3.91 5.5 4.3L12 5.2l6.5-.9q2.8-.39 2.8 2.5v10.4q0 2.89-2.8 2.5L12 18.8l-6.5.9q-2.8.39-2.8-2.5z"/></svg></button>
+      <button class="tool" data-pose="flat" role="radio"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.47" width="19" height="15.06" rx="2.7"/><path d="M9.45 17.65h5.1" stroke-width="1.1"/></svg></button>
+    </div>
+  </div>
+</main>
+<dialog id="device-dialog"><form id="device-form" method="dialog"><h2 id="dialog-title"></h2><p class="hint" id="dialog-hint"></p>
+<label id="f-name-label"><span id="f-name-text"></span><input id="f-name" maxlength="80" required autocomplete="off"></label>
+<label id="f-model-label"><span id="f-model-text"></span><select id="f-model"></select></label>
+<label id="f-runtime-label"><span id="f-runtime-text"></span><select id="f-runtime"></select></label>
+<p class="error" id="dialog-error" role="alert"></p>
+<div class="row"><button type="button" class="btn secondary" id="dialog-cancel"></button><button type="submit" class="btn cta" id="dialog-save"></button></div></form></dialog>
+<dialog id="confirm-dialog"><h2 id="confirm-title"></h2><p class="hint" id="confirm-body"></p><div class="row"><button type="button" class="btn secondary" id="confirm-cancel"></button><button type="button" class="btn danger" id="confirm-ok"></button></div></dialog>
+<script src="/control-model.js"></script><script src="/control.js"></script></html>

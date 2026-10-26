@@ -72,3 +72,30 @@ test('collapsed description is expanded for the transcript entry and restored af
  await page.evaluate(()=>{document.querySelector('#visibility-button button').click();document.querySelector('#collapse').click();document.querySelector('#expand').remove();});
  assert.deepEqual(await page.evaluate(url=>CindyYoutubeTranscript.read(url),url),{ok:true,cues:[]},'no transcript entry stays an empty result');
 });
+test('modern view-model transcript panel is read without chapter headers',{
+ skip:!process.env.PLAYWRIGHT_CORE,timeout:30000,
+},async t=>{
+ const {chromium}=require(process.env.PLAYWRIGHT_CORE);
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH});t.after(()=>browser.close());
+ const page=await browser.newPage();const url='https://video.example.test/watch?v=fixture';
+ // Mirrors YouTube's PAmodern_transcript_view markup: an accessible duration
+ // label sits between the timestamp and the text, and chapters are siblings.
+ const row=(time,label,text)=>`<macro-markers-panel-item-view-model><timeline-item-view-model><div><transcript-segment-view-model><div aria-hidden="true" class="ytwTranscriptSegmentViewModelTimestamp">${time}</div><div class="ytwTranscriptSegmentViewModelTimestampA11yLabel">${label}</div><span class="ytAttributedStringHost" role="text">${text}</span></transcript-segment-view-model></div></timeline-item-view-model></macro-markers-panel-item-view-model>`;
+ const rows=`<timeline-chapter-view-model>Chapter 1: Opening</timeline-chapter-view-model>${row('0:00','0 seconds','First line.')}${row('0:03','3 seconds','Second line.')}<timeline-chapter-view-model>Chapter 2: Ending</timeline-chapter-view-model>${row('1:01:05','1 hour, 1 minute, 5 seconds','Last line.')}`;
+ await page.route('https://video.example.test/**',route=>route.fulfill({contentType:'text/html',body:`
+ <ytd-watch-flexy video-id="fixture"></ytd-watch-flexy><video></video>
+ <ytd-video-description-transcript-section-renderer><button>Show transcript</button></ytd-video-description-transcript-section-renderer>
+ <ytd-engagement-panel-section-list-renderer target-id="PAmodern_transcript_view" visibility="ENGAGEMENT_PANEL_VISIBILITY_HIDDEN"><div id="visibility-button"><button>Close</button></div><div id="rows"></div></ytd-engagement-panel-section-list-renderer>
+ <ytd-engagement-panel-section-list-renderer target-id="engagement-panel-searchable-transcript" visibility="ENGAGEMENT_PANEL_VISIBILITY_HIDDEN"></ytd-engagement-panel-section-list-renderer>
+ <script>
+ const panel=document.querySelector('[target-id="PAmodern_transcript_view"]');window.closes=0;
+ Object.defineProperty(document.querySelector('video'),'duration',{value:3670});
+ document.querySelector('ytd-video-description-transcript-section-renderer button').onclick=()=>{panel.setAttribute('visibility','ENGAGEMENT_PANEL_VISIBILITY_EXPANDED');setTimeout(()=>{document.querySelector('#rows').innerHTML=${JSON.stringify(rows)};},40);};
+ panel.querySelector('#visibility-button button').onclick=()=>{closes++;panel.setAttribute('visibility','ENGAGEMENT_PANEL_VISIBILITY_HIDDEN');};
+ </script>`}));
+ await page.goto(url);await page.addScriptTag({path:source});
+ const result=await page.evaluate(url=>CindyYoutubeTranscript.read(url),url);
+ assert.equal(result.ok,true);
+ assert.deepEqual(result.cues,[{start:0,end:3,text:'First line.'},{start:3,end:3665,text:'Second line.'},{start:3665,end:3670,text:'Last line.'}]);
+ assert.deepEqual(await page.evaluate(()=>[closes,document.querySelector('[target-id="PAmodern_transcript_view"]').getAttribute('visibility')]),[1,'ENGAGEMENT_PANEL_VISIBILITY_HIDDEN']);
+});
