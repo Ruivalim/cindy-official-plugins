@@ -167,7 +167,7 @@ async function initializeBridge(server,deviceSet,clipboardAction){
   release:p=>controls?controls.exclusive(async()=>{await controls.assertEnabled();await clipboardAction({udid:p.udid,action:'release'});controls.touch();return {ok:true};},`device:${deviceId(p.udid)}`):clipboardAction({udid:p.udid,action:'release'}),
   shutdown:p=>controls.request('settings_shutdown',{udid:p.udid}),
   // Both run under the runtime lock and the user's run switch, like Agent tools.
-  boot:p=>controls.request('settings_boot',{udid:p.udid}),
+  boot:p=>controls.request('settings_boot',{udid:p.udid,memoryMode:p.memoryMode}),
   press:p=>controls.request('press',{udid:p.udid,button:p.button}),
   tap:p=>controls.request('viewer_tap',{udid:p.udid,x:p.x,y:p.y,duration:p.duration}),
   trackpad:p=>controls.request('viewer_trackpad',{udid:p.udid,gesture:p.gesture,phase:p.phase,x:p.x,y:p.y}),

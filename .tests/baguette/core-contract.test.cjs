@@ -1,6 +1,31 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),path=require('node:path');
 const dir=path.resolve('baguette-simulator/node');
 const udid='00000000-0000-4000-8000-000000000001';
+test('environment reports keyboard ABI failures separately from usable device catalogs',async()=>{
+ for(const ready of [true,false]){
+  const commands=[],context={module:{exports:{}},__dirname:dir,process:{platform:'darwin',arch:'arm64',env:{DEVELOPER_DIR:'/Selected/Xcode/Contents/Developer'}},require(name){
+   if(name==='./viewer.cjs')return {};
+   if(name==='./android/index.cjs')return {createAndroid:()=>({dispatch:async()=>({ready:false,runtimes:[],deviceTypes:[]})})};
+   if(name==='node:child_process')return {execFile(file,args,_options,cb){
+    commands.push({file,args});let output='',error=null;
+    if(file.endsWith('sw_vers'))output='27.0';
+    if(file.endsWith('xcodebuild'))output='Xcode fixture';
+    if(args.includes('runtimes'))output=JSON.stringify({runtimes:[{isAvailable:true,name:'iOS',identifier:'com.apple.CoreSimulator.SimRuntime.iOS-27-0',version:'27.0'}]});
+    if(args.includes('devicetypes'))output=JSON.stringify({devicetypes:[{name:'iPhone',identifier:'phone',productFamily:'iPhone'}]});
+    if(args[0]==='--check'){output=JSON.stringify({ready,scope:'keyboard-abi'});if(!ready)error=Error('missing keyboard interface');}
+    queueMicrotask(()=>cb(error,output,''));return {stdin:{on(){},end(){}}};
+   }};
+   return require(name.startsWith('./')?path.join(dir,name):name);
+  }};
+  vm.runInNewContext(fs.readFileSync(path.join(dir,'core.cjs'),'utf8'),context);
+  const result=await context.module.exports.dispatch('environment');
+  assert.equal(result.platforms.ios.ready,true);assert.equal(result.runtimes.length,1);assert.equal(result.deviceTypes.length,1);
+  assert.equal(result.diagnostics.keyboard.ready,ready);
+  assert.equal(result.diagnostics.keyboard.developerDir,'/Selected/Xcode/Contents/Developer');
+  assert.deepEqual(Array.from(commands.find(c=>c.args[0]==='--check').args),['--check','/Selected/Xcode/Contents/Developer']);
+  assert.ok(!commands.some(c=>c.args.includes('boot')||c.args.includes('spawn')||c.args.includes('--set')));
+ }
+});
 function core(output,failAt=Infinity,macOS="15.0",catalog=[]){
  let polls=0,mutations=0;const commands=[],budgets=[];
  const context={module:{exports:{}},__dirname:dir,process:{platform:'darwin',arch:'arm64'},setTimeout:fn=>fn(),require(name){

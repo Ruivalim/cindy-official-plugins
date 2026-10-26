@@ -934,6 +934,7 @@ test('all six capture actions inherit the outer deadline, including nested scree
   }});
   const {commandBudget}=require(path.join(dir,'budget.cjs'));
   const context={module:{exports:{}},__dirname:dir,Date:{now:f.state.time},process:{platform:'darwin',arch:'arm64',env:{}},
+    setTimeout:()=>({unref(){}}),clearTimeout(){},
     require(name){
       if(name==='./budget.cjs')return {commandBudget:(ms,deadline)=>commandBudget(ms,deadline,f.state.time)};
       if(name==='./viewer.cjs')return {};
@@ -1164,7 +1165,7 @@ function pageFixture(kind) {
   };
   const context={URLSearchParams,location:{search:'?session=task-1'},document:{getElementById:get,addEventListener(){},hidden:false},
     localStorage:{getItem:()=>null},clearTimeout(){},setTimeout:()=>0,
-    CindySimPages:{locale:()=>new Promise(()=>{}),onPush:fn=>{push=fn;},createDevice:async()=>({udid:B}),
+    CindySimPages:{locale:()=>new Promise(()=>{}),onPush:fn=>{push=fn;},createDevice:async()=>({udid:B}),memoryArgs:()=>({memoryMode:'saving'}),memoryPicker:()=>null,
       rpc:(action,params)=>{const d=deferred();requests.push({...d,action,params});return d.promise;},
       h:()=>({}),GLYPH:{iphone:'',big:'',pause:''}},CindySimModel:{runtimeLabel:()=>'',deviceRows:()=>[]}};
   const expose=kind==='task'

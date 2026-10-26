@@ -150,7 +150,7 @@ const PAGE_ACTIONS = {
   task_bind: (m, l) => SESSION.test(m.sessionId) && str(m.udid) && worker('task_bind', {_task:m.sessionId, udid:m.udid, _locale:l}),
   task_boot: async (m, l) => {
     if (!SESSION.test(m.sessionId) || !str(m.udid)) return false;
-    const booted = await worker('boot', {udid:m.udid, _task:m.sessionId, _locale:l});
+    const booted = await worker('boot', {udid:m.udid, memoryMode:m.memoryMode, _task:m.sessionId, _locale:l});
     return booted.ok && !booted.taskBindingError ? afterTaskOperation(booted, 'task_state', {_task:m.sessionId, _locale:l}) : booted;
   },
   task_create: async (m, l) => {
@@ -168,7 +168,7 @@ const PAGE_ACTIONS = {
   android_plan: () => worker('android_setup_plan', {}),
   android_status: () => worker('android_setup_status', {}),
   android_install: (m) => str(m.planId) && m.acceptLicenses === true && worker('android_setup_install', {planId:m.planId, acceptLicenses:true}),
-  boot: (m) => str(m.udid) && worker('settings_boot', {udid:m.udid}),
+  boot: (m) => str(m.udid) && worker('settings_boot', {udid:m.udid, memoryMode:m.memoryMode}),
   shutdown: (m) => str(m.udid) && worker('settings_shutdown', {udid:m.udid}),
   rename: (m) => str(m.udid) && str(m.name, 64) && worker('rename_device', {udid:m.udid, name:m.name}),
   erase: (m) => str(m.udid) && worker('erase_device', {udid:m.udid}),
@@ -218,7 +218,7 @@ if (typeof BroadcastChannel !== 'undefined') {
       else {
         const params = msg.action === 'save' ? {enabled:msg.enabled,idleMinutes:msg.idleMinutes}
           : msg.action === 'create' ? {name:msg.name,deviceType:msg.deviceType,runtime:msg.runtime}
-          : {udid:msg.udid,_locale:locale};
+          : {udid:msg.udid,_locale:locale,...(msg.action==='boot'?{memoryMode:msg.memoryMode}:{})};
         result = await worker(methods[msg.action], params);
       }
     } catch { result = {ok:false,errorCode:'SETTINGS_UNAVAILABLE',execution:'unknown'}; }

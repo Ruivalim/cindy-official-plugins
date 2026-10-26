@@ -260,6 +260,56 @@ test('live device loads the handheld screen once; a service generation change al
  assert.equal(calls.filter(c=>c.action==='status').length,2);
 });
 
+test('toolbar presentation changes preserve the iframe and its recording owner',async()=>{
+ const f=await boot({respond:()=>status()});
+ const attrs=new Map(),recordingOwner={},sheet={disabled:false};let resizes=0;
+ f.dom.byId.screen.contentDocument.documentElement={setAttribute:(k,v)=>attrs.set(k,v),removeAttribute:k=>attrs.delete(k)};
+ f.dom.byId.screen.contentDocument.getElementById=id=>id==='cindy-stage-style'?{sheet}:null;
+ f.dom.byId.screen.contentWindow={recordingOwner,dispatchEvent:()=>resizes++};f.context.Event=class{};
+ for(const full of [true,false,true]){
+  f.dom.byId['btn-more'].dispatch('click');
+  const item=f.dom.body.querySelectorAll('button').find(n=>f.dom.text(n).trim()==='Baguette 高级工具');
+  assert.ok(item);item.dispatch('click');
+  assert.equal(attrs.has('data-cindy-full'),full);
+  assert.equal(sheet.disabled,full,'advanced panels are restored without navigation');
+  assert.equal(f.dom.byId.screen.contentWindow.recordingOwner,recordingOwner);
+  assert.equal(f.dom.byId.screen.loads.length,1);
+ }
+ assert.equal(resizes,3);
+ assert.deepEqual(f.calls.map(c=>c.action),['status']);
+});
+
+test('iOS and Android keyboard switches gate guest input, preserve workbench editing and cancel queued input',async()=>{
+ for(const platform of ['ios','android']){
+  const f=await boot({respond:()=>status({device:{...status().device,platform}})});
+  const events={},released=[];
+  f.dom.byId.screen.contentDocument.defaultView={addEventListener:(name,fn)=>(events[name]??=[]).push(fn)};
+  f.dom.byId.screen.contentWindow.postMessage=(message,origin)=>released.push({message,origin});
+  f.dom.byId.screen.dispatch('load');
+  const toggle=()=>{
+   f.dom.byId['btn-more'].dispatch('click');
+   const item=f.dom.body.querySelectorAll('button').find(n=>f.dom.text(n).includes('电脑键盘输入'));
+   assert.ok(item);const checked=item.attrs['aria-checked'];item.dispatch('click');return checked;
+  };
+  assert.equal(toggle(),'true');
+  assert.equal(released.length,1);assert.equal(released[0].message.type,'cindy-release-input');
+  // Each gate is the last capture handler for its event. Simulator toolbar
+  // shortcuts get first refusal, but ordinary keys/pastes cannot reach guests.
+  for(const name of ['keydown','keyup','paste']){
+   const event={target:{tagName:'CANVAS'},preventDefault(){this.prevented=true;},stopImmediatePropagation(){this.stopped=true;}};
+   events[name].at(-1)(event);assert.equal(event.prevented,true);assert.equal(event.stopped,true);
+   for(const tagName of ['INPUT','BUTTON','A']){
+    const field={...event,target:{tagName},prevented:false,stopped:false};
+    events[name].at(-1)(field);assert.equal(field.stopped,false);
+   }
+  }
+  assert.equal(toggle(),'false','choice works even when localStorage is unavailable');
+  const allowed={target:{tagName:'CANVAS'},stopImmediatePropagation(){assert.fail('enabled input blocked');}};
+  events.keydown.at(-1)(allowed);
+  assert.equal(f.dom.byId.screen.loads.length,1);
+ }
+});
+
 test('unreadable App records do not block device selection or live controls',async()=>{
  let damaged=true;
  const {dom,poll,calls}=await boot({respond:()=>status(damaged?{currentApp:null,currentAppError:{code:'APP_CONTEXT_UNREADABLE',message:'unreadable'}}:{currentApp:'test.example.app'})});
@@ -293,6 +343,18 @@ test('a shut-down device shows a start button in place of the screen; starting b
  const start=dom.byId.overlay.querySelector('button');assert.equal(start.textContent,'打开');
  await start.listeners.click[0]();
  assert.equal(calls.filter(c=>c.action==='boot').length,1);assert.equal(dom.byId.overlay.hidden,true);assert.equal(dom.byId.screen.loads.length,1);
+ assert.equal(calls.find(c=>c.action==='boot').memoryMode,'saving');
+});
+
+test('controller preserves a chosen memory mode through polling and sends it on explicit boot only',async()=>{
+ const f=await boot({respond:()=>status({device:{udid,name:'Phone',state:'Shutdown',runtime:'iOS-27'}})});
+ const choice=f.dom.byId.overlay.querySelector('.memory-choice');
+ const select=choice.children[0].children[1];select.dispatch('change',{target:{value:'standard'}});
+ await f.poll();assert.ok(!f.calls.some(c=>c.action==='boot'));
+ const rerendered=f.dom.byId.overlay.querySelector('.memory-choice').children[0].children[1];
+ assert.equal(rerendered.children.find(c=>c.attrs.selected!==undefined).attrs.value,'standard');
+ await f.dom.byId.overlay.querySelector('button').listeners.click[0]();
+ assert.equal(f.calls.find(c=>c.action==='boot').memoryMode,'standard');
 });
 
 test('idle countdown card appears only in the last minute and keeps the device alive on request',async()=>{

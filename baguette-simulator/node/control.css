@@ -165,3 +165,10 @@ dialog .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16
 .controls-help { max-height: calc(100dvh - 32px); overflow-y: auto; }
 .controls-help p { line-height: 1.6; }
 .controls-help hr { border: 0; border-top: 1px solid var(--board); margin: 16px 0; }
+
+.memory-choice { width: 100%; min-width: 0; margin: 12px 0; text-align: start; }
+.memory-choice label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; }
+.memory-choice select { max-width: 100%; font: inherit; }
+.memory-choice small { display: block; margin-top: 8px; font-size: 11px; line-height: 1.5; opacity: .7; white-space: normal; }
+
+.card .actions:has(.memory-choice) { flex-wrap: wrap; }

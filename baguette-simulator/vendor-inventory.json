@@ -271,8 +271,8 @@
   },
   {
     "path": "vendor/baguette/Baguette_Baguette.bundle/Web/baguette/parts/keyboard.js",
-    "bytes": 8826,
-    "sha256": "19c4e763e2b00171b54170618dfb5ad92e0db71e259a5fb2c809dd7c5cd2564e"
+    "bytes": 9193,
+    "sha256": "33fa93b4abb9888d9ab7ac8f4246f49a1cda960c420ce9546f698633ae9c10a9"
   },
   {
     "path": "vendor/baguette/Baguette_Baguette.bundle/Web/baguette/parts/screen.js",
@@ -548,5 +548,10 @@
     "path": "vendor/baguette/Baguette_Baguette.bundle/Web/vendor/leaflet/leaflet.js",
     "bytes": 147552,
     "sha256": "db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a"
+  },
+  {
+    "path": "vendor/simslim/profiles.json",
+    "bytes": 6674,
+    "sha256": "8d48dfaddb989b856290a96e527a4bfabe3e1d294d37b466eb6e85ad1e60ae21"
   }
 ]

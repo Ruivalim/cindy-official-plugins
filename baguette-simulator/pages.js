@@ -179,5 +179,17 @@
       })().catch(e=>{status.textContent=e.message||T.failed;button.hidden=true;});
     });
   }
-  root.CindySimPages = { rpc, h, locale, GLYPH, createDevice, catalog, setupAndroid, onPush: (fn) => listeners.add(fn) };
+  const memoryChoices=new Map();
+  function memoryArgs(device) {
+    return device && root.CindySimModel.platform(device)==='iOS' ? {memoryMode:memoryChoices.get(device.udid)||'saving'} : {};
+  }
+  function memoryPicker(device,lang,disabled=false) {
+    const M=root.CindySimModel;if(!device||M.platform(device)!=='iOS')return null;
+    const value=memoryArgs(device).memoryMode;
+    return h('div',{class:'memory-choice'},[
+      h('label',{},[h('span',{text:lang==='zh-CN'?'启动模式':'Startup mode'}),
+        h('select',{disabled,onchange:e=>memoryChoices.set(device.udid,e.target.value)},M.memoryOptions(lang).map(o=>h('option',{value:o.value,text:o.label,selected:o.value===value})))]),
+      h('small',{text:M.memoryHelp(lang)})]);
+  }
+  root.CindySimPages = { rpc, h, locale, GLYPH, createDevice, catalog, setupAndroid, memoryArgs, memoryPicker, onPush: (fn) => listeners.add(fn) };
 })(globalThis);

@@ -54,6 +54,17 @@
   };
 
   const strings = (lang) => STRINGS[lang] || STRINGS.en;
+  function memoryOptions(lang) {
+    return (lang==='zh-CN'
+      ? [['saving','节省内存（默认）'],['standard','标准'],['minimal','极简（高级）']]
+      : [['saving','Save memory (default)'],['standard','Standard'],['minimal','Minimal (advanced)']])
+      .map(([value,label])=>({value,label}));
+  }
+  function memoryHelp(lang) {
+    return lang==='zh-CN'
+      ? '节省模式关闭搜索、健康、部分游戏与诊断服务。极简还影响登录、支付、照片、推送等，仅用于限定范围的玩法或界面测试。完整验收选标准；切换需先关机。'
+      : 'Saving disables search, health and some game/diagnostic services. Minimal also affects login, purchases, photos and push; use only for scoped gameplay/UI tests. Use Standard for full acceptance tests. Shut down before switching.';
+  }
 
   // One interaction vocabulary for every device, with platform-specific input.
   function controlHelp(lang, device) {
@@ -226,7 +237,7 @@
   /** The percentage the zoom state shows, given the fitted percentage. */
   const zoomPct = (zoom, fitPct) => Math.round(zoom?.mode === 'pct' ? zoom.pct : (fitPct > 0 ? fitPct : 100));
 
-  const api = { STRINGS, strings, controlHelp, runtimeLabel, family, platform, handheld, screenRadius, presence, overlay, idleLeft, clock, deviceRows, runtimesFor, defaultChoice, ZOOM_STEPS, zoomStep, zoomFactor, zoomPct };
+  const api = { STRINGS, strings, memoryOptions, memoryHelp, controlHelp, runtimeLabel, family, platform, handheld, screenRadius, presence, overlay, idleLeft, clock, deviceRows, runtimesFor, defaultChoice, ZOOM_STEPS, zoomStep, zoomFactor, zoomPct };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.CindySimModel = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

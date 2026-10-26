@@ -141,9 +141,11 @@ async function nativeKey(device,code,modifiers=[],deadline) {
  await trackpadImpl?.cancel(device.udid);
  await spatialImpl?.cancel(device.udid);
  const [key,mask]=code?require('./keys.cjs').chord(code,modifiers):[0,0];
- const dev=(await run('/usr/bin/xcode-select',['-p'],commandBudget(5000,deadline))).stdout;
+ const dev=process.env?.DEVELOPER_DIR || (await run('/usr/bin/xcode-select',['-p'],commandBudget(5000,deadline))).stdout;
  if(platform(device)==='tvOS')return run(path.join(__dirname,'../native/remote'),[DEVICE_SET,device.udid,dev,'key',String(key),String(mask),'0'],{mutation:true,...commandBudget(15000,deadline)});
- return run(path.join(__dirname,'../native/keyboard'),[DEVICE_SET,device.udid,dev,String(key),String(mask)],{mutation:true,...commandBudget(15000,deadline)});
+ const options={mutation:true,...commandBudget(15000,deadline)};
+ try { return await run(path.join(__dirname,'../native/keyboard'),[DEVICE_SET,device.udid,dev,String(key),String(mask)],options); }
+ finally { softKeyboardBack(device); }
 }
 async function clipboardAction(p) {
  const key=deviceId(p.udid);
@@ -203,7 +205,10 @@ async function dispatch(method,p={},deadline=Date.now()+110000) {
   }
   if(method==='close_viewer'){await Promise.all([stopViewer(),android().viewer.close()]);return {execution:'executed'};}
   if(method==='reveal_screenshot'&&p.platform==='android')return android().dispatch(method,p);
-  if((method==='create_device'&&p.runtime?.startsWith('android:'))||await android().owns(p.udid))return android().dispatch(method,p);
+  if((method==='create_device'&&p.runtime?.startsWith('android:'))||await android().owns(p.udid)){
+    if(method==='boot'&&p.memoryMode!==undefined)throw new Failure('UNSUPPORTED_MEMORY_MODE','Memory modes are only supported for iOS simulators. Omit memoryMode for Android.');
+    return android().dispatch(method,p);
+  }
   return appleDispatch(method,p,deadline);
 }
 async function appleDispatch(method,p={},deadline=Date.now()+110000) {
@@ -228,10 +233,21 @@ async function appleDispatch(method,p={},deadline=Date.now()+110000) {
   const macOS=(await runCommand('/usr/bin/sw_vers',['-productVersion'],{timeout:3000})).stdout;
   if(!/^\d+\.\d+(?:\.\d+)?$/.test(macOS)||Number(macOS.split('.')[0])<15)throw new Failure('UNSUPPORTED_OS',`Requires macOS 15.0 or newer; detected ${macOS || 'unknown'}. Upgrade macOS before using this plugin.`);
   if(method==='environment') {
+    const keyboardCheck = (async () => {
+      let developerDir;
+      try {
+        developerDir = process.env?.DEVELOPER_DIR || (await runCommand('/usr/bin/xcode-select',['-p'],{timeout:5000})).stdout;
+        const result = await jsonCommand(path.join(__dirname,'../native/keyboard'),['--check',developerDir]);
+        if(result?.ready!==true || result.scope!=='keyboard-abi')throw new Failure('KEYBOARD_ABI_UNAVAILABLE','Keyboard interface check did not confirm compatibility.');
+        return {...result,developerDir};
+      } catch(error) {
+        return {ready:false,scope:'keyboard-abi',developerDir,errorCode:error.code||'KEYBOARD_ABI_UNAVAILABLE',message:error.message};
+      }
+    })();
     const [version,xcode,runtimes,types]=await Promise.all([
       runCommand(BINARY,['--version']),runCommand('/usr/bin/xcodebuild',['-version']),
       jsonCommand('/usr/bin/xcrun',['simctl','list','runtimes','--json']),jsonCommand('/usr/bin/xcrun',['simctl','list','devicetypes','--json'])]);
-    return {macOS,baguette:version.stdout,xcode:xcode.stdout,deviceSet:DEVICE_SET,runtimes:runtimes.runtimes.filter(x=>x.isAvailable&&/\.SimRuntime\.(?:iOS|tvOS|xrOS)-/.test(x.identifier)).map(x=>({name:x.name,identifier:x.identifier,version:x.version,...(Array.isArray(x.supportedDeviceTypes)?{supportedDeviceTypes:x.supportedDeviceTypes.map(d=>d.identifier)}:{})})),deviceTypes:types.devicetypes.filter(x=>['iPhone','iPad','Apple TV','Apple Vision'].includes(x.productFamily)).map(x=>({name:x.name,identifier:x.identifier,productFamily:x.productFamily,minRuntimeVersion:x.minRuntimeVersionString,maxRuntimeVersion:x.maxRuntimeVersionString})),note:'Xcode 26/27 are supported; iPhone Duo requires Xcode 27.1 and iOS 27.1. Use dedicated devices, observe UI before acting, and verify actions afterwards.'};
+    return {macOS,baguette:version.stdout,xcode:xcode.stdout,deviceSet:DEVICE_SET,diagnostics:{keyboard:await keyboardCheck},runtimes:runtimes.runtimes.filter(x=>x.isAvailable&&/\.SimRuntime\.(?:iOS|tvOS|xrOS)-/.test(x.identifier)).map(x=>({name:x.name,identifier:x.identifier,version:x.version,...(Array.isArray(x.supportedDeviceTypes)?{supportedDeviceTypes:x.supportedDeviceTypes.map(d=>d.identifier)}:{})})),deviceTypes:types.devicetypes.filter(x=>['iPhone','iPad','Apple TV','Apple Vision'].includes(x.productFamily)).map(x=>({name:x.name,identifier:x.identifier,productFamily:x.productFamily,minRuntimeVersion:x.minRuntimeVersionString,maxRuntimeVersion:x.maxRuntimeVersionString})),note:'Xcode 26/27 are supported; iPhone Duo requires Xcode 27.1 and iOS 27.1. diagnostics.keyboard checks interface availability only, not live input delivery or display-host ownership. A failed keyboard check does not invalidate the runtime catalog. Use dedicated devices, observe UI before acting, and verify actions afterwards.'};
   }
   if(method==='close_viewer') {await trackpadImpl?.stop();await spatialImpl?.stop();return {...await stopViewer(),execution:'executed',note:'Viewer server stopped; simulator and App remain running.'};}
   if(method==='devices') return {deviceSet:DEVICE_SET,devices:await listDevices(deadline)};
@@ -307,6 +323,15 @@ async function appleDispatch(method,p={},deadline=Date.now()+110000) {
     catch(error){return viewerFallback(device,p,{udid:device.udid,execution:'unknown'},error);}
   }
   if(method==='boot') {
+    const {createMemoryModes,validateMode}=require('./memory-mode.cjs');
+    validateMode(p.memoryMode,Failure);
+    const supportsMemory=/\.SimRuntime\.iOS-/.test(device.runtime);
+    if(!supportsMemory&&p.memoryMode!==undefined)throw new Failure('UNSUPPORTED_MEMORY_MODE','Memory modes are only supported for iOS simulators.');
+    const memory=supportsMemory?createMemoryModes({run:runCommand,sim:simCommand,Failure}):null;
+    let memoryMode=memory?await memory.configure(device,p.memoryMode,async()=>{
+      if((await target(p,false)).state!=='Shutdown')throw new Failure('DEVICE_TRANSITIONING','The device started elsewhere. Shut it down before changing memory mode.');
+    }):undefined;
+    try {
     // Upstream 0.1.98's automatic heal omits --set in its internal simctl calls.
     // Wait for this exact custom-set device ourselves; do not silently restart apps.
     const started=device.state==='Booted'?null:await bagCommand('boot',device,['--no-heal'],{timeout:15000,mutation:true});
@@ -315,7 +340,15 @@ async function appleDispatch(method,p={},deadline=Date.now()+110000) {
     const warnings=(started?.warnings||ready.warnings||'').split('\n').filter(l=>l.trim()&&!/lifetime|^\[baguette\] Booted /.test(l)).join('\n');
     // A fresh device shows the slide-to-type introduction over the keyboard the first time it appears; it is not part of any App.
     if(started&&platform(device)==='iOS'){try{await simCommand(['spawn',device.udid,'defaults','write','com.apple.keyboard.preferences','DidShowContinuousPathIntroduction','-bool','true'],{timeout:10000,mutation:true});}catch{}}
-    return settledShot(device,p,{udid:device.udid,state:'Booted',execution:started?'executed':'not_executed',...(warnings?{warnings}:{}),note:'Boot completed. If Device Hub has shadowed input, explicitly use heal (terminates running apps).'});
+    if(memory){
+      try {const actual=await memory.verify(device);memoryMode={...actual,requested:memoryMode.mode,...(actual.mode!==memoryMode.mode?{warning:'Active overrides differ from the requested profile. Check the device before testing.'}:{})};}
+      catch(error){memoryMode={...memoryMode,verified:false,warning:'Boot completed, but memory mode verification failed: '+error.message};}
+    }
+    return settledShot(device,p,{udid:device.udid,state:'Booted',execution:started?'executed':'not_executed',...(memoryMode?{memoryMode}:{}),...(warnings?{warnings}:{}),note:'Boot completed. If Device Hub has shadowed input, explicitly use heal (terminates running apps).'});
+    } catch(error){
+      if(memoryMode&&device.state==='Shutdown'){error.execution='unknown';error.message='Memory overrides were configured; inspect device state before continuing. '+error.message;}
+      throw error;
+    }
   }
   if(method==='shutdown') {
     if(device.state==='Shutdown') return {udid:device.udid,state:'Shutdown',execution:'not_executed'};

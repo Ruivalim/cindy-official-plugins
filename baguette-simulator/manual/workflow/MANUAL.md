@@ -1,5 +1,16 @@
 # 设备模拟器：完整工作流
 
+## iOS 启动内存模式
+
+device action=boot memoryMode=saving|standard|minimal。关机设备未指定时默认 saving；运行中未指定时保持当前模式，不重启。需要切换时先正常 shutdown（会退出 App，保留数据），再带模式 boot；不适用于安卓、tvOS 或 visionOS。
+
+- saving：日常 UI/交互测试。关闭 Spotlight、家庭/屏幕时间、健康/HomeKit、部分系统 App/地图、游戏存档/手柄、信息/FaceTime、诊断与 DeviceCheck 服务。
+- standard：恢复本插件内存配置管理的服务，不碰其它服务开关。完整验收、性能基准、上述系统集成和游戏手柄/存档测试选此档。
+- minimal：只在用户或任务明确限定为核心玩法/UI时选；还关闭账号/iCloud、StoreKit/推送、照片、实时活动、语音、网页后台与设备互联等服务。不是“游戏就无风险”，不用于完整登录、支付、广告、分享或验收流程。
+
+检查启动返回的 memoryMode.mode、verified、limitations 与可能的 warning。verified 仅验证 launchd 服务开关，不证明业务功能正常或内存节省幅度。未验证、模式不匹配或启动超时先检查设备，不盲目重启。覆盖值跨关机/抹除保留；下一次未指定的冷启动仍应用 saving，极简不会成为默认。服务配置来自固定的 SimSlim 0.12.2 目录，不下载或运行外部工具。
+
+
 本插件在独立设备集合里运行 iPhone/iPad、Apple TV、Vision Pro 和安卓模拟器：设备只属于本插件，不碰 Xcode 默认设备，也不碰 Cindy 内置设备。所有观察与操作都走模拟器自身的通道（截图、无障碍树、系统触摸），不依赖任何窗口，Mac 锁屏时也能用。画面实时显示在当前任务的侧栏页签，用户可以随时看着你操作或亲自接管。
 
 ## Apple TV / Vision Pro

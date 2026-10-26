@@ -26,9 +26,9 @@ function fixture(page,{steps=1}={}){
     CindySimModel:require('../../baguette-simulator/node/control-model.js'),fetch:async url=>url==='/app-context'?new Promise(()=>{}):{ok:true,json:async()=>({state:'on'})}};
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(`baguette-simulator/${page}.js`,'utf8'),context);
-  return {messages,calls,nodes,create:options=>context.CindySimPages.createDevice(options),finish:(value,index=0)=>results[index].finish(value),fail:(error,index)=>results[index].fail(error),intervals,timers,
+  return {messages,calls,nodes,pages:context.CindySimPages,create:options=>context.CindySimPages.createDevice(options),finish:(value,index=0)=>results[index].finish(value),fail:(error,index)=>results[index].fail(error),intervals,timers,
     advance:async ms=>{now+=ms;for(const [id,timer] of [...timers])if(timer.at<=now){timers.delete(id);timer.fn();}await flush();},
-    rpc:action=>page==='pages'?context.CindySimPages.rpc(action,{sessionId:'task-1',udid:'device-1'}):vm.runInContext(`rpc(${JSON.stringify(action)})`,context),
+    rpc:(action,extra={})=>page==='pages'?context.CindySimPages.rpc(action,{sessionId:'task-1',udid:'device-1',...extra}):vm.runInContext(`rpc(${JSON.stringify(action)},${JSON.stringify(extra)})`,context),
     tick:()=>{for(const {fn,ms} of [...intervals.values()])if(ms===500)fn();},
     ready:id=>{for(const p of buses.get(page==='pages'?'baguette-pages':'baguette-settings'))queueMicrotask(()=>p.onmessage?.({data:{type:'ready',id}}));},
     start:()=>vm.runInNewContext(fs.readFileSync('baguette-simulator/main.js','utf8'),{...clock,BroadcastChannel,
@@ -37,6 +37,22 @@ function fixture(page,{steps=1}={}){
         calls.push(r);return {ok:true,result:await results[calls.length-1].result};
       }}}})};
 }
+
+test('all page boot bridges forward memory mode and the shared picker retains only its device choice',async()=>{
+ const picker=fixture('pages'),a={udid:'a',runtime:'iOS-27'},b={udid:'b',runtime:'iOS-27'};
+ assert.equal(picker.pages.memoryArgs(a).memoryMode,'saving');picker.pages.memoryPicker(a,'en');
+ picker.nodes.find(n=>n.tag==='select').listeners.change({target:{value:'standard'}});
+ assert.equal(picker.pages.memoryArgs(a).memoryMode,'standard');assert.equal(picker.pages.memoryArgs(b).memoryMode,'saving');
+ for(const runtime of ['android:36','tvOS-27','xrOS-27']){
+  assert.equal(picker.pages.memoryPicker({udid:'x',runtime},'en'),null);
+  assert.equal(picker.pages.memoryArgs({udid:'x',runtime}).memoryMode,undefined);
+ }
+ for(const [page,action] of [['pages','boot'],['pages','task_boot'],['settings','boot']]){
+  const f=fixture(page);f.start();const pending=f.rpc(action,{memoryMode:'minimal'});await flush();f.tick();await flush();
+  assert.equal(f.calls[0].params.memoryMode,'minimal');
+  f.finish({ok:false,errorCode:'MEMORY_MODE_REQUIRES_SHUTDOWN'});assert.equal((await pending).ok,false);assert.equal(f.calls.length,1);
+ }
+});
 
 test('creation families keep Android, iPhone, TV and Vision runtimes separate after upstream integration',async()=>{
  const types=[{identifier:'android:phone',name:'Android Phone',platform:'android'},

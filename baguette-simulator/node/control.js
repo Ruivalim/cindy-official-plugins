@@ -21,6 +21,30 @@
     set(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} } };
   const zoomKey = () => `cindy.zoom.${udid}`;
   state.zoom = store.get(zoomKey())?.mode === 'pct' ? store.get(zoomKey()) : { mode: 'fit' };
+  const keyboardChoices = new Map();
+  const memoryChoices = new Map();
+  function memoryPicker() {
+    if(M.platform(state.status?.device)!=='iOS')return null;
+    const value=memoryChoices.get(udid)||'saving';
+    return h('div',{class:'memory-choice'},[
+      h('label',{},[h('span',{text:lang==='zh-CN'?'启动模式':'Startup mode'}),
+        h('select',{onchange:e=>memoryChoices.set(udid,e.target.value)},M.memoryOptions(lang).map(o=>h('option',{value:o.value,text:o.label,selected:o.value===value})))]),
+      h('small',{text:M.memoryHelp(lang)})]);
+  }
+  const keyboardEnabled = () => keyboardChoices.get(udid) ?? (store.get(`cindy.keyboard.${udid}`) !== false);
+  function keyboardGate(event) {
+    // Workbench fields belong to the browser. This only gates guest keyboard
+    // input from this view; touch and Agent tools retain their own controls.
+    if (keyboardEnabled() || event.target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A', 'SUMMARY'].includes(event.target?.tagName)) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+  }
+  function toggleKeyboard() {
+    const enabled = !keyboardEnabled();
+    keyboardChoices.set(udid, enabled); store.set(`cindy.keyboard.${udid}`, enabled);
+    if (!enabled) {
+      try { screen.contentWindow?.postMessage({ type: 'cindy-release-input' }, location.origin); } catch {}
+    }
+  }
 
   const ICON = {
     phone: '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="20" x="5" y="2" rx="2.5"/><path d="M12 18h.01"/></svg>',
@@ -83,7 +107,7 @@
     // The device with its bezel, like Simulator; the guest owns its orientation.
     screen.src = !M.handheld(state.status?.device)
       ? `/platform-stage.html?udid=${encodeURIComponent(udid)}&lang=${lang}&platform=${M.platform(state.status?.device)}&cindyViewer=${encodeURIComponent(token || '')}`
-      : `/simulators/${encodeURIComponent(udid)}?handheld=0${state.fullToolbar ? '&cindyFull=1' : ''}${token ? `&cindyViewer=${encodeURIComponent(token)}` : ''}${location.hash}`;
+      : `/simulators/${encodeURIComponent(udid)}?handheld=0${token ? `&cindyViewer=${encodeURIComponent(token)}` : ''}${location.hash}`;
     state.viewport = null; state.fitPct = 0; state.pose = null;
   }
   function blank() { state.generation = null; screen.src = 'about:blank'; }
@@ -162,6 +186,10 @@
     let doc; try { doc = screen.contentDocument; } catch { return; }
     if (!doc?.documentElement || doc.location?.href === 'about:blank') return;
     if (state.fullToolbar) { doc.documentElement.setAttribute('data-cindy-full', ''); stage.setAttribute('data-full', ''); } else { doc.documentElement.removeAttribute('data-cindy-full'); stage.removeAttribute('data-full'); }
+    // The full workbench previously loaded without the embedding stylesheet.
+    // Toggle that stylesheet in place so its panels remain available too.
+    const sheet = doc.getElementById('cindy-stage-style')?.sheet;
+    if (sheet) sheet.disabled = state.fullToolbar;
     const view = doc.getElementById('simNativeView');
     const width = view ? parseFloat(doc.defaultView.getComputedStyle(view).getPropertyValue('--nv-hh-w')) : 0;
     if (width && width !== state.screenWidth) {
@@ -182,6 +210,7 @@
       for (const name of ['pointerdown', 'keydown', 'wheel']) doc?.addEventListener(name, activity, { passive: true, capture: true });
       // Before the device page forwards keys to the simulator.
       doc?.defaultView?.addEventListener('keydown', shortcut, true);
+      for (const name of ['keydown', 'keyup', 'paste']) doc?.defaultView?.addEventListener(name, keyboardGate, true);
       doc?.defaultView?.addEventListener('resize', () => { setTimeout(decorate, 50); setTimeout(measure, 120); });
     } catch {}
     setTimeout(decorate, 300); setTimeout(decorate, 1500); setTimeout(measure, 800); setTimeout(measure, 2500);
@@ -231,7 +260,7 @@
     if (o.kind === 'offline') overlay.append(card(ICON.unplug, t.offlineTitle, t.offlineBody, [h('button', { class: 'btn primary', text: t.recover, onclick: recover })]));
     else if (o.kind === 'serviceOff') overlay.append(card(ICON.unplug, t.serviceOffTitle, t.serviceOffBody, [h('button', { class: 'btn', text: t.retry, onclick: check })]));
     else if (o.kind === 'expired') overlay.append(card(ICON.unplug, t.expiredTitle, t.expiredBody));
-    else if (o.kind === 'off') overlay.append(card(ICON.off, t.offTitle(name), t.offBody, [h('button', { class: 'btn cta', text: t.boot, onclick: boot })]));
+    else if (o.kind === 'off') overlay.append(card(ICON.off, t.offTitle(name), t.offBody, [memoryPicker(),h('button', { class: 'btn cta', text: t.boot, onclick: boot })]));
     else if (o.kind === 'paused') overlay.append(card(ICON.pause, t.pausedTitle, t.pausedBody));
     else if (o.kind === 'switching') {
       const target = state.status?.devices?.find((d) => d.udid === state.switchTarget)?.name || '';
@@ -306,7 +335,7 @@
   async function boot() {
     if (state.stopping || state.switching) return;
     state.status = { ...state.status, device: { ...state.status?.device, state: 'Booting' } }; render();
-    try { await api('boot'); state.generation = null; } catch (error) { toast(error.code === 'RUNTIME_DISABLED' ? t.pausedTitle : t.actionFailed, 'error'); }
+    try { await api('boot',M.platform(state.status?.device)==='iOS'?{memoryMode:memoryChoices.get(udid)||'saving'}:{}); state.generation = null; } catch (error) { toast(error.code === 'RUNTIME_DISABLED' ? t.pausedTitle : t.actionFailed, 'error'); }
     await check();
   }
   function confirmShutdown() {
@@ -572,6 +601,7 @@
       ...(state.status?.device?.platform === 'android' ? [item(ICON.key, lang === 'zh-CN' ? '返回' : 'Back', () => native('__nativeBack'), { disabled: !on })] : []),
       ['iOS','android'].includes(M.platform(state.status?.device)) ? item(ICON.shake, t.shake, () => native('__nativeShake'), { disabled: !on }) : null,
       ['iOS','android'].includes(M.platform(state.status?.device)) ? item(ICON.grid, t.appSwitcher, () => native('__nativeAppSwitcher'), { disabled: !on }) : null,
+      ['iOS','android'].includes(M.platform(state.status?.device)) ? item(ICON.key, lang === 'zh-CN' ? '电脑键盘输入' : 'Computer keyboard input', toggleKeyboard, { disabled: !on, role: 'menuitemcheckbox', 'aria-checked': String(keyboardEnabled()) }) : null,
       ...(state.status?.device?.platform === 'android' ? [
         item(ICON.key, lang === 'zh-CN' ? '复制设备剪贴板' : 'Copy device clipboard', () => native('__nativeCopy'), {disabled:!on}),
         item(ICON.plus, lang === 'zh-CN' ? '导入 APK、图片或视频…' : 'Import APK, image or video…', () => native('__nativeImport'), {disabled:!on}),
@@ -580,7 +610,10 @@
       item(ICON.key, t.releaseKeys, release, { disabled: !on }),
       h('div', { class: 'sep' }),
       item(ICON.refresh, t.recover, recover, { disabled: state.recovering || state.switching }),
-      M.platform(state.status?.device) === 'iOS' ? item(ICON.bar, t.advanced, () => { state.fullToolbar = !state.fullToolbar; load(); }, { role: 'menuitemcheckbox', 'aria-checked': String(state.fullToolbar) }) : null,
+      M.platform(state.status?.device) === 'iOS' ? item(ICON.bar, t.advanced, () => {
+        state.fullToolbar = !state.fullToolbar; decorate(); applyZoom();
+        screen.contentWindow?.dispatchEvent?.(new Event('resize'));
+      }, { role: 'menuitemcheckbox', 'aria-checked': String(state.fullToolbar) }) : null,
       h('div', { class: 'sep' }),
       item(ICON.power, t.shutdown, confirmShutdown, { 'data-danger': true, disabled: !state.status || state.status.device?.state !== 'Booted' || state.switching }),
     ]);

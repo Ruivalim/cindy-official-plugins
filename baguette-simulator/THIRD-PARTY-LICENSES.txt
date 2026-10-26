@@ -6434,3 +6434,31 @@ Android backend (0.2.0)
 =======================
 Bundled JavaScript, Tesseract WASM and local OCR models are listed in vendor/android/packages.json. Full third-party notices are reproduced in vendor/android/LICENSES.txt, included in this package. Exact npm artifact integrities are pinned in native/android-deps-lock.json; build instructions are in native/build-android.cjs. Tesseract model data is Apache-2.0 (https://github.com/naptha/tessdata/blob/gh-pages/LICENSE); npm wrapper metadata lists MIT. The Apache-2.0 license text above applies to the model data.
 Android Emulator and SDK/system images are not redistributed in the plugin; setup fetches official Google packages only after user license acceptance. The gRPC subset follows emulator_controller.proto (Android Open Source Project, Apache-2.0).
+
+SimSlim 0.12.2 service catalog
+=============================
+Only category IDs and service labels from profiles.go are redistributed as vendor/simslim/profiles.json. No executable, network client, watcher or cleanup code is included.
+Source: https://github.com/MobAI-App/simslim/tree/v0.12.2
+profiles.go SHA-256: 289a52ba2b906f40e6980c966c8b236ab8dc0c12a0b101d84af996c55a0580eb
+
+MIT License
+
+Copyright (c) 2026 Interlap
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

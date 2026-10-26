@@ -5,7 +5,7 @@
   "name": "设备模拟器",
   "description": "独立的 iPhone、iPad、Apple TV、Vision Pro 与安卓模拟器，共用任务画面、设备管理和操作工具。默认闲置 15 分钟关机并保留数据。Apple 平台需要 macOS 15+、Apple Silicon、完整 Xcode 与对应运行时；安卓支持 Mac、Windows x64、Linux x64，确认下载大小和许可后安装环境。Apple 后端基于 Baguette（Apache-2.0）。",
   "whenToUse": "iPhone、iPad、Apple TV、Vision Pro 与安卓模拟器；App 安装启动、真实输入、TV 遥控、Vision 空间手势、截图、界面检查、状态和日志排查。先 devices 选择设备，按手册验证结果。",
-  "version": "0.2.31",
+  "version": "0.2.32",
   "kind": "chip",
   "entry": "main.js",
   "icon": "assets/icon.png",
@@ -32,7 +32,7 @@
     },
     {
       "name": "device",
-      "description": "管理独立设备。create：按 environment 给出的 runtime 与 deviceType 新建（每台约 7–12 GB），需要干净环境、特定机型或与其他任务隔离时才新建；boot：启动并等初始化完成（约 105 秒内，超时先查状态），screenshot=true 时顺带返回启动后的画面；shutdown：关机，保留数据；rename：改名，保留数据；erase：抹掉全部 App 与数据；delete：删除设备，不可恢复。erase 和 delete 只在用户要求时使用。受插件运行开关限制；默认闲置 15 分钟关机（画面开着或有工具在操作时不关）。 附图受本次调用剩余时间限制，失败或时间不足返回 screenshot.error，已完成的操作结果保留。 任务绑定或近期 App 记录保存失败时返回 taskBindingError/appContextError，设备结果保留；先检查记录和存储，不要重复设备操作。 activity：登记当前任务正在使用此设备，有效 15 分钟，长巡检需续期；release：结束本任务的活动登记，不关闭设备或 App。两者需要调用任务上下文。普通设备操作自动记录活动，切换选择不清除其他设备活动；不是独占预约。活动仅保存在 worker 内存，重启或过期后运行中设备标为占用不明。 import_media：导入本机图片或视频到安卓 Downloads，返回路径、copied、scanRequested；部分失败先检查目标，不重复复制。 安卓删除/抹除若部分完成，返回 outcome=partial、completedSteps、failedStep、deviceError；保留任务记录，检查实际状态后再继续。",
+      "description": "管理独立设备。create 用 environment 的 runtime/deviceType（每台约7–12GB），优先复用；boot 等初始化，超时先查状态，screenshot=true 可附图。仅 iOS boot 支持 memoryMode：saving（关机时默认）关闭搜索、健康、部分游戏服务及诊断/DeviceCheck；standard 恢复受管理服务，完整验收或手柄/存档测试用此档；minimal 还影响登录、支付、照片、推送等，仅限明确范围的核心玩法/UI测试。运行中保持模式，切换先 shutdown 再 boot；检查 memoryMode.mode/verified/limitations，verified 只证明服务开关。shutdown 保留数据；rename 改名；erase 清空App/数据；delete 删除设备，后两项仅用户要求时用。activity 登记本任务使用15分钟，release 结束登记但不停止设备；需任务上下文，不是独占，worker重启后失效。受运行开关及默认15分钟闲置关机限制，画面/工具使用中不关。安卓 import_media 从本机绝对path复制图片/视频到Downloads（≤128MiB）；检查 copied/scanRequested/path。screenshot.error、taskBindingError/appContextError 保留操作结果；安卓部分失败含 completedSteps/failedStep/deviceError，检查实际状态，不重复已完成操作。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -73,6 +73,15 @@
           "path": {
             "type": "string",
             "description": "import_media：本机图片或视频的绝对路径，仅安卓，最大 128 MiB"
+          },
+          "memoryMode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "saving",
+              "minimal"
+            ],
+            "description": "仅 iOS boot。关机设备默认 saving；standard 完整验收；minimal 限定范围测试。运行中切换须先 shutdown。"
           }
         },
         "required": [
@@ -1022,5 +1031,6 @@
         "description": "完整工作流：选设备、构建与安装（确认装的是这次构建）、视图点坐标、观察与操作循环、等待与抓变化、设备状态、日志与崩溃、系统弹窗、验证原则与异常恢复。第一次在本任务里用模拟器前先读。"
       }
     ]
-  }
+  },
+  "releaseNotes": "启动 iOS 设备时可选择标准、节省内存或极简模式，默认节省内存。改进电脑键盘输入、失焦处理和软键盘恢复；展开高级工具保持画面与录屏连续；增加原生键盘接口诊断。"
 }

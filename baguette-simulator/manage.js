@@ -186,6 +186,7 @@ function hero(d, note) {
           : h('button', { class: 'btn cta', text: T.start, disabled: !enabled(), onclick: () => act('boot', d) }),
         h('button', { class: 'icon-btn hero-more', type: 'button', title: T.more, 'aria-label': T.more, html: GLYPH.more, onclick: (e) => deviceMenu(d, e.currentTarget) })])];
   }
+  if(d?.state==='Shutdown')children.splice(Math.max(0,children.length-1),0,globalThis.CindySimPages.memoryPicker(d,lang,!!busy[d.udid]));
   if (note) children.push(h('p', { class: 'status error', text: note }));
   $('hero').replaceChildren(h('div', { class: 'hero' }, children));
 }
@@ -227,7 +228,7 @@ async function act(action, d, done, extra = {}) {
   busy[d.udid] = action === 'boot' ? T.starting : action === 'shutdown' ? T.stopping : '…';
   message(''); render();
   try {
-    const r = await rpc(action, { udid: d.udid, ...extra }, T.timeout);
+    const r = await rpc(action, { udid: d.udid, ...extra, ...(action==='boot'?globalThis.CindySimPages.memoryArgs(d):{}) }, T.timeout);
     if (r?.ok === false || r?.deviceError) throw r;
     if (r.taskBindingError || r.appContextError) message(T.recordFailed, true);
     else if (r.taskStateError) message(T.stateFailed, true);
