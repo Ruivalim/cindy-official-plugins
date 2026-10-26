@@ -28,7 +28,7 @@ function fakeDocument(){
  Object.defineProperty(screen,'src',{get:()=>src,set:v=>{src=v;screen.loads.push(v);}});
  screen.contentDocument={querySelector:()=>null,getElementById:()=>null,addEventListener(){},documentElement:null};screen.contentWindow={};
  const body=el('body');
- const document={documentElement:{lang:'zh-CN',clientWidth:400,style:{}},body,hidden:false,getElementById:id=>byId[id]||null,querySelector:sel=>sel==='dialog[open]'?body.children.find(n=>n.tag==='dialog'&&n.open)||null:null,createElement:el,addEventListener(name,fn){(this.listeners[name]??=[]).push(fn);},listeners:{}};
+ const document={documentElement:{lang:'zh-CN',clientWidth:400,style:{}},body,hidden:false,getElementById:id=>byId[id]||all(body).find(n=>n.id===id)||null,querySelector:sel=>sel==='dialog[open]'?body.children.find(n=>n.tag==='dialog'&&n.open)||null:null,createElement:el,addEventListener(name,fn){(this.listeners[name]??=[]).push(fn);},listeners:{}};
  return {document,byId,body,text:n=>[n.textContent,...all(n).map(c=>c.textContent)].join(' ')};
 }
 
@@ -355,6 +355,30 @@ test('controller preserves a chosen memory mode through polling and sends it on 
  assert.equal(rerendered.children.find(c=>c.attrs.selected!==undefined).attrs.value,'standard');
  await f.dom.byId.overlay.querySelector('button').listeners.click[0]();
  assert.equal(f.calls.find(c=>c.action==='boot').memoryMode,'standard');
+});
+
+test('boot warnings remain visible over the live viewer through polling until explicitly dismissed',async()=>{
+ for(const memoryMode of [
+  {mode:'standard',verified:false,warning:'verification timed out'},
+  {mode:'minimal',verified:true},
+  {mode:'custom',verified:true,warning:'<img src=x onerror=alert(1)>'},
+ ]) {
+  let deviceState='Shutdown';
+  const f=await boot({respond:({action})=>{
+   if(action==='boot'){deviceState='Booted';return {ok:true,memoryMode};}
+   return status({device:{udid,name:'Phone',state:deviceState,runtime:'iOS-27'}});
+  }});
+  f.dom.byId.overlay.querySelector('.memory-choice').children[0].children[1].dispatch('change',{target:{value:'standard'}});
+  await f.dom.byId.overlay.querySelector('button').listeners.click[0]();
+  assert.equal(f.dom.byId.overlay.hidden,true);assert.equal(f.dom.byId.screen.loads.length,1);
+  const notices=f.dom.document.getElementById('memory-results'),card=notices.children[0];
+  assert.match(f.dom.text(card),/实际内存模式/);
+  if(memoryMode.verified===false)assert.match(f.dom.text(card),/未能核验/);
+  if(memoryMode.mode!=='standard')assert.match(f.dom.text(card),/与所选/);
+  if(memoryMode.warning){assert.ok(f.dom.text(card).includes(memoryMode.warning));assert.equal(card.children[0].innerHTML,'','diagnostics are text only');}
+  await f.poll();assert.equal(notices.children[0],card,'refresh does not hide an unconfirmed configuration');
+  await card.querySelector('button').listeners.click[0]();assert.equal(notices.children.length,0);
+ }
 });
 
 test('idle countdown card appears only in the last minute and keeps the device alive on request',async()=>{

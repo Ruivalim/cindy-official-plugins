@@ -26,6 +26,10 @@ button:disabled { opacity: .6; cursor: default; }
 svg { display: block; flex: 0 0 auto; }
 
 /* ---- top bar ---- */
+.memory-results { position: fixed; z-index: 40; inset: auto 12px 12px; display: flex; flex-direction: column; gap: 8px; max-height: 45vh; overflow: auto; pointer-events: none; }
+.memory-result { pointer-events: auto; display: flex; align-items: flex-start; gap: 12px; width: 100%; max-width: 520px; margin: 0 auto; padding: 12px; border: 1px solid var(--board); border-radius: 12px; background: var(--card); color: var(--text); font-size: 12px; line-height: 1.5; }
+.memory-result span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.memory-result button { flex: 0 0 auto; text-decoration: underline; text-underline-offset: 2px; }
 .bar { height: 44px; display: flex; align-items: center; gap: 6px; padding: 0 10px 0 12px; border-bottom: 1px solid var(--board); flex: 0 0 auto; }
 .bar .grow { flex: 1; min-width: 8px; }
 .pill { height: 28px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px 0 9px; border-radius: 9999px; background: var(--card); border: 1px solid var(--board); font-weight: 500; max-width: 60%; transition: background .15s; }

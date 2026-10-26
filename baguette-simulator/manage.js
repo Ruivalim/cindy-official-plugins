@@ -228,8 +228,10 @@ async function act(action, d, done, extra = {}) {
   busy[d.udid] = action === 'boot' ? T.starting : action === 'shutdown' ? T.stopping : '…';
   message(''); render();
   try {
-    const r = await rpc(action, { udid: d.udid, ...extra, ...(action==='boot'?globalThis.CindySimPages.memoryArgs(d):{}) }, T.timeout);
+    const memory = action==='boot' ? globalThis.CindySimPages.memoryArgs(d) : {};
+    const r = await rpc(action, { udid: d.udid, ...extra, ...memory }, T.timeout);
     if (r?.ok === false || r?.deviceError) throw r;
+    if (action==='boot') M.showMemoryNotice(r, lang, memory.memoryMode, d.name);
     if (r.taskBindingError || r.appContextError) message(T.recordFailed, true);
     else if (r.taskStateError) message(T.stateFailed, true);
     else if (done) message(done);

@@ -1158,7 +1158,7 @@ test('launches on different devices run independently and retain both shared App
 });
 
 function pageFixture(kind) {
-  const nodes=new Map(),requests=[];let push;
+  const nodes=new Map(),requests=[],memoryNotices=[];let push;
   const get=id=>{
     if(!nodes.has(id))nodes.set(id,{replaceChildren(){},append(){},querySelector(){return null;},classList:{contains:()=>false,toggle(){}}});
     return nodes.get(id);
@@ -1167,14 +1167,34 @@ function pageFixture(kind) {
     localStorage:{getItem:()=>null},clearTimeout(){},setTimeout:()=>0,
     CindySimPages:{locale:()=>new Promise(()=>{}),onPush:fn=>{push=fn;},createDevice:async()=>({udid:B}),memoryArgs:()=>({memoryMode:'saving'}),memoryPicker:()=>null,
       rpc:(action,params)=>{const d=deferred();requests.push({...d,action,params});return d.promise;},
-      h:()=>({}),GLYPH:{iphone:'',big:'',pause:''}},CindySimModel:{runtimeLabel:()=>'',deviceRows:()=>[]}};
+      h:()=>({}),GLYPH:{iphone:'',big:'',pause:''}},CindySimModel:{runtimeLabel:()=>'',deviceRows:()=>[],showMemoryNotice:(...args)=>memoryNotices.push(args)}};
   const expose=kind==='task'
     ? 'globalThis.page={refresh,act,createDevice,state:()=>state,note:()=>note,seed:r=>{state=r;show(r.viewer?.url);}};'
     : 'globalThis.page={refresh,act,showScreen,hero,state:()=>state,seed:r=>{state=r;selected=r.devices[0]?.udid;}};';
   vm.runInNewContext(syncFs.readFileSync(path.resolve(`baguette-simulator/${kind}.js`),'utf8')+'\n'+expose,context);
-  return {page:context.page,get,requests,push:m=>push(m)};
+  return {page:context.page,get,requests,memoryNotices,push:m=>push(m)};
 }
 const taskState=udid=>({ok:true,settings:{enabled:true},devices:[],device:{udid,state:'Booted'},viewer:{url:`http://127.0.0.1:1/control?udid=${udid}`}});
+
+test('task, management and settings boot surfaces retain the result for the common memory warning',async()=>{
+ const result={...taskState(A),memoryMode:{mode:'minimal',verified:false,warning:'verification failed'}};
+ const task=pageFixture('task');task.page.seed(taskState(A));
+ const pending=task.page.act('task_boot',{udid:A},A);task.requests[0].resolve(result);await pending;
+ assert.equal(task.memoryNotices[0][0],result);assert.equal(task.memoryNotices[0][2],'saving');
+ assert.equal(task.get('screen').hidden,false,'a warning does not undo the completed boot');
+ const hub=pageFixture('manage'),device={udid:A,name:'Phone',state:'Shutdown'};
+ hub.page.seed({ok:true,settings:{enabled:true},devices:[device]});
+ const boot=hub.page.act('boot',device);hub.requests[0].resolve(result);await new Promise(r=>setImmediate(r));
+ assert.equal(hub.memoryNotices[0][0],result);assert.equal(hub.memoryNotices[0][2],'saving');
+ hub.requests[1].resolve({ok:true,settings:{enabled:true},devices:[{...device,state:'Booted'}]});await boot;
+ const notices=[],nodes=new Map(),get=id=>{if(!nodes.has(id))nodes.set(id,{textContent:'',replaceChildren(){},classList:{toggle(){}}});return nodes.get(id);};
+ const context={BroadcastChannel:class{},document:{documentElement:{lang:'zh-CN'},getElementById:get},
+  CindySimModel:{deviceRows:()=>[],showMemoryNotice:(...args)=>notices.push(args)},CindySimPages:{memoryArgs:()=>({memoryMode:'standard'})},
+  fetch:()=>new Promise(()=>{}),result,device};
+ vm.createContext(context);vm.runInContext(syncFs.readFileSync(path.resolve('baguette-simulator/settings.js'),'utf8'),context);
+ await vm.runInContext("state={settings:{enabled:true},devices:[device]};rpc=async()=>result;refresh=async()=>{};render=()=>{};perform('boot',{udid:device.udid})",context);
+ assert.equal(notices[0][0],result);assert.equal(notices[0][1],'zh-CN');assert.equal(notices[0][2],'standard');
+});
 
 test('task and management pages report saved bindings with failed status without showing old task screens or claiming opened',async()=>{
   const result={ok:true,execution:'executed',sessionId:'task-1',boundUdid:B,taskStateError:{code:'STATUS_FAILED'}};

@@ -335,7 +335,12 @@
   async function boot() {
     if (state.stopping || state.switching) return;
     state.status = { ...state.status, device: { ...state.status?.device, state: 'Booting' } }; render();
-    try { await api('boot',M.platform(state.status?.device)==='iOS'?{memoryMode:memoryChoices.get(udid)||'saving'}:{}); state.generation = null; } catch (error) { toast(error.code === 'RUNTIME_DISABLED' ? t.pausedTitle : t.actionFailed, 'error'); }
+    const requested = M.platform(state.status?.device)==='iOS' ? memoryChoices.get(udid)||'saving' : undefined;
+    try {
+      const result = await api('boot', requested ? {memoryMode:requested} : {});
+      M.showMemoryNotice(result, lang, requested, state.status?.device?.name);
+      state.generation = null;
+    } catch (error) { toast(error.code === 'RUNTIME_DISABLED' ? t.pausedTitle : t.actionFailed, 'error'); }
     await check();
   }
   function confirmShutdown() {

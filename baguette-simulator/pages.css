@@ -44,6 +44,10 @@ input { font: inherit; color: inherit; background: var(--c-card); border: 1px so
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 
 /* Task page */
+.memory-results { position: fixed; z-index: 40; inset: auto 12px 12px; display: flex; flex-direction: column; gap: 8px; max-height: 45vh; overflow: auto; pointer-events: none; }
+.memory-result { pointer-events: auto; display: flex; align-items: flex-start; gap: 12px; width: 100%; max-width: 520px; margin: 0 auto; padding: 12px; border: 1px solid var(--c-border); border-radius: 12px; background: var(--c-card); color: var(--c-text); font-size: 12px; line-height: 1.5; }
+.memory-result span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.memory-result button { flex: 0 0 auto; text-decoration: underline; text-underline-offset: 2px; }
 .task-screen { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; background: transparent; }
 .task-home { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 16px; }
 .task-home .inner { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 14px; }

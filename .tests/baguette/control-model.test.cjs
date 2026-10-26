@@ -3,6 +3,16 @@ const M=require('../../baguette-simulator/node/control-model.js');
 const udid='00000000-0000-4000-8000-000000000001';
 const booted={ready:true,parked:false,generation:1,device:{udid,name:'iPhone 17 Pro',state:'Booted',runtime:'com.apple.CoreSimulator.SimRuntime.iOS-27-1',deviceType:'com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro'},settings:{enabled:true,idleMinutes:15},idleDeadline:0};
 
+test('memory notice distinguishes unverified, mismatched and warning results from confirmed boots',()=>{
+ for(const lang of ['en','zh-CN','ja','ko']) {
+  assert.equal(M.memoryNotice({},lang,'standard'),'');
+  assert.equal(M.memoryNotice({memoryMode:{mode:'standard',verified:true}},lang,'standard'),'');
+  assert.ok(M.memoryNotice({memoryMode:{mode:'standard',verified:false,warning:'diagnostic'}},lang,'standard').includes('diagnostic'));
+  assert.ok(M.memoryNotice({memoryMode:{mode:'minimal',verified:true,requested:'standard'}},lang));
+  assert.ok(M.memoryNotice({memoryMode:{mode:'custom',verified:true}},lang,'standard'));
+ }
+});
+
 test('presence and overlay reflect device, service and page state in priority order',()=>{
  assert.deepEqual(M.presence(booted),{tone:'on',key:'connected'});assert.equal(M.overlay(booted),null);
  assert.equal(M.overlay({...booted,ready:false,parked:true}).kind,'offline');assert.equal(M.presence({...booted,ready:false,parked:true}).tone,'warn');

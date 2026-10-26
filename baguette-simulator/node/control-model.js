@@ -66,6 +66,38 @@
       : 'Saving disables search, health and some game/diagnostic services. Minimal also affects login, purchases, photos and push; use only for scoped gameplay/UI tests. Use Standard for full acceptance tests. Shut down before switching.';
   }
 
+  function memoryNotice(result, lang, requested) {
+    const mode = result?.memoryMode;
+    if (!mode) return '';
+    requested ??= mode.requested;
+    const mismatch = requested && mode.mode !== requested;
+    if (mode.verified === true && !mismatch && !mode.warning) return '';
+    const zh = lang === 'zh-CN';
+    const label = (value) => memoryOptions(lang).find(o => o.value === value)?.label
+      || (zh ? '自定义或未知' : 'Custom or unknown');
+    return [zh ? `实际内存模式：${label(mode.mode)}。` : `Actual memory mode: ${label(mode.mode)}.`,
+      mismatch ? (zh ? `与所选的${label(requested)}模式不符。` : `Does not match the selected ${label(requested)} mode.`) : '',
+      mode.verified !== true ? (zh ? '未能核验服务配置。' : 'Service configuration could not be verified.') : '',
+      zh ? '设备已启动，请先核对配置再开始测试。' : 'The device has started. Check its configuration before testing.',
+      mode.warning || ''].filter(Boolean).join(' ');
+  }
+
+  // A persistent result stays above an opened viewer on every boot surface.
+  // Text nodes keep backend diagnostics inert; only explicit dismissal hides it.
+  function showMemoryNotice(result, lang, requested, name = '', doc = globalThis.document) {
+    const text = memoryNotice(result, lang, requested);
+    if (!text) return;
+    let notices = doc.getElementById('memory-results');
+    if (!notices) {
+      notices = doc.createElement('div'); notices.id = 'memory-results'; notices.className = 'memory-results';
+      doc.body.append(notices);
+    }
+    const notice = doc.createElement('div'); notice.className = 'memory-result'; notice.setAttribute('role', 'status');
+    const body = doc.createElement('span'); body.textContent = (name ? name + ' · ' : '') + text;
+    const close = doc.createElement('button'); close.type = 'button'; close.textContent = lang === 'zh-CN' ? '关闭' : 'Dismiss';
+    close.addEventListener('click', () => notice.remove()); notice.append(body, close); notices.append(notice);
+  }
+
   // One interaction vocabulary for every device, with platform-specific input.
   function controlHelp(lang, device) {
     const zh = lang === 'zh-CN', kind = platform(device);
@@ -237,7 +269,7 @@
   /** The percentage the zoom state shows, given the fitted percentage. */
   const zoomPct = (zoom, fitPct) => Math.round(zoom?.mode === 'pct' ? zoom.pct : (fitPct > 0 ? fitPct : 100));
 
-  const api = { STRINGS, strings, memoryOptions, memoryHelp, controlHelp, runtimeLabel, family, platform, handheld, screenRadius, presence, overlay, idleLeft, clock, deviceRows, runtimesFor, defaultChoice, ZOOM_STEPS, zoomStep, zoomFactor, zoomPct };
+  const api = { STRINGS, strings, memoryOptions, memoryHelp, memoryNotice, showMemoryNotice, controlHelp, runtimeLabel, family, platform, handheld, screenRadius, presence, overlay, idleLeft, clock, deviceRows, runtimesFor, defaultChoice, ZOOM_STEPS, zoomStep, zoomFactor, zoomPct };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.CindySimModel = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

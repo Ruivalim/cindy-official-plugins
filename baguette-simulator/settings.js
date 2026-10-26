@@ -76,7 +76,7 @@ async function refresh(){
 async function perform(action,params={}){
   if(busy)return;busy=true;render();message(T.working);
   if(action==='boot')params={...params,...globalThis.CindySimPages.memoryArgs(state?.devices?.find(d=>d.udid===params.udid))};
-  try{const result=await rpc(action,params);if(result.settings&&result.devices)state=result;if(!result.ok)throw Error(errorText(result));message(action==='shutdown'||action==='stopAll'?T.shutdownDone:action==='create'?T.created:T.saved);}
+  try{const result=await rpc(action,params);if(result.settings&&result.devices)state=result;if(!result.ok)throw Error(errorText(result));if(action==='boot')M.showMemoryNotice(result,document.documentElement.lang,params.memoryMode,state?.devices?.find(d=>d.udid===params.udid)?.name);message(action==='shutdown'||action==='stopAll'?T.shutdownDone:action==='create'?T.created:T.saved);}
   catch(e){message(e.message,true);}
   finally{busy=false;await refresh();render();}
 }

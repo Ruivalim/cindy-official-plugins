@@ -30,6 +30,12 @@ node --test .tests/plugin-contract.test.mjs .tests/localization.test.mjs .tests/
 - This change redistributes only pinned SimSlim 0.12.2 category/service labels, not its executable. Live tests confirm service settings, not a fresh performance benchmark. Earlier 0.12.2 measurements (saving about 12–17%, minimal about 64–66%) used the same 56/168 service sets and are specific to that environment; no fixed reduction or complete game compatibility is claimed. Previously observed minimal-mode photo and Live Activity failures inform the new warnings.
 - Cleanup: restored standard, shut down only the dedicated test device, closed the test browser tab and stopped the source preview server. Installed plugin and saved viewer-session addresses remain untouched.
 
-## Limits
+## Review follow-up: boot warnings
+
+- The final follow-up suite passed 662 tests (0 failures, skips or cancellations). Three added tests cover the shared result formatter, warning persistence over the live controller through polling and dismissal, and task/management/settings entry points retaining the original boot result and requested mode. Unverified, mismatched and custom modes are covered; backend diagnostics use text nodes, including an HTML-shaped test string.
+- A local static preview loaded the exact shared renderer and both page/controller stylesheets with an injected unverified/mismatched result above a viewer placeholder. Light/dark screenshots at 320×700 showed the complete, wrapping notice and its dismissal button; width and scrollWidth were both 320. Clicking Dismiss removed it. This verifies presentation, not a real service-verification failure or packaged Cindy integration.
+- The simulator core, service configuration and input/recording implementation did not change in this follow-up; the real source evidence above remains applicable. No simulator was started for the injected warning preview.
+
+## Remaining limits
 
 This is source/browser/native evidence, not installation acceptance of the packaged candidate in Cindy. Android input gating has automated coverage; no Android device was booted for this change. Moving a whole Cindy task panel between host windows and physical-phone remote viewing were not repeated. No new host-window ownership architecture is claimed. Keyboard ABI availability does not prove gesture support, input delivery, or exclusive display ownership. No global Xcode host routing/preferences or Device Hub processes were changed. Memory mode runtime evidence covers iOS 27.0/Xcode 27.1; other iOS runtime versions and full game login/payment/ads/controller flows remain unverified. External tools must not concurrently start the same private device during its stopped-store update.

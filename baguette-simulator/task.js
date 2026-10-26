@@ -106,9 +106,12 @@ async function act(action, params, marker) {
   const request = pending = {};
   busy = marker; note = null; render();
   try {
-    const r = await rpc(action, { sessionId: session, ...params, ...(action==='task_boot'?globalThis.CindySimPages.memoryArgs(state?.devices?.find(d=>d.udid===params.udid)||state?.device):{}) }, T.timeout);
+    const device = state?.devices?.find(d=>d.udid===params.udid)||state?.device;
+    const memory = action==='task_boot' ? globalThis.CindySimPages.memoryArgs(device) : {};
+    const r = await rpc(action, { sessionId: session, ...params, ...memory }, T.timeout);
     if (pending !== request) return;
     if (!r.ok) throw r;
+    if (action==='task_boot') M.showMemoryNotice(r, lang, memory.memoryMode, device?.name);
     if (r.taskBindingError || r.appContextError) { note = { text: T.recordFailed, error: true, sticky: true }; return; }
     if (r.taskStateError) { state = null; choosing = false; show(null); note = { text: T.stateFailed, error: true, sticky: true }; return; }
     choosing = false; accept(r);
