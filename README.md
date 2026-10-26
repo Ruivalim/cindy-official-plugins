@@ -115,6 +115,10 @@ The full path from idea to marketplace:
 
 ## Review standards
 
+Published plugin ID changes require a separately reviewed
+[migration registration](./docs/plugin-id-migrations.md) and coordinated Server
+and client rollout before the renamed package is released.
+
 Every official plugin is installed by real users who carry its security and
 experience risk. Review actual behavior, impact and evidence: routine packaging
 fixes, dependency maintenance, traceable generated artifacts and static images
