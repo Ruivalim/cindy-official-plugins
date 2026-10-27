@@ -1,5 +1,43 @@
 # Simulator gesture parity and native trackpad acceptance
 
+## Review follow-up — 0.2.58, 2026-10-28
+
+The first review identified Android boundary samples being coalesced while a
+previous touch request was pending: a second native begin could disappear, and a
+wheel pan/pinch switch discarded the new event. Starts and releases now take
+immutable snapshots through the existing serialized input queue; released
+records leave the active map synchronously. Only moves coalesce. Cancellation
+continues to invalidate queued work through the existing epoch. No additional
+queue, lock, retry or persistence mechanism was introduced.
+
+Both wheel-pan implementations now consume offscreen travel with one bounded
+translation for the visible pair, preserving spacing and responding to the next
+reverse event. The iPhone source also clears the old idle timer before switching
+gesture kind, so it cannot close the new stream early. Native host mapping,
+native Baguette binary, permissions and transport endpoints are unchanged.
+
+The three review reproductions failed before and passed after repair. The
+production-source regression also covers both wheel-kind directions, four screen
+edges, and blur while native boundaries are waiting for transport. The focused
+Android gesture file passes all 10 cases in 3.83 seconds. Repository contracts and
+all simulator files pass 1417 checks, zero failures or skips. The wheel vendor
+patch reconstructs the exact packaged source and the vendor inventory is current.
+
+A real Electron 42.11.12 renderer loaded the revised production scripts and used
+real DOM events and an HTTP server holding the first input response. It observed
+two native begins and two complete releases (four immutable samples), seven
+pan-to-pinch samples retaining both new deltas, immediate reverse after edge pan,
+and matching iPhone pan positions. The old iPhone pan idle timer did not close
+the following pinch. Receipt: `pr235-runtime-receipt.json` in the task artifact
+directory. This is synthetic renderer/HTTP verification, not a running device,
+physical AppKit capture, end-to-end latency measurement or fresh user hand-feel
+acceptance. Forge validates and packs 0.2.58 without installing it.
+
+The 0.2.56 physical acceptance below still documents the unchanged host mapping
+and native backends. It is not evidence that the newly repaired queue handoffs
+or wheel boundaries were physically retested; those use the targeted regression
+and Electron backpressure evidence above.
+
 ## Actual development sidebar follow-up — 2026-10-28
 
 The isolated desktop worktree now runs the actual Cindy task sidebar, with local

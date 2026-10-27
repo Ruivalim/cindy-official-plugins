@@ -18,6 +18,7 @@
 
       const close = () => {
         if (!state) return;
+        clearTimeout(state.idleTimer);
         this.screen.touchUp([state.f1, state.f2]);
         if (this.overlay) this.overlay.clear();
         state = null;
@@ -52,8 +53,16 @@
           state.f1 = { x: centre.x + rr, y: centre.y };
           state.f2 = { x: centre.x - rr, y: centre.y };
         } else {
-          const shiftX = (-e.deltaX / r.width) * width;
-          const shiftY = (-e.deltaY / r.height) * height;
+          // Keep the visible pair together and consume offscreen travel, just
+          // like Android. Reversing at an edge must not repay hidden distance.
+          for (const finger of [state.f1, state.f2]) {
+            finger.x = Math.max(0, Math.min(width, finger.x));
+            finger.y = Math.max(0, Math.min(height, finger.y));
+          }
+          const shiftX = Math.max(-Math.min(state.f1.x, state.f2.x),
+            Math.min(width - Math.max(state.f1.x, state.f2.x), (-e.deltaX / r.width) * width));
+          const shiftY = Math.max(-Math.min(state.f1.y, state.f2.y),
+            Math.min(height - Math.max(state.f1.y, state.f2.y), (-e.deltaY / r.height) * height));
           state.f1.x += shiftX; state.f1.y += shiftY;
           state.f2.x += shiftX; state.f2.y += shiftY;
         }

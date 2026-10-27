@@ -5,6 +5,11 @@ window.androidScreenActions=({canvas,frame,input,pointers,flush,screenSize,zh})=
   let wheel=null,wheelTimer,uploading=false,recorder=null,recordingTimer,paintTimer;
   function endWheel(){clearTimeout(wheelTimer);if(wheel)wheel.ending=true;}
   function cancelWheel(){clearTimeout(wheelTimer);wheel=null;}
+  function closeWheel(){
+    const previous=wheel;cancelWheel();
+    for(const touch of previous.touches)touch.pressure=0;
+    flush();
+  }
   const clamp=n=>Math.max(0,Math.min(1,n));
   let nativeContacts=null;
   canvas.addEventListener('cindy-trackpad',e=>{
@@ -51,7 +56,7 @@ window.androidScreenActions=({canvas,frame,input,pointers,flush,screenSize,zh})=
     const bounds=canvas.getBoundingClientRect(),size=screenSize(),pinch=e.ctrlKey;
     if(!size?.width||!size.height||!bounds.width||!bounds.height)return;
     const centre={x:(e.clientX-bounds.left)/bounds.width,y:(e.clientY-bounds.top)/bounds.height};
-    if(wheel&&wheel.pinch!==pinch){endWheel();return;}
+    if(wheel&&wheel.pinch!==pinch)closeWheel();
     if(!wheel){
       // Match iPhone: two contacts, 80 device points either side of the cursor.
       const spread=80/size.width;
@@ -72,7 +77,12 @@ window.androidScreenActions=({canvas,frame,input,pointers,flush,screenSize,zh})=
       wheel.points=[{x:centre.x+spread,y:centre.y},{x:centre.x-spread,y:centre.y}];
     }
     else{
-      for(const p of wheel.points){p.x-=e.deltaX*factor/bounds.width;p.y-=e.deltaY*factor/bounds.height;}
+      // Move the visible pair together, consuming travel past either edge.
+      // A small reversal then moves immediately without changing its spacing.
+      const points=wheel.points.map(p=>({x:clamp(p.x),y:clamp(p.y)}));
+      const dx=Math.max(-Math.min(...points.map(p=>p.x)),Math.min(1-Math.max(...points.map(p=>p.x)),-e.deltaX*factor/bounds.width));
+      const dy=Math.max(-Math.min(...points.map(p=>p.y)),Math.min(1-Math.max(...points.map(p=>p.y)),-e.deltaY*factor/bounds.height));
+      wheel.points=points.map(p=>({x:p.x+dx,y:p.y+dy}));
     }
     clearTimeout(wheelTimer);wheelTimer=setTimeout(endWheel,120);
   },{passive:false});
@@ -139,5 +149,5 @@ window.androidScreenActions=({canvas,frame,input,pointers,flush,screenSize,zh})=
   addEventListener('beforeunload',e=>{if(recorder){e.preventDefault();e.returnValue='';}});
   addEventListener('pagehide',()=>{cancelWheel();stopRecording();});
   window.__nativeCopy=()=>copy(false);window.__nativeImport=()=>document.getElementById('file-input').click();window.__nativeRecord=record;window.__nativeRecording=()=>!!recorder;
-  return {release:cancelWheel};
+  return {release(){cancelWheel();nativeContacts=null;}};
 };

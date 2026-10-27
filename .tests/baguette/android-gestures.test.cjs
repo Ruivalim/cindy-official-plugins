@@ -90,20 +90,92 @@ test('Android wheel gestures match iPhone contacts at the same cursor, scale and
   }
 });
 
-function pointerHarness(){
+function pointerHarness({withActions=false,holdInput=false}={}){
   const handlers={},globalHandlers={},sent=[];let dots=[];
+  const pending=[];
+  const node=()=>({hidden:true,addEventListener(){}}),nodes={};
   const frame={style:{},getAnimations:()=>[]};
   const canvas={width:800,height:1600,getContext:()=>({}),focus(){},setPointerCapture(){},
     getBoundingClientRect:()=>({left:20,top:40,width:200,height:400}),addEventListener:(name,fn)=>handlers[name]=fn};
-  const context={URLSearchParams,AbortController,AbortSignal,location:{pathname:'/simulators/test',search:''},
+  const context={URLSearchParams,AbortController,AbortSignal,setTimeout,clearTimeout,location:{pathname:'/simulators/test',search:''},
     window:{Baguette:{_PinchOverlay:class{clear(){dots=[];}setFingers(p){dots=copy(p);}}}},
     parent:{document:{documentElement:{lang:'en'}},cindySim:{state:{viewport:{width:400,height:800}}}},
-    document:{getElementById:name=>name==='display'?canvas:name==='nativeDeviceFrame'?frame:{}},
+    document:{addEventListener(){},getElementById:name=>name==='display'?canvas:name==='nativeDeviceFrame'?frame:nodes[name]||(nodes[name]=node())},
     matchMedia:()=>({matches:false}),addEventListener:(name,fn)=>globalHandlers[name]=fn,
-    fetch:(url,options)=>{if(url!=='/android-input')return new Promise(()=>{});sent.push(JSON.parse(options.body));return Promise.resolve({ok:true,json:async()=>({ok:true})});}};
+    fetch:(url,options)=>{if(url!=='/android-input')return new Promise(()=>{});sent.push(JSON.parse(options.body));const response={ok:true,json:async()=>({ok:true})};return holdInput?new Promise(resolve=>pending.push(()=>resolve(response))):Promise.resolve(response);}};
+  if(withActions)vm.runInNewContext(read(android,'screen-actions.js'),context);
   vm.runInNewContext(read(android,'screen.js'),context);
-  return {handlers,globalHandlers,sent,dots:()=>dots};
+  return {handlers,globalHandlers,sent,pending,dots:()=>dots,native:(phase,touches)=>handlers['cindy-trackpad']({detail:{phase,touches}})};
 }
+
+test('Android queues native release and next begin while the previous request is pending',async()=>{
+  const h=pointerHarness({withActions:true,holdInput:true});
+  const pair=[{id:0,x:70,y:240},{id:1,x:170,y:240}];
+  h.native('begin',pair);await pause(0);
+  h.native('end',[]);
+  h.native('begin',pair.map(p=>({...p,y:260})));
+  h.native('change',pair.map(p=>({...p,y:280})));
+  h.native('end',[]);
+  for(let i=0;i<8;i++){h.pending.shift()?.();await pause(0);}
+  const touches=h.sent.filter(p=>p.action==='touch');
+  assert.equal(touches.filter(p=>p.start).length,2,'neither native begin may be coalesced into a release');
+  assert.equal(touches.filter(p=>p.touches.every(t=>!t.pressure)).length,2);
+  assert.deepEqual(touches.map(p=>p.touches.map(t=>t.pressure)),[[1024,1024],[0,0],[1024,1024],[0,0]]);
+  assert.ok(touches[2].touches.every(t=>t.y===.55));
+  assert.deepEqual(h.dots(),[]);
+});
+
+test('Android keeps new wheel input across both kind switches while transport is pending',async t=>{
+ for(const pinch of [true,false]){
+  const h=pointerHarness({withActions:true,holdInput:true});t.after(()=>h.globalHandlers.blur());
+  h.handlers.wheel(event({clientX:120,clientY:240,ctrlKey:!pinch,deltaY:20}));await pause(0);
+  h.handlers.wheel(event({clientX:120,clientY:240,ctrlKey:pinch,deltaY:pinch?-60:20}));
+  h.handlers.wheel(event({clientX:120,clientY:240,ctrlKey:pinch,deltaY:pinch?-40:30}));
+  for(let i=0;i<60;i++){h.pending.shift()?.();await pause(5);}
+  const touches=h.sent.filter(p=>p.action==='touch'),starts=touches.filter(p=>p.start);
+  assert.equal(starts.length,2,'switch releases the previous pair without losing the next wheel events');
+  const last=touches.at(-1).touches;
+  assert.ok(last.every(p=>!p.pressure));
+  if(pinch)assert.ok(Math.abs(last[0].x-last[1].x-.4*Math.exp(.5))<.00002);
+  else assert.ok(last.every(p=>Math.abs(p.y-.375)<.00002));
+ }
+});
+
+test('Android blur drops queued native boundaries and late changes before allowing a fresh pair',async()=>{
+  const h=pointerHarness({withActions:true,holdInput:true}),pair=[{id:0,x:70,y:240},{id:1,x:170,y:240}];
+  h.native('begin',pair);await pause(0);h.native('end',[]);h.native('begin',pair);
+  h.globalHandlers.blur();h.native('change',pair);
+  for(let i=0;i<8;i++){h.pending.shift()?.();await pause(0);}
+  assert.deepEqual(h.sent.map(p=>p.action),['touch','release']);
+  h.native('begin',pair);await pause(0);h.native('end',[]);
+  for(let i=0;i<8;i++){h.pending.shift()?.();await pause(0);}
+  assert.deepEqual(h.sent.map(p=>p.action),['touch','release','touch','touch']);
+  assert.equal(h.sent[2].start,true);assert.ok(h.sent[3].touches.every(p=>!p.pressure));
+});
+
+test('Android and iPhone wheel pan consume edge travel and reverse with the pair intact',async t=>{
+  const handlers={},pointers=new Map(),sent=[];
+  const node=()=>({hidden:true,addEventListener(){},getBoundingClientRect:()=>({left:0,top:0,width:400,height:800}),getAnimations:()=>[],focus(){}});
+  const canvas=node();canvas.addEventListener=(name,fn)=>handlers[name]=fn;
+  const context={window:{},document:{getElementById:node,addEventListener(){}},location:{pathname:'/simulators/test',search:''},URLSearchParams,setTimeout,clearTimeout,addEventListener(){}};
+  vm.runInNewContext(read(android,'screen-actions.js'),context);
+  const actions=context.window.androidScreenActions({canvas,frame:node(),pointers,screenSize:()=>({width:400,height:800}),input:async()=>{},flush:async()=>{sent.push(copy([...pointers.values()]));for(const [key,p]of pointers)if(!p.pressure)pointers.delete(key);}});t.after(actions.release);
+  let iosWheel,iosLast;
+  const ios={window:{},setTimeout:()=>1,clearTimeout(){}};
+  for(const name of ['attachable-event-source.js','wheel-gesture-source.js'])vm.runInNewContext(read(gestures,name),ios);
+  new ios.window.Baguette._WheelGestureSource({size:{width:400,height:800},touchDown(){},touchUp(){},touchMove:p=>iosLast=copy(p)}).attach({getBoundingClientRect:()=>({left:0,top:0,width:400,height:800}),addEventListener:(_name,fn)=>iosWheel=fn});
+  const pan=(deltaX,deltaY)=>{const e=event({clientX:200,clientY:400,deltaX,deltaY});handlers.wheel(e);iosWheel(e);};
+  for(const [dx,dy,rx,ry,x,y]of [[0,1600,0,-100,.7,.125],[0,-1600,0,100,.7,.875],[1600,0,-40,0,.5,.5],[-1600,0,40,0,.9,.5]]){
+    pan(dx,dy);await pause(0);pan(rx,ry);
+    for(let i=0;i<100&&pointers.size;i++)await pause(10);
+    const last=sent.at(-1);assert.ok(last.every(p=>!p.pressure));
+    assert.ok(Math.abs(last[0].x-x)<.00002&&Math.abs(last[0].y-y)<.00002,'reverse moves immediately without repaying offscreen distance');
+    assert.equal(last[0].y,last[1].y);assert.ok(Math.abs(last[0].x-last[1].x-.4)<1e-9);
+    last.forEach((p,i)=>{assert.ok(Math.abs(p.x-iosLast[i].x/400)<.00002);assert.ok(Math.abs(p.y-iosLast[i].y/800)<.00002);});
+    // The iPhone harness has a manual idle timer; close before the next edge.
+    iosWheel(event({clientX:200,clientY:400,ctrlKey:true}));
+  }
+});
 
 test('Android Option-drag pinches and Option-Shift-drag pans with matching touch dots',async()=>{
   for(const shiftKey of [false,true]){

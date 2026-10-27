@@ -97,7 +97,30 @@
   // Coalesce pointer moves, but always flush releases. A slow screen cannot
   // build an unbounded queue of stale input behind the user's finger.
   let dirty=false,flushing=null;
-  function flush(start=false){drawTouches();if(busy){dirty=true;return flushing;}busy=true;flushing=(async()=>{try{do{dirty=false;const touches=[...pointers.values()].map(t=>({...t}));if(touches.length)await input('touch',{touches,rotation,deviceRotation,start});start=false;for(const [id,t]of pointers)if(t.pressure===0&&touches.some(sent=>sent.identifier===t.identifier&&sent.pressure===0))pointers.delete(id);}while(dirty);}catch{extras?.release();pointers.clear();modifierDrag=null;await input('release').catch(()=>{});error();}finally{drawTouches();busy=false;flushing=null;}})();return flushing;}
+  function flush(start=false){
+    drawTouches();
+    const boundary=start||[...pointers.values()].some(t=>t.pressure===0);
+    if(busy&&!boundary){dirty=true;return flushing;}
+    dirty=false;
+    const touches=[...pointers.values()].map(t=>({...t}));
+    if(!touches.length)return flushing||Promise.resolve();
+    // Starts and releases are immutable samples in the existing input queue.
+    // Retire released records now, so a new gesture can reuse their IDs while
+    // transport is pending. Moves alone still coalesce to the latest position.
+    for(const [id,t]of pointers)if(t.pressure===0)pointers.delete(id);
+    busy=true;
+    const current=epoch;
+    const completion=input('touch',{touches,rotation,deviceRotation,start}).catch(async()=>{
+      if(current!==epoch)return;
+      epoch++;extras?.release();pointers.clear();modifierDrag=null;dirty=false;
+      await input('release').catch(()=>{});error();
+    }).finally(()=>{
+      if(flushing!==completion)return;
+      busy=false;flushing=null;drawTouches();
+      if(dirty)return flush();
+    });
+    flushing=completion;return completion;
+  }
   canvas.addEventListener('pointerdown',e=>{
     e.preventDefault();canvas.focus();
     if(pointers.size>=10||pointers.has('wheel')||pointers.has('mirror')||frame.getAnimations().some(a=>a.playState==='running'))return;
