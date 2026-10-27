@@ -36,8 +36,8 @@
   },
   {
     "path": "vendor/baguette/Baguette",
-    "bytes": 8005840,
-    "sha256": "09550039ec4e03d300502d705698e0958ed637b605a7423fd8b4f46b8e54ca59"
+    "bytes": 8005824,
+    "sha256": "c713d39ea18266ead96a9f7e4b934868674cdcbf5a900bdbf0e0f109faa2fef0"
   },
   {
     "path": "vendor/baguette/Baguette_Baguette.bundle/HingeControl/HingeControl",
@@ -251,13 +251,13 @@
   },
   {
     "path": "vendor/baguette/Baguette_Baguette.bundle/Web/baguette/gestures/touch-gesture-source.js",
-    "bytes": 7308,
-    "sha256": "3445c717bcedd908849e10e1f6d442cf03d80a5af11aa631b212a578ee1e7337"
+    "bytes": 9629,
+    "sha256": "a327e673bac2552dde677612d208973dea6d39d4adb966ef56961e6bc4b5a71e"
   },
   {
     "path": "vendor/baguette/Baguette_Baguette.bundle/Web/baguette/gestures/wheel-gesture-source.js",
-    "bytes": 3161,
-    "sha256": "ebd227df67218c3a56816f7c79564f9c11aad85c0c8981d03e3cbae9de702c72"
+    "bytes": 2820,
+    "sha256": "b4bb52d4673949f433b954ceca79365688f21e75ce1dd5814f313fff3863172d"
   },
   {
     "path": "vendor/baguette/Baguette_Baguette.bundle/Web/baguette/parts/bezel.js",
@@ -276,8 +276,8 @@
   },
   {
     "path": "vendor/baguette/Baguette_Baguette.bundle/Web/baguette/parts/screen.js",
-    "bytes": 3701,
-    "sha256": "573c92c3bcae390aa46a1c536c896dd8de29dc987bfdd610e98a068d0144593e"
+    "bytes": 3767,
+    "sha256": "cea55586bb759eedf4cf568afb1affe9986ec9404c4bf8c6274bc1bbbdd63f98"
   },
   {
     "path": "vendor/baguette/Baguette_Baguette.bundle/Web/baguette/simulator.js",

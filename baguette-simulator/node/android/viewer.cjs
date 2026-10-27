@@ -9,6 +9,7 @@ function createViewer({devices,agent,root}){
   const forget=()=>{try{require('node:fs').rmSync(intent,{force:true});}catch{}};
   let server=null,token=null,controls=null,base=null,starting=null,lastSeen=0;const opened=new Set(),streams=new Set();
   const assets={'/android-screen-actions.js':['screen-actions.js','text/javascript'],'/control.js':['../control.js','text/javascript'],'/control-model.js':['../control-model.js','text/javascript'],'/control.css':['../control.css','text/css'],'/android-screen.js':['screen.js','text/javascript'],'/android-screen.css':['screen.css','text/css']};
+  assets['/gesture-overlay.js']=['../../vendor/baguette/Baguette_Baguette.bundle/Web/baguette/gestures/pinch-overlay.js','text/javascript'];
   const url=(id,locale)=>base+'/control?udid='+encodeURIComponent(id)+'&lang='+(locale==='zh-CN'?'zh-CN':'en')+'#cindyClipboard='+new URL(base).port+'.'+token;
   function start(){
     if(starting)return starting;

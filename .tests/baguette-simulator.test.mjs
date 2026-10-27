@@ -15,6 +15,8 @@ import './baguette/viewer-restart.test.cjs';
 import './baguette/native-release.test.cjs';
 import './baguette/paste-compat.test.cjs';
 import './baguette/screen-pieces.test.cjs';
+import './baguette/wheel-overlay.test.cjs';
+import './baguette/native-contacts.test.cjs';
 import './baguette/fold-orientation.test.cjs';
 import './baguette/runtime.test.cjs';
 import './baguette/device-manager.test.cjs';
@@ -38,3 +40,4 @@ import './baguette/agent-health.test.cjs';
 import './baguette/android.test.cjs';
 
 import './baguette/android-parity.test.cjs';
+import './baguette/android-gestures.test.cjs';

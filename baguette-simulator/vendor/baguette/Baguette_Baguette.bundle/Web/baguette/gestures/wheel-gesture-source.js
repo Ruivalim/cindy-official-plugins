@@ -38,9 +38,7 @@
         if (!state || state.kind !== wantKind) {
           if (state) close();
           state = {
-            kind: wantKind, centre,
-            viewCx: vx, viewCy: vy,
-            viewR: (BASE_SPREAD_PT / width) * r.width,
+            kind: wantKind,
             f1: { x: centre.x + BASE_SPREAD_PT, y: centre.y },
             f2: { x: centre.x - BASE_SPREAD_PT, y: centre.y },
             scale: 1, idleTimer: null,
@@ -63,20 +61,12 @@
         this.screen.touchMove([state.f1, state.f2]);
 
         if (this.overlay) {
-          if (state.kind === 'pinch') {
-            const vr = state.viewR * state.scale;
-            this.overlay.setFingers([
-              { x: state.viewCx + vr, y: state.viewCy },
-              { x: state.viewCx - vr, y: state.viewCy },
-            ]);
-          } else {
-            const dxPx = (state.f1.x - centre.x) / width * r.width;
-            const dyPx = (state.f1.y - centre.y) / height * r.height;
-            this.overlay.setFingers([
-              { x: vx + dxPx, y: vy + dyPx },
-              { x: vx - dxPx, y: vy - dyPx },
-            ]);
-          }
+          // Draw the actual contacts for both pan and pinch; mirroring the
+          // first contact makes a parallel pan look like fingers spreading.
+          this.overlay.setFingers([state.f1, state.f2].map((finger) => ({
+            x: finger.x / width * r.width,
+            y: finger.y / height * r.height,
+          })));
         }
 
         clearTimeout(state.idleTimer);

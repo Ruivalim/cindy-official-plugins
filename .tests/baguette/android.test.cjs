@@ -227,7 +227,7 @@ test('capture retains a completed action when the final observation fails',async
 });
 test('Android viewer rotation keeps the portrait body size and caps only a narrow-window overflow',async()=>{
   const listeners={},frame={style:{}},canvas={width:720,height:1600,getContext:()=>({}),addEventListener:()=>{}};
-  const context={URLSearchParams,AbortController,location:{pathname:'/simulators/'+id,search:''},window:{},
+  const context={URLSearchParams,AbortController,location:{pathname:'/simulators/'+id,search:''},window:{Baguette:{_PinchOverlay:class{clear(){}}}},
     parent:{document:{documentElement:{lang:'en'}}},innerWidth:900,innerHeight:800,
     document:{getElementById:name=>name==='display'?canvas:name==='nativeDeviceFrame'?frame:{}},
     matchMedia:()=>({matches:false}),addEventListener:(name,fn)=>{listeners[name]=fn;},fetch:()=>new Promise(()=>{})};

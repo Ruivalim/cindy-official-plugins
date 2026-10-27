@@ -349,9 +349,13 @@
       'Click anywhere in the view to confirm the focused item; right-click goes back. Two-finger scrolling simulates Siri Remote swipes. Click position does not select a TV element.',
     ]) : (zh ? [
       '在画面中点击、长按和拖动，操作对应位置的 App 内容。',
+      '触控板双指滚动模拟双指平移；捏合或 Ctrl＋滚轮以鼠标位置为中心缩放 App 内容。两个圆点表示实际触点。',
+      'Option/Alt 拖动模拟双指缩放，Option/Alt＋Shift 拖动模拟双指平移。',
       '旋转按钮每次转动 90°（⌘← / ⌘→）。折叠设备的姿态按钮选择合上、半展开或展开，高亮表示当前姿态。',
     ] : [
       'Click, hold and drag in the view to interact with app content at that position.',
+      'Two-finger trackpad scrolling pans with two touches; pinch or Ctrl+wheel zooms app content around the cursor. The two dots show the touch positions.',
+      'Option/Alt-drag pinches; Option/Alt+Shift-drag pans with two fingers.',
       'Rotation buttons turn the device 90° (⌘← / ⌘→). Foldable posture buttons select closed, half-open or flat; the current posture is highlighted.',
     ]);
     return {title:zh?'操作说明':'Controls help',close:zh?'关闭':'Close',common,specific};
