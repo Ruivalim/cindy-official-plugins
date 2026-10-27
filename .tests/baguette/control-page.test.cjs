@@ -532,6 +532,36 @@ test('sidebar creation offers modes and selects the new off device without booti
  }
 });
 
+test('Android controller creation preserves iOS modes through the authenticated bridge and next boot',async t=>{
+ const root=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'cross-platform-create-'));
+ t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const native={...status().device,runtime:'android:36',deviceType:'android:pixel',platform:'android'}, created={udid:other,name:'New iPhone',state:'Shutdown',runtime:'r.iOS-27',deviceType:'t.iPhone',platform:'ios'};
+ const viewer=require(path.join(node,'android/viewer.cjs')).createViewer({root,devices:{target:async()=>({udid})},agent:{}});
+ t.after(()=>viewer.close());
+ const requests=[];let currentDevice=udid,mode;
+ viewer.configure({status:async()=>status({device:currentDevice===other?created:native,devices:[native,created],viewerPlatform:'android'}),request:async(method,p={})=>{
+  requests.push({method,p});
+  if(method==='viewer_catalog')return {deviceTypes:[{identifier:'t.iPhone',name:'iPhone'}],runtimes:[{identifier:'r.iOS-27',name:'iOS 27',version:'27',supportedDeviceTypes:['t.iPhone']}]};
+  if(method==='create_device')return {ok:true,...created};
+  if(method==='viewer_switch'){currentDevice=p.targetUdid;return {state:'done',activeUdid:currentDevice};}
+  if(method==='settings_boot'){mode=p.memoryMode;return {ok:true,memoryMode:{mode,verified:true}};}
+  throw Error('Unexpected method '+method);
+ }});
+ const u=new URL((await viewer.open(udid)).url),token=new URLSearchParams(u.hash.slice(1)).get('cindyClipboard').split('.')[1];
+ for(const chosen of ['saving','standard','minimal']){
+  currentDevice=udid;
+  const f=await boot({respond:async p=>(await fetch(u.origin+'/control-api',{method:'POST',headers:{Origin:u.origin,'X-Cindy-Clipboard':token},body:JSON.stringify(p)})).json()});
+  f.dom.byId['device-chip'].dispatch('click');f.dom.body.querySelectorAll('button').find(n=>f.dom.text(n).includes('添加设备')).dispatch('click');
+  for(let i=0;i<100&&!f.dom.byId['f-memory'].querySelector('.memory-option');i++)await new Promise(r=>setTimeout(r,5));
+  f.dom.byId['f-memory'].querySelectorAll('.memory-option').find(n=>n.attrs['data-mode']===chosen).dispatch('click');f.dom.byId['f-name'].value=created.name;
+  await f.dom.byId['device-form'].listeners.submit[0]({preventDefault(){}});
+  assert.equal(f.dom.byId['chip-name'].textContent,created.name);
+  await f.sim.boot();
+  assert.equal(mode,chosen);
+  const forwarded=requests.filter(r=>r.method==='settings_boot').at(-1);assert.equal(forwarded.p.udid,other);assert.equal(forwarded.p.memoryMode,chosen);
+ }
+});
+
 test('sidebar create hides unsupported modes and a failed selection never reopens the successful create form',async()=>{
  const f=await boot({respond:({action})=>{
   if(action==='catalog')return {deviceTypes:[{identifier:'t.Apple-TV',name:'Apple TV'}],runtimes:[{identifier:'r.tvOS-27',name:'tvOS 27',version:'27',supportedDeviceTypes:['t.Apple-TV']}]};

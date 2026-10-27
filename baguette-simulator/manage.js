@@ -258,7 +258,7 @@ function renderList() {
   }
   if (renaming) list.querySelector('.rename input')?.select();
   list.scrollTop=scroll;
-  if (focusId) { const target=[...list.querySelectorAll('.row')].find(n=>n.getAttribute('data-udid')===focusId); target?.focus({preventScroll:true}); }
+  if (focusId && !renaming) { const target=[...list.querySelectorAll('.row')].find(n=>n.getAttribute('data-udid')===focusId); target?.focus({preventScroll:true}); }
 }
 
 // ---- detail ----

@@ -6,11 +6,17 @@ const device=(udid,state='Shutdown')=>({udid,name:'Device '+udid,state,runtime:'
 
 function fixture(devices,respond) {
   const nodes=new Map(),calls=[];let live=devices.map(d=>({...d}));
+  const descendants=n=>n.children.flatMap(c=>[c,...descendants(c)]);
   const element=(tag,props={},children=[])=>{
     const n={tag,props,children:children.filter(Boolean),dataset:{},style:{},getBoundingClientRect:()=>({left:10,bottom:40,width:160,height:120}),classList:{contains:()=>false,toggle(){}},listeners:{},textContent:props.text || '',
       setAttribute(k,v){this.props[k]=v;},getAttribute(k){return this.props[k];},append(...kids){this.children.push(...kids);},replaceChildren(...kids){this.children=kids;},
-      querySelector(){return null;},querySelectorAll(){return [];},focus(){},showModal(){this.open=true;},close(){this.open=false;},remove(){this.removed=true;},
-      addEventListener(k,fn){this.listeners[k]=fn;}};return n;
+      querySelector(selector){return descendants(this).find(c=>selector==='.rename input' ? c.tag==='input'&&c.parent?.props.class==='rename' : false)||null;},
+      querySelectorAll(selector){return descendants(this).filter(c=>selector==='.row'&&c.props.class==='row');},
+      closest(selector){for(let c=this;c;c=c.parent)if(selector==='.row'&&c.props.class==='row')return c;return null;},
+      focus(){context.document.activeElement=this;},select(){this.focus();},showModal(){this.open=true;},close(){this.open=false;},remove(){this.removed=true;},
+      addEventListener(k,fn){this.listeners[k]=fn;}};
+    for(const child of n.children)child.parent=n;
+    return n;
   };
   const get=id=>{if(!nodes.has(id))nodes.set(id,element('div'));return nodes.get(id);};
   const body=element('body');
@@ -29,8 +35,21 @@ function fixture(devices,respond) {
       filter:q=>{query=q;renderList();},selectAll:()=>{checked.clear();for(const d of filteredDevices())checked.add(d.udid);renderList();},
       devices:()=>state.devices,
       restarting:phase=>{state.settings.enabled=true;state.devices[0].state=phase;state.devices[0].operation={name:'settings_restart'};shown={udid:selected,url:'http://viewer/control'};document.getElementById('screen').src=shown.url;renderDetail();}};`,context);
-  return {page:context.page,get,body,calls};
+  return {page:context.page,get,body,calls,document:context.document};
 }
+
+test('renaming from a focused row menu keeps the editor focused instead of restoring row focus',()=>{
+ const f=fixture([device('a')]);f.page.renderList();
+ const row=f.get('list').querySelectorAll('.row')[0];row.focus();
+ const more=row.children[1].children[0].children.at(-1);
+ more.props.onclick({stopPropagation(){},currentTarget:more});
+ const menu=f.body.children.at(-1);
+ const rename=menu.children.find(n=>n.children[0]?.props.text==='Rename');assert.ok(rename);
+ rename.props.onclick();
+ assert.equal(f.document.activeElement.tag,'input');
+ assert.equal(f.document.activeElement.props.value,'Device a');
+ assert.equal(f.calls.length,0,'entering rename never submits an unchanged name');
+});
 
 test('management refresh keeps the controller alive through shutdown and boot phases of restart',()=>{
  const f=fixture([device('a','Booted')]);

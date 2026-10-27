@@ -106,10 +106,10 @@ function createViewer({devices,agent,root}){
           case 'open':result=await controls.request('open_viewer',{udid:p.udid,_locale:p.locale});break;
           case 'catalog':result=await controls.request('viewer_catalog');break;
           case 'resources':result=await controls.request('resource_usage',{udid:p.udid,refresh:p.refresh===true});break;
-          case 'create':{const created=await controls.request('create_device',{name:p.name,deviceType:p.deviceType,runtime:p.runtime});result={created,devices:(await controls.status()).devices};break;}
+          case 'create':{const created=await controls.request('create_device',{name:p.name,deviceType:p.deviceType,runtime:p.runtime});result={ok:created.ok!==false,created};break;}
           case 'rename':await controls.request('rename_device',{udid:p.targetUdid,name:p.name});result={devices:(await controls.status()).devices};break;
           case 'switch':result={job:await controls.request('viewer_switch',{udid:p.udid,targetUdid:p.targetUdid,_locale:p.locale,task:p.task})};if(result.job.activeUdid)opened.add(result.job.activeUdid);break;
-          case 'boot':result=await controls.request('settings_boot',{udid:p.udid});break;
+          case 'boot':result=await controls.request('settings_boot',{udid:p.udid,memoryMode:p.memoryMode});break;
           case 'shutdown':result=await controls.request('settings_shutdown',{udid:p.udid});break;
           case 'release':result=await controls.request('press',{udid:p.udid,button:'release-input'});break;
           case 'restart':await controls.assertEnabled();result={ready:true,generation:Date.now()};break;

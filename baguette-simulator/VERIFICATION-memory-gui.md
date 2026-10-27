@@ -1,9 +1,28 @@
 # Memory mode and resource GUI verification — 2026-10-27
 
 Source: branch `dash/simulator-memory-gui`, based on `29860bf`, plugin
-`baguette-simulator` 0.2.53 source and installed. macOS 27.0.1, Xcode 27.1 (27A9269).
+`baguette-simulator` 0.2.54 source, 0.2.53 installed. macOS 27.0.1, Xcode 27.1 (27A9269).
 The test package was installed in the current Cindy with explicit user authorization. No new Host capability,
 permission, profile semantics, automatic restart or plugin identity change.
+
+## First review follow-up — 0.2.54
+
+- The Android controller bridge now forwards the selected memoryMode to
+  settings_boot when an off iOS device was created/selected from that view.
+  Both create bridges return the completed creation without an unrelated
+  status read that could hide success. Device selection still does not boot.
+- Regression uses the shared controller script and the real authenticated
+  Android HTTP bridge with a fixture worker: Android view → create iOS →
+  select it while off → explicit boot, for saving, standard and minimal.
+  This verifies request routing, not a live Android emulator or iOS boot.
+- List redraw restores row focus only when not renaming. The menu regression
+  starts from a focused row and verifies the new name input keeps focus without
+  issuing a rename request before the user edits it.
+- No new package installation or user-device interruption in this follow-up.
+  Earlier installed evidence below remains limited to its stated versions;
+  0.2.54 has not been exercised in the native Cindy task frame.
+- Complete repository gates: 726 passed, 0 failed
+  (`/tmp/simulator-review-round1-gates.log`); Forge validated and packaged 0.2.54.
 
 ## Live-sidebar creation — 0.2.52
 
