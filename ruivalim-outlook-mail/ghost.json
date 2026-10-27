@@ -3,9 +3,9 @@
   "minCindyVersion": "0.1.75",
   "id": "ruivalim-outlook-mail",
   "name": "Outlook (Rui)",
-  "description": "Search, read, send, draft and organize Outlook and Microsoft 365 email. Accesses Microsoft Graph through Cindy-managed OAuth and token injection; connect an account in the plugin details page before first use.",
-  "whenToUse": "Use to connect Outlook, Hotmail, Live or Microsoft 365 work mailboxes and search, read, send, draft or organize mail.",
-  "version": "1.0.0",
+  "description": "Search, read, send, draft and organize Outlook and Microsoft 365 email, and read and manage Outlook calendar events. Uses Microsoft Graph through Cindy-managed OAuth; connect an account in the plugin details page first. Existing accounts reconnect once to grant calendar access.",
+  "whenToUse": "Use for Outlook, Hotmail, Live or Microsoft 365 mail and calendar: search, read, send, draft or organize mail; list, search, create, update, delete or answer calendar events and check free/busy. Every calendar change asks the user to confirm.",
+  "version": "1.1.0",
   "kind": "chip",
   "entry": "main.js",
   "icon": "assets/icon.png",
@@ -160,11 +160,178 @@
         ],
         "additionalProperties": false
       }
+    },
+    {
+      "name": "outlook_calendar",
+      "description": "Outlook calendar for the same Microsoft accounts. Reads: list_calendars; list_events and search_events in a required start/end range (max 92 days; search matches subject, location, preview and people); get_event; free_busy (work or school accounts, max 31 days). Writes: create_event, update_event, delete_event, respond_event (accept/tentative/decline); each one shows the user a Cindy confirmation first and does nothing if declined. Adding attendees on create or update SENDS invitations; updating or deleting a meeting you organize SENDS updates or cancellations to its attendees. Times in results are in time_zone (IANA or Windows name, default UTC); the result says which zone. If execution_status is unknown, check the calendar before retrying. RECONNECT_REQUIRED means the account must be reconnected once in the plugin details to grant calendar access.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "list_calendars",
+              "list_events",
+              "search_events",
+              "get_event",
+              "free_busy",
+              "create_event",
+              "update_event",
+              "delete_event",
+              "respond_event"
+            ]
+          },
+          "account": {
+            "type": "string",
+            "description": "Account ID returned by outlook_accounts; if omitted, the default account is used."
+          },
+          "cloud": {
+            "type": "string",
+            "enum": [
+              "global"
+            ],
+            "description": "Service region; only global is supported. Optional."
+          },
+          "calendar_id": {
+            "type": "string",
+            "description": "list_events/search_events/create_event: calendar ID from list_calendars. Omit for the default calendar."
+          },
+          "event_id": {
+            "type": "string",
+            "description": "get_event/update_event/delete_event/respond_event: event ID returned by this tool."
+          },
+          "start": {
+            "type": "string",
+            "description": "Range reads and free_busy: ISO date (UTC midnight) or date-time with Z or an offset. create/update: local time like 2026-11-03T14:00 with time_zone, or a date-time with an offset; for is_all_day use YYYY-MM-DD."
+          },
+          "end": {
+            "type": "string",
+            "description": "Exclusive end, same form as start; must be later than start. For all-day events use the day after the last day."
+          },
+          "time_zone": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "IANA (America/Sao_Paulo) or Windows (E. South America Standard Time) zone. Reads return times in it; create/update read local start/end in it. Default UTC."
+          },
+          "query": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "search_events: text to find in subject, location, body preview, organizer or attendees (case-insensitive)."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Results per page (list_events default 25; search_events stops after at least this many matches)."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous call, unchanged. Pass only action, account, cloud and page_token."
+          },
+          "subject": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "create_event (required) / update_event: event title."
+          },
+          "location": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "create_event/update_event: location text."
+          },
+          "body_text": {
+            "type": "string",
+            "maxLength": 100000,
+            "description": "create_event/update_event: plain-text description."
+          },
+          "is_all_day": {
+            "type": "boolean",
+            "description": "create_event/update_event: all-day event; start/end must be dates."
+          },
+          "is_online_meeting": {
+            "type": "boolean",
+            "description": "create_event/update_event: request an online meeting link from the account's default provider."
+          },
+          "attendees": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 100
+              }
+            ],
+            "description": "create_event/update_event: required attendee email addresses. Microsoft SENDS them an invitation. On update this REPLACES the whole attendee list."
+          },
+          "optional_attendees": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 100
+              }
+            ],
+            "description": "create_event/update_event: optional attendee email addresses; they also get an invitation."
+          },
+          "emails": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20
+              }
+            ],
+            "description": "free_busy: up to 20 addresses; omit for your own calendar."
+          },
+          "interval_minutes": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 1440,
+            "description": "free_busy: slot length for availability_view, default 30."
+          },
+          "response": {
+            "type": "string",
+            "enum": [
+              "accept",
+              "tentative",
+              "decline"
+            ],
+            "description": "respond_event: your answer to an invitation."
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "respond_event: optional note to the organizer."
+          },
+          "send_response": {
+            "type": "boolean",
+            "description": "respond_event: send the answer to the organizer (default true)."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      }
     }
   ],
   "command": "ruivalim-outlook-mail",
   "launch": "on-demand",
   "settingsHtml": "settings.html",
+  "confirm": true,
   "author": "Rui Valim",
   "network": {
     "hosts": [
@@ -176,7 +343,7 @@
         "key": "outlook_global",
         "label": "Microsoft account (global)",
         "source": "oauth",
-        "hint": "Connect an account in the plugin details page; whether a work account needs administrator approval depends on tenant policy.",
+        "hint": "Connect an account in the plugin details page. Accounts added before calendar support must reconnect once to grant calendar access; work accounts may need admin approval.",
         "inject": {
           "header": "Authorization",
           "format": "Bearer {value}",
@@ -192,7 +359,8 @@
             "offline_access",
             "https://graph.microsoft.com/User.Read",
             "https://graph.microsoft.com/Mail.ReadWrite",
-            "https://graph.microsoft.com/Mail.Send"
+            "https://graph.microsoft.com/Mail.Send",
+            "https://graph.microsoft.com/Calendars.ReadWrite"
           ],
           "pkce": true,
           "redirectPort": 53687,

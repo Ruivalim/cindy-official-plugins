@@ -1,13 +1,16 @@
 {
   "name": "Outlook (Rui)",
-  "description": "Search, read, send, draft and organize Outlook and Microsoft 365 email through Cindy Host-managed OAuth and Microsoft Graph. Connect an account in plugin settings first.",
-  "whenToUse": "Use for Outlook, Hotmail, Live and Microsoft 365 email: connect accounts, find, read, send, draft and organize mail.",
+  "description": "Search, read, send, draft and organize Outlook and Microsoft 365 email, and manage Outlook calendar events, through Cindy Host-managed OAuth and Microsoft Graph. Connect an account in plugin settings first; accounts added earlier reconnect once for calendar access.",
+  "whenToUse": "Use for Outlook, Hotmail, Live and Microsoft 365 mail and calendar: find, read, send, draft and organize mail; list, search, create, update, delete or answer events and check free/busy. Calendar changes ask the user to confirm.",
   "tools": {
     "outlook_accounts": {
       "description": "List connected accounts, the default account and application setup. Multiple accounts can stay signed in. Optionally pass profile_account to read that account's mail and user_principal_name from Graph. A sign-in name is not necessarily a receiving address; do not guess when mail is null. No mail is read and no tokens are returned."
     },
     "outlook_mail": {
       "description": "Search, read, send, draft, list folders, mark read/unread or move messages. Writes require explicit user intent; verify sender, recipients and content before sending. Send success means accepted, not delivered. If execution_status is unknown, inspect the mailbox before retrying. Reading does not mark read. Pagination binds to account/action. Microsoft cloud mailboxes only; no other providers or on-premises Exchange."
+    },
+    "outlook_calendar": {
+      "description": "Outlook calendar for the same accounts. Reads: list_calendars; list_events and search_events need a start/end range (max 92 days); get_event; free_busy (work or school accounts, max 31 days). Writes: create_event, update_event, delete_event, respond_event; each asks the user in a Cindy confirmation first and does nothing if declined. Adding attendees SENDS invitations; updating or deleting a meeting you organize SENDS updates or cancellations. Result times are in time_zone (IANA or Windows, default UTC). If execution_status is unknown, check the calendar before retrying. RECONNECT_REQUIRED means reconnect the account once in plugin details to grant calendar access."
     }
   }
 }

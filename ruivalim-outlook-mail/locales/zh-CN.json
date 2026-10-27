@@ -1,13 +1,16 @@
 {
   "name": "Outlook (Rui)",
-  "description": "搜索、阅读、发送、起草和整理 Outlook 与 Microsoft 365 邮件。通过 Cindy 托管 OAuth 授权和令牌注入访问 Microsoft Graph；首次使用请在插件详情页连接账号。",
-  "whenToUse": "需要连接 Outlook、Hotmail、Live 或 Microsoft 365 企业邮箱，查询、阅读、发送、起草或整理邮件时使用，包括世纪互联中国区微软托管邮箱。",
+  "description": "通过 Cindy 托管的 OAuth 和 Microsoft Graph 搜索、阅读、发送、起草和整理 Outlook 与 Microsoft 365 邮件，并管理 Outlook 日历事件。首次使用请在插件设置中连接账号；之前连接的账号需重新连接一次以授予日历权限。",
+  "whenToUse": "用于 Outlook、Hotmail、Live 和 Microsoft 365 的邮件与日历：查找、阅读、发送、起草和整理邮件；列出、搜索、创建、修改、删除或回复日程，查看忙闲。日历变更会先请用户确认。",
   "tools": {
     "outlook_accounts": {
-      "description": "同时列出全球版和世纪互联中国区的已连接账号、各区默认账号及应用配置状态。支持多账号同时登录；可传 profile_account，通过只读 Graph 查询该账号的 mail 与 user_principal_name。登录名不一定是收信地址，mail 为空时不要猜测。不读取邮件、不返回令牌。"
+      "description": "列出已连接的账号、默认账号及应用配置状态。支持多账号同时登录；可传 profile_account，通过只读 Graph 查询该账号的 mail 与 user_principal_name。登录名不一定是收信地址，mail 为空时不要猜测。不读取邮件、不返回令牌。"
     },
     "outlook_mail": {
       "description": "搜索、阅读、发送、保存草稿、列文件夹、标记已读／未读及移动邮件。发送、草稿和整理操作必须来自用户明确意图，发送前核对发件账号、收件人和内容。send 成功仅表示微软接受请求，不代表送达；结果为 unknown 时先查邮箱，不要直接重试。read 不标记已读；分页凭据绑定账号及操作。仅支持微软云端邮箱，不支持其他服务商或本地 Exchange。"
+    },
+    "outlook_calendar": {
+      "description": "同一微软账号的 Outlook 日历。读取：list_calendars；list_events 和 search_events 必须给出 start/end 时间范围（最长 92 天）；get_event；free_busy（仅工作或学校账号，最长 31 天）。写入：create_event、update_event、delete_event、respond_event；每次都会先弹出 Cindy 确认框，用户拒绝则不执行。添加参会人会发送邀请；修改或删除你组织的会议会向参会人发送更新或取消通知。结果中的时间使用 time_zone（IANA 或 Windows 时区名，默认 UTC）。execution_status 为 unknown 时先查看日历，不要直接重试。RECONNECT_REQUIRED 表示需在插件详情中重新连接一次账号以授予日历权限。"
     }
   }
 }
