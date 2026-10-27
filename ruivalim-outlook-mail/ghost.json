@@ -1,0 +1,221 @@
+{
+  "schemaVersion": 3,
+  "minCindyVersion": "0.1.75",
+  "id": "ruivalim-outlook-mail",
+  "name": "Outlook (Rui)",
+  "description": "Search, read, send, draft and organize Outlook and Microsoft 365 email. Accesses Microsoft Graph through Cindy-managed OAuth and token injection; connect an account in the plugin details page before first use.",
+  "whenToUse": "Use to connect Outlook, Hotmail, Live or Microsoft 365 work mailboxes and search, read, send, draft or organize mail.",
+  "version": "1.0.0",
+  "kind": "chip",
+  "entry": "main.js",
+  "icon": "assets/icon.png",
+  "tools": [
+    {
+      "name": "outlook_accounts",
+      "description": "List connected accounts, the default account and application setup status. Multiple accounts can stay signed in at once. Optionally pass profile_account to read that account's mail and user_principal_name through a read-only Graph query. A sign-in name is not necessarily the receiving address; do not guess when mail is empty. Reads no mail and returns no tokens.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile_account": {
+            "type": "string",
+            "description": "Optional: an account ID returned by this tool. Only when given, reads that account's Graph mail (may be empty) and user_principal_name. Never treat the sign-in name as the receiving address.",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "outlook_mail",
+      "description": "Search, read, send, save drafts, list folders, mark read/unread and move messages. Send, draft and organize actions must come from explicit user intent; before sending, verify the sender account, recipients and content. A successful send only means Microsoft accepted the request, not that it was delivered; if the result is unknown, check the mailbox first and do not retry directly. read does not mark messages read; page tokens are bound to the account and action. Microsoft cloud mailboxes only; other providers and on-premises Exchange are not supported.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "search",
+              "read",
+              "send",
+              "draft",
+              "list_folders",
+              "mark_read",
+              "mark_unread",
+              "move"
+            ]
+          },
+          "account": {
+            "type": "string",
+            "description": "Account ID returned by outlook_accounts. Verify the sender account before sending; if omitted, the default account is used."
+          },
+          "cloud": {
+            "type": "string",
+            "enum": [
+              "global"
+            ],
+            "description": "Service region; only global (Outlook / Microsoft 365) is supported. Optional; the region is detected from account when given."
+          },
+          "query": {
+            "type": "string",
+            "description": "search: Microsoft KQL full-text search, e.g. from:person@example.test. Cannot be combined with from/subject/unread/since/before; Microsoft full-text search returns at most 1000 messages.",
+            "maxLength": 1000
+          },
+          "from": {
+            "type": "string",
+            "description": "search: exact sender email address."
+          },
+          "subject": {
+            "type": "string",
+            "description": "search: subject contains this text; send/draft: subject, empty string allowed.",
+            "maxLength": 998
+          },
+          "unread": {
+            "type": "boolean",
+            "description": "search: true for unread, false for read, omit for no filter."
+          },
+          "since": {
+            "type": "string",
+            "description": "search: inclusive start time; ISO dates are UTC, times must include a time zone."
+          },
+          "before": {
+            "type": "string",
+            "description": "search: exclusive end time; ISO dates are UTC, times must include a time zone."
+          },
+          "folder": {
+            "type": "string",
+            "description": "search: limit to this folder; list_folders: list its child folders. If omitted, all mail / the root folders respectively. Use an ID from a query or a Microsoft well-known name such as inbox, sentitems or drafts."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Results per page, default 10, max 50."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous page, passed back unchanged. Use the same action, account and cloud; when paging, do not also pass filters or max_results."
+          },
+          "message_id": {
+            "type": "string",
+            "description": "read/mark_read/mark_unread/move: the original message ID. After a move, use the returned new ID."
+          },
+          "target_folder": {
+            "type": "string",
+            "description": "move: target folder ID or Microsoft well-known name. For custom folders, find the ID with list_folders first."
+          },
+          "body_text": {
+            "type": "string",
+            "description": "send/draft: plain-text body, empty string allowed. Total request size must not exceed 250 KB.",
+            "maxLength": 200000
+          },
+          "to": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 100
+              }
+            ],
+            "description": "send/draft: to email addresses as an array or comma/semicolon-separated text, without display names. At most 100 recipients in total."
+          },
+          "cc": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 100
+              }
+            ],
+            "description": "send/draft: cc email addresses as an array or comma/semicolon-separated text, without display names. At most 100 recipients in total."
+          },
+          "bcc": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 100
+              }
+            ],
+            "description": "send/draft: bcc email addresses as an array or comma/semicolon-separated text, without display names. At most 100 recipients in total."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "command": "ruivalim-outlook-mail",
+  "launch": "on-demand",
+  "settingsHtml": "settings.html",
+  "author": "Rui Valim",
+  "network": {
+    "hosts": [
+      "login.microsoftonline.com",
+      "graph.microsoft.com"
+    ],
+    "secrets": [
+      {
+        "key": "outlook_global",
+        "label": "Microsoft account (global)",
+        "source": "oauth",
+        "hint": "Connect an account in the plugin details page; whether a work account needs administrator approval depends on tenant policy.",
+        "inject": {
+          "header": "Authorization",
+          "format": "Bearer {value}",
+          "hosts": [
+            "graph.microsoft.com"
+          ]
+        },
+        "oauth": {
+          "authorizeUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+          "tokenUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+          "scopes": [
+            "openid",
+            "offline_access",
+            "https://graph.microsoft.com/User.Read",
+            "https://graph.microsoft.com/Mail.ReadWrite",
+            "https://graph.microsoft.com/Mail.Send"
+          ],
+          "pkce": true,
+          "redirectPort": 53687,
+          "extraAuthorizeParams": {
+            "prompt": "select_account"
+          },
+          "identity": {
+            "url": "https://graph.microsoft.com/v1.0/me?$select=id,displayName,mail,userPrincipalName",
+            "labelPath": "id",
+            "displayTemplate": "{displayName} · {userPrincipalName}"
+          },
+          "clientId": "de0423c6-9670-4774-bdfd-47d6912a4781"
+        }
+      }
+    ]
+  },
+  "locales": {
+    "en": "locales/en.json",
+    "zh-CN": "locales/zh-CN.json",
+    "ja": "locales/ja.json",
+    "ko": "locales/ko.json"
+  },
+  "setup": {
+    "requires": []
+  }
+}

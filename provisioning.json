@@ -141,6 +141,11 @@
       "audience": {
         "emails": []
       }
+    },
+    "ruivalim-outlook-mail": {
+      "audience": {
+        "emails": []
+      }
     }
   }
 }
