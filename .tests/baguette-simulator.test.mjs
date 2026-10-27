@@ -1,5 +1,8 @@
 import './baguette/clipboard.test.cjs';
 import './baguette/memory-mode.test.cjs';
+import './baguette/resource-usage.test.cjs';
+import './baguette/manage-selection.test.cjs';
+import './baguette/manage-splitter.test.cjs';
 import './baguette/control-page.test.cjs';
 import './baguette/keyboard-events.test.cjs';
 import './baguette/stream-recovery.test.cjs';

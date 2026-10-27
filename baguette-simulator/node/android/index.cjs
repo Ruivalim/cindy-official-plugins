@@ -14,6 +14,10 @@ function createAndroid({root,run,children}){
   async function dispatch(method,p={}){
     if(method==='environment')return environment();
     if(method==='devices')return {devices:await devices.devices()};
+    if(method==='resource_usage'){
+      const d=await devices.target(p,false);
+      return require('../resource-usage.cjs').cachedResourceUsage({refresh:p.refresh===true,device:{...d,platform:'android'},directory:d.directory,pid:d.endpoint?.pid,run,deadline:p._deadline});
+    }
     if(method==='android_setup_plan')return sdk.plan();
     if(method==='android_setup_install')return sdk.install(p);
     if(method==='android_setup_status')return sdk.status();

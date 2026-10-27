@@ -165,10 +165,12 @@ const PAGE_ACTIONS = {
     return worker('manage_state', front?.ok && SESSION.test(front.sessionId) ? {_task:front.sessionId} : {});
   },
   catalog: () => worker('viewer_catalog', {}),
+  resources: (m) => str(m.udid) && worker('resource_usage', {udid:m.udid,refresh:m.refresh===true}),
   android_plan: () => worker('android_setup_plan', {}),
   android_status: () => worker('android_setup_status', {}),
   android_install: (m) => str(m.planId) && m.acceptLicenses === true && worker('android_setup_install', {planId:m.planId, acceptLicenses:true}),
   boot: (m) => str(m.udid) && worker('settings_boot', {udid:m.udid, memoryMode:m.memoryMode}),
+  restart_device: (m) => str(m.udid) && worker('settings_restart', {udid:m.udid, memoryMode:m.memoryMode}),
   shutdown: (m) => str(m.udid) && worker('settings_shutdown', {udid:m.udid}),
   rename: (m) => str(m.udid) && str(m.name, 64) && worker('rename_device', {udid:m.udid, name:m.name}),
   erase: (m) => str(m.udid) && worker('erase_device', {udid:m.udid}),
@@ -190,7 +192,7 @@ const PAGE_ACTIONS = {
     return opened;
   },
 };
-const KEEPS_RUNNING = new Set(['task_state', 'task_bind', 'task_boot', 'task_create', 'boot', 'open_in_task', 'viewer_url', 'android_install']);
+const KEEPS_RUNNING = new Set(['task_state', 'task_bind', 'task_boot', 'task_create', 'boot', 'restart_device', 'open_in_task', 'viewer_url', 'android_install']);
 if (pages) pages.onmessage = async ({data: msg}) => {
   if (msg?.type === 'ping' && typeof msg.id === 'string') { pages.postMessage({type:'ready', id:msg.id}); return; }
   if (msg?.type !== 'request' || typeof msg.id !== 'string' || !Object.hasOwn(PAGE_ACTIONS, msg.action)) return;
@@ -209,7 +211,7 @@ if (typeof BroadcastChannel !== 'undefined') {
   const settings = new BroadcastChannel('baguette-settings');
   settings.onmessage = async ({data: msg}) => {
     if (msg?.type === 'ping' && typeof msg.id === 'string') { settings.postMessage({type:'ready', id:msg.id}); return; }
-    const methods = {status:'settings_status',save:'settings_save',shutdown:'settings_shutdown',stopAll:'settings_stop_all',boot:'settings_boot',catalog:'viewer_catalog',create:'create_device'};
+    const methods = {status:'settings_status',resources:'resource_usage',save:'settings_save',shutdown:'settings_shutdown',stopAll:'settings_stop_all',boot:'settings_boot',catalog:'viewer_catalog',create:'create_device'};
     if (msg?.type !== 'request' || typeof msg.id !== 'string' || !(Object.hasOwn(methods, msg.action) || msg.action === 'viewer')) return;
     let result;
     try {
@@ -218,7 +220,7 @@ if (typeof BroadcastChannel !== 'undefined') {
       else {
         const params = msg.action === 'save' ? {enabled:msg.enabled,idleMinutes:msg.idleMinutes}
           : msg.action === 'create' ? {name:msg.name,deviceType:msg.deviceType,runtime:msg.runtime}
-          : {udid:msg.udid,_locale:locale,...(msg.action==='boot'?{memoryMode:msg.memoryMode}:{})};
+          : {udid:msg.udid,_locale:locale,...(msg.action==='boot'?{memoryMode:msg.memoryMode}:msg.action==='resources'?{refresh:msg.refresh===true}:{})};
         result = await worker(methods[msg.action], params);
       }
     } catch { result = {ok:false,errorCode:'SETTINGS_UNAVAILABLE',execution:'unknown'}; }

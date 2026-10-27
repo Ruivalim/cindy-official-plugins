@@ -60,7 +60,7 @@ function render(){
     const actions=raw.state==='Shutdown'?['boot']:raw.state==='Booted'?['viewer','shutdown']:['shutdown'];
     list.append(h('div',{class:'device'},[
       h('span',{class:'glyph',html:GLYPH[device.family]}),
-      h('div',{class:'text'},[h('div',{class:'name',text:device.name}),h('div',{class:'meta'},[h('span',{class:'dot','data-tone':device.tone}),h('span',{text:device.meta})]),raw.state==='Shutdown'?globalThis.CindySimPages.memoryPicker(raw,document.documentElement.lang,locked):null]),
+      h('div',{class:'text'},[h('div',{class:'name',text:device.name}),h('div',{class:'meta'},[h('span',{class:'dot','data-tone':device.tone}),h('span',{text:device.meta})]),raw.state==='Shutdown'?globalThis.CindySimPages.memoryPicker(raw,document.documentElement.lang,locked):globalThis.CindySimPages.memoryBadge(raw,document.documentElement.lang,locked),globalThis.CindySimPages.resourceLabel(raw,document.documentElement.lang)]),
       h('div',{class:'actions'},actions.map(action=>h('button',{class:'btn sm'+(action==='shutdown'?' danger':action==='viewer'?'':' quiet'),text:T[action],disabled:locked||(action!=='shutdown'&&!enabled),onclick:()=>perform(action,{udid:device.udid})}))),
     ]));
   }

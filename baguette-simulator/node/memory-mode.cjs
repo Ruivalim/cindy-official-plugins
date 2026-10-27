@@ -76,8 +76,8 @@ function createMemoryModes({run,sim,Failure,storeRoot='/private/var/tmp'}) {
     } finally {await fs.rm(temp,{force:true}).catch(()=>{});}
     return receipt(next);
   }
-  async function verify(device) {
-    const {stdout}=await sim(['spawn',device.udid,'launchctl','print-disabled','system'],{timeout:5000});
+  async function verify(device,timeout=5000) {
+    const {stdout}=await sim(['spawn',device.udid,'launchctl','print-disabled','system'],{timeout});
     if(!/^\s*disabled services\s*=\s*\{/m.test(stdout))throw new Failure('MEMORY_MODE_UNVERIFIED','Could not read active launchd overrides. Check the device before testing.');
     const entries={};for(const m of stdout.matchAll(/"([^"]+)"\s*=>\s*(true|false|disabled|enabled)/g))entries[m[1]]=m[2]==='true'||m[2]==='disabled';
     return receipt(entries,true);

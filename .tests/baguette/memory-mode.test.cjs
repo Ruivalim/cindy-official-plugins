@@ -51,6 +51,38 @@ test('verification reads active overrides and does not confuse malformed output 
  const actual=await f.memory.verify(device);assert.equal(actual.mode,'saving');assert.equal(actual.verified,true);
  f.live('not supported');await assert.rejects(f.memory.verify(device),e=>e.code==='MEMORY_MODE_UNVERIFIED');
 });
+test('device reads opt into fresh memory evidence without mutating devices; a failed probe retains the list',async()=>{
+ const dir=path.resolve('baguette-simulator/node'),calls=[];
+ let mode='saving',fail=false;
+ const context={module:{exports:{}},__dirname:dir,process:{platform:'darwin',arch:'arm64'},require(name){
+  if(name==='./viewer.cjs')return {};
+  if(name==='./android/index.cjs')return {createAndroid:()=>({dispatch:async()=>({devices:[]})})};
+  if(name==='./memory-mode.cjs')return {createMemoryModes:()=>({verify:async(d,timeout)=>{
+   calls.push(d.udid);assert.equal(timeout,1500);if(fail)throw Error('unavailable');return {mode,verified:true};
+  }})};
+  if(name==='node:child_process')return {execFile(file,args,opts,cb){
+   let output;
+   if(file.endsWith('sw_vers'))output='27.0';
+   else {assert.deepEqual(Array.from(args.slice(-3)),['list','devices','--json']);output=JSON.stringify({devices:{
+    'com.apple.CoreSimulator.SimRuntime.iOS-27-0':[{udid,state:'Booted'},{udid:'stopped',state:'Shutdown'}],
+    'com.apple.CoreSimulator.SimRuntime.tvOS-27-0':[{udid:'tv',state:'Booted'}],
+   }});}
+   queueMicrotask(()=>cb(null,output,''));return {stdin:{on(){},end(){}}};
+  }};
+  return require(name.startsWith('./')?path.join(dir,name):name);
+ }};
+ vm.runInNewContext(require('node:fs').readFileSync(path.join(dir,'core.cjs'),'utf8'),context);
+ const dispatch=context.module.exports.dispatch;
+ await dispatch('devices');assert.deepEqual(calls,[]);
+ for(const value of ['saving','minimal','standard']){
+  mode=value;const {devices}=await dispatch('devices',{includeMemoryModes:true});
+  assert.equal(devices[0].memoryMode.mode,value);assert.equal(devices[0].memoryMode.verified,true);
+  assert.equal(devices[1].memoryMode,undefined);assert.equal(devices[2].memoryMode,undefined);
+ }
+ fail=true;const {devices}=await dispatch('devices',{includeMemoryModes:true});
+ assert.equal(devices.length,3);assert.equal(devices[0].memoryMode.mode,'unknown');
+ assert.equal(devices[0].memoryMode.verified,false);assert.deepEqual(calls,[udid,udid,udid,udid]);
+});
 test('core boot owns mode application, preserves partial evidence and rejects unsupported platforms',async()=>{
  const dir=path.resolve('baguette-simulator/node');
  for(const outcome of ['success','timeout','unverified','unsupported','invalid']){

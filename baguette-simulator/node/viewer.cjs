@@ -159,8 +159,9 @@ async function initializeBridge(server,deviceSet,clipboardAction){
   },
   open:p=>controls.request('open_viewer',{udid:p.udid,_locale:p.locale}),
   catalog:()=>controls.request('viewer_catalog'),
+  resources:p=>controls.request('resource_usage',{udid:p.udid,refresh:p.refresh===true}),
   viewport:p=>controls.request('viewer_screen',{udid:p.udid}),
-  create:async p=>{const created=await controls.request('create_device',{name:p.name,deviceType:p.deviceType,runtime:p.runtime});return {ok:true,created,devices:(await controls.status()).devices};},
+  create:async p=>{const created=await controls.request('create_device',{name:p.name,deviceType:p.deviceType,runtime:p.runtime});return {ok:created.ok!==false,created};},
   rename:async p=>{await controls.request('rename_device',{udid:p.targetUdid,name:p.name});return {ok:true,devices:(await controls.status()).devices};},
   switch:async p=>{const job=await controls.request('viewer_switch',{udid:p.udid,targetUdid:p.targetUdid,_locale:p.locale,task:p.task});server.clipboard.devices.add(job.targetUdid);return {ok:true,job};},
   restart:()=>controls?controls.exclusive(async()=>{await controls.assertEnabled();return restartNative(server);}):restartNative(server),
@@ -168,6 +169,7 @@ async function initializeBridge(server,deviceSet,clipboardAction){
   shutdown:p=>controls.request('settings_shutdown',{udid:p.udid}),
   // Both run under the runtime lock and the user's run switch, like Agent tools.
   boot:p=>controls.request('settings_boot',{udid:p.udid,memoryMode:p.memoryMode}),
+  restart_device:p=>controls.request('settings_restart',{udid:p.udid,memoryMode:p.memoryMode}),
   press:p=>controls.request('press',{udid:p.udid,button:p.button}),
   tap:p=>controls.request('viewer_tap',{udid:p.udid,x:p.x,y:p.y,duration:p.duration}),
   trackpad:p=>controls.request('viewer_trackpad',{udid:p.udid,gesture:p.gesture,phase:p.phase,x:p.x,y:p.y}),

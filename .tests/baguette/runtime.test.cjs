@@ -3,6 +3,52 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
 const {createRuntime}=require('../../baguette-simulator/node/runtime.cjs');
 const udid='00000000-0000-4000-8000-000000000001';
+test('restart owns shutdown and boot together while task refresh retains the same controller',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'bag-restart-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ const tasks=require('../../baguette-simulator/node/tasks.cjs').createTaskBindings(path.join(dir,'tasks.json'));
+ await tasks.bind('task-1',udid);
+ let state='Booted',release,stopping;const entered=new Promise(r=>stopping=r),hold=new Promise(r=>release=r),calls=[];
+ const url='http://127.0.0.1:9/control?udid='+udid+'#capability';
+ const runtime=createRuntime({tasks,settingsFile:path.join(dir,'settings.json'),existingViewerUrl:()=>url,dispatch:async(method,p,deadline)=>{
+  calls.push({method,p,deadline});
+  if(method==='devices')return {devices:[{udid,state,runtime:'com.apple.CoreSimulator.SimRuntime.iOS-27-0'}]};
+  if(method==='shutdown'){state='Shutdown';stopping();await hold;return {ok:true};}
+  if(method==='boot'){state='Booted';return {ok:true,udid,state,memoryMode:{mode:p.memoryMode,verified:true}};}
+  return {ok:true};
+ }});
+ const pending=runtime.request('settings_restart',{udid,memoryMode:'standard'});await entered;
+ const during=await runtime.request('task_state',{_task:'task-1'});
+ assert.equal(during.device.state,'Shutdown');assert.equal(during.device.operation.name,'settings_restart');
+ assert.equal(during.viewer.url,url.replace('#','&task=task-1#'),'parent polling must not remove the pending controller');
+ await assert.rejects(runtime.request('boot',{udid,memoryMode:'saving'}),e=>e.code==='BUSY');
+ release();const result=await pending;
+ assert.equal(result.memoryMode.mode,'standard');
+ const mutations=calls.filter(c=>['shutdown','boot'].includes(c.method));
+ assert.deepEqual(mutations.map(c=>c.method),['shutdown','boot']);
+ assert.equal(mutations[1].p.memoryMode,'standard');assert.equal(mutations[1].deadline,mutations[0].deadline,'one bounded request');
+ assert.equal((await runtime.request('task_state',{_task:'task-1'})).device.operation,undefined);
+});
+
+test('restart validates before stopping and never boots after an unconfirmed stop or retries a failed boot',async t=>{
+ for(const phase of ['invalid','missing','foreign','android','paused','stop-error','unconfirmed','boot-error','saving','standard','minimal']){
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'bag-restart-fail-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+  let state='Booted';const calls=[];
+  if(phase==='paused')await fs.writeFile(path.join(dir,'settings.json'),JSON.stringify({enabled:false,idleMinutes:15}));
+  const runtime=createRuntime({settingsFile:path.join(dir,'settings.json'),dispatch:async(method,p)=>{
+   calls.push(method);
+   if(method==='devices')return {devices:phase==='foreign'?[]:[{udid,state,runtime:phase==='android'?'android:36':'com.apple.CoreSimulator.SimRuntime.iOS-27-0'}]};
+   if(method==='shutdown'){if(phase==='stop-error')throw Error('stop failed');if(phase!=='unconfirmed')state='Shutdown';return {ok:true};}
+   if(method==='boot'){if(phase==='boot-error')throw Error('boot failed');state='Booted';return {ok:true,memoryMode:{mode:p.memoryMode,verified:true}};}
+  }});
+  const mode=['saving','standard','minimal'].includes(phase)?phase:phase==='invalid'?'custom':phase==='missing'?undefined:'saving';
+  if(['saving','standard','minimal','unconfirmed'].includes(phase)){
+   const r=await runtime.request('settings_restart',{udid,memoryMode:mode});
+   if(phase==='unconfirmed')assert.equal(r.ok,false);else assert.equal(r.memoryMode.mode,mode);
+  }else await assert.rejects(runtime.request('settings_restart',{udid,memoryMode:mode}));
+  const writes=calls.filter(m=>['shutdown','boot'].includes(m));
+  assert.deepEqual(writes,['invalid','missing','foreign','android','paused'].includes(phase)?[]:['stop-error','unconfirmed'].includes(phase)?['shutdown']:['shutdown','boot'],phase);
+ }
+});
 async function fixture(t){
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'baguette-runtime-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
   let clock=0,state='Booted',failStop=false,bootTimeout=false,hold;
@@ -46,6 +92,18 @@ test('destructive results never start an optional device-list read or lose compl
   }
 });
 
+test('resource inspection bypasses device locks and does not postpone idle shutdown',async t=>{
+ const f=await fixture(t),before=(await f.runtime.status()).idleDeadline;
+ let release;const pending=new Promise(r=>release=r);f.hold(pending);
+ const tap=f.runtime.request('tap',{udid});
+ await new Promise(r=>setImmediate(r));
+ f.advance(5000);const afterTap=(await f.runtime.status()).idleDeadline;
+ await f.runtime.request('resource_usage',{udid});
+ assert.equal((await f.runtime.status()).idleDeadline,afterTap);assert.equal(afterTap,before);
+ release();await tap;
+ await f.runtime.request('settings_save',{enabled:false,idleMinutes:15});
+ assert.equal((await f.runtime.request('resource_usage',{udid})).ok,true,'works while paused');
+});
 test('off stops exact devices, persists across restart, and rejects tool boot; enabling never boots',async t=>{
   const f=await fixture(t);
   assert.equal((await f.runtime.request('settings_save',{enabled:false,idleMinutes:15})).ok,true);

@@ -1160,12 +1160,12 @@ test('launches on different devices run independently and retain both shared App
 function pageFixture(kind) {
   const nodes=new Map(),requests=[],memoryNotices=[];let push;
   const get=id=>{
-    if(!nodes.has(id))nodes.set(id,{replaceChildren(){},append(){},querySelector(){return null;},classList:{contains:()=>false,toggle(){}}});
+    if(!nodes.has(id))nodes.set(id,{dataset:{},setAttribute(){},replaceChildren(){},append(){},querySelector(){return null;},querySelectorAll(){return [];},classList:{contains:()=>false,toggle(){}}});
     return nodes.get(id);
   };
-  const context={URLSearchParams,location:{search:'?session=task-1'},document:{getElementById:get,addEventListener(){},hidden:false},
+  const context={URLSearchParams,addEventListener(){},location:{search:'?session=task-1'},document:{getElementById:get,addEventListener(){},hidden:false},
     localStorage:{getItem:()=>null},clearTimeout(){},setTimeout:()=>0,
-    CindySimPages:{locale:()=>new Promise(()=>{}),onPush:fn=>{push=fn;},createDevice:async()=>({udid:B}),memoryArgs:()=>({memoryMode:'saving'}),memoryPicker:()=>null,
+    CindySimPages:{locale:()=>new Promise(()=>{}),onPush:fn=>{push=fn;},createDevice:async()=>({udid:B}),memoryArgs:()=>({memoryMode:'saving'}),memoryPicker:()=>null,memoryBadge:()=>null,resourceButton:()=>({}),
       rpc:(action,params)=>{const d=deferred();requests.push({...d,action,params});return d.promise;},
       h:()=>({}),GLYPH:{iphone:'',big:'',pause:''}},CindySimModel:{runtimeLabel:()=>'',deviceRows:()=>[],showMemoryNotice:(...args)=>memoryNotices.push(args)}};
   const expose=kind==='task'

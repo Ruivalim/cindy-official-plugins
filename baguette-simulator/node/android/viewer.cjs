@@ -105,6 +105,7 @@ function createViewer({devices,agent,root}){
           case 'install_status':result=await controls.request('app_install_status',{udid:p.udid,job:p.job,wait:0});break;
           case 'open':result=await controls.request('open_viewer',{udid:p.udid,_locale:p.locale});break;
           case 'catalog':result=await controls.request('viewer_catalog');break;
+          case 'resources':result=await controls.request('resource_usage',{udid:p.udid,refresh:p.refresh===true});break;
           case 'create':{const created=await controls.request('create_device',{name:p.name,deviceType:p.deviceType,runtime:p.runtime});result={created,devices:(await controls.status()).devices};break;}
           case 'rename':await controls.request('rename_device',{udid:p.targetUdid,name:p.name});result={devices:(await controls.status()).devices};break;
           case 'switch':result={job:await controls.request('viewer_switch',{udid:p.udid,targetUdid:p.targetUdid,_locale:p.locale,task:p.task})};if(result.job.activeUdid)opened.add(result.job.activeUdid);break;

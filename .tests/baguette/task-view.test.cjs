@@ -280,12 +280,39 @@ test('the management view offers "open in current task" only when a task is in f
  assert.deepEqual(none.calls.filter(c=>c.method==='manage_state').map(c=>c.params._task),[undefined]);
 });
 
+test('creation mode survives the task poll replacing its live controller with the off-device page',async()=>{
+ const nodes=new Map(),events={},calls=[];
+ const get=id=>{if(!nodes.has(id))nodes.set(id,{children:[],contentWindow:{},replaceChildren(){this.children=[];},append(...children){this.children.push(...children);}});return nodes.get(id);};
+ let device={udid:A,state:'Booted',runtime:'iOS-27'},poll;
+ const context={URL,URLSearchParams,location:{search:'?session=task-1'},BroadcastChannel:class{postMessage(){}},
+  addEventListener:(type,fn)=>events[type]=fn,setInterval:fn=>poll=fn,
+  document:{hidden:false,documentElement:{},getElementById:get,addEventListener(){}}};
+ vm.createContext(context);
+ vm.runInContext(require('node:fs').readFileSync('baguette-simulator/pages.js','utf8'),context);
+ const pages=context.CindySimPages;
+ Object.assign(pages,{locale:async()=> 'en',h:(tag,props,children=[])=>({tag,props,children}),memoryBadge:()=>null,
+  memoryPicker:d=>({selected:pages.memoryArgs(d).memoryMode}),
+  rpc:async(action,params)=>{calls.push({action,params});return {ok:true,settings:{enabled:true},device,devices:[device],viewer:device.udid===A?{url:'http://127.0.0.1:1/control?udid='+A}:null};}});
+ context.CindySimModel={platform:()=> 'iOS',runtimeLabel:()=> 'iOS 27',createResourceSummary:()=>({node:{},update(){},prune(){}}),showMemoryNotice(){}};
+ vm.runInContext(require('node:fs').readFileSync('baguette-simulator/task.js','utf8'),context);await settle();
+ const message={source:get('screen').contentWindow,origin:'http://127.0.0.1:1',data:{type:'cindy-simulator-created',sessionId:'task-1',udid:B,memoryMode:'minimal'}};
+ for(const invalid of [{source:{}},{origin:'https://invalid.test'},{data:{...message.data,sessionId:'another'}}]) events.message({...message,...invalid});
+ assert.equal(pages.memoryArgs({udid:B}).memoryMode,'saving');
+ events.message(message);device={udid:B,name:'Created',state:'Shutdown',runtime:'iOS-27'};poll();await settle();
+ assert.equal(get('screen').src,'about:blank');assert.equal(get('home').hidden,false);
+ assert.equal(pages.memoryArgs(device).memoryMode,'minimal');
+ const flatten=n=>[n,...(n.children||[]).filter(Boolean).flatMap(flatten)];
+ const rendered=get('inner').children.flatMap(flatten);assert.ok(rendered.some(n=>n.selected==='minimal'));
+ await rendered.find(n=>n.tag==='button'&&n.props.text==='Open').props.onclick();
+ assert.equal(calls.find(c=>c.action==='task_boot').params.memoryMode,'minimal');
+});
+
 test('an already streaming task page polls binding changes and follows a newly assigned device',async()=>{
  const nodes=new Map();const get=id=>{if(!nodes.has(id))nodes.set(id,{replaceChildren(){},append(){}});return nodes.get(id);};
  let device=A,poll;
- const context={URLSearchParams,location:{search:'?session=task-1'},document:{hidden:false,documentElement:{},getElementById:get,addEventListener(){}},
-  setInterval:fn=>{poll=fn;},CindySimPages:{locale:async()=> 'en',onPush(){},h:()=>({}),GLYPH:{},
-   rpc:async()=>({ok:true,settings:{enabled:true},device:{udid:device,state:'Booted'},viewer:{url:'http://127.0.0.1:1/control?udid='+device}})},CindySimModel:{}};
+ const context={URLSearchParams,addEventListener(){},location:{search:'?session=task-1'},document:{hidden:false,documentElement:{},getElementById:get,addEventListener(){}},
+  setInterval:fn=>{poll=fn;},CindySimPages:{locale:async()=> 'en',onPush(){},h:()=>({}),GLYPH:{},memoryBadge:()=>null,resourceButton:()=>({}),
+   rpc:async()=>({ok:true,settings:{enabled:true},device:{udid:device,state:'Booted'},viewer:{url:'http://127.0.0.1:1/control?udid='+device}})},CindySimModel:{runtimeLabel:()=>'iOS 27',createResourceSummary:()=>({node:{},update(){},prune(){},label:()=>({})})}};
  vm.runInNewContext(require('node:fs').readFileSync('baguette-simulator/task.js','utf8'),context);
  await settle();assert.match(get('screen').src,new RegExp(A));
  device=B;poll();await settle();assert.match(get('screen').src,new RegExp(B));
@@ -296,9 +323,9 @@ test('a closed task screen stays closed on refresh and offers an explicit reopen
   const nodes=new Map(),calls=[];
   const get=id=>{if(!nodes.has(id))nodes.set(id,{children:[],replaceChildren(){this.children=[];},append(...children){this.children.push(...children);}});return nodes.get(id);};
   let closed=true,poll;
-  const context={URLSearchParams,location:{search:'?session=task-1'},document:{hidden:false,documentElement:{},getElementById:get,addEventListener(){}},
-   setInterval:fn=>{poll=fn;},CindySimPages:{locale:async()=>lang,onPush(){},h:(tag,props,children=[])=>({tag,props,children}),GLYPH:{},
-    rpc:async(action,params)=>{calls.push({action,params});if(action==='task_bind')closed=false;return {ok:true,settings:{enabled:true},device:{udid:A,name:'Phone',state:'Booted'},viewerClosed:closed,viewer:closed?null:{url:'http://127.0.0.1:1/control?udid='+A}};}},CindySimModel:{}};
+  const context={URLSearchParams,addEventListener(){},location:{search:'?session=task-1'},document:{hidden:false,documentElement:{},getElementById:get,addEventListener(){}},
+   setInterval:fn=>{poll=fn;},CindySimPages:{locale:async()=>lang,onPush(){},h:(tag,props,children=[])=>({tag,props,children}),GLYPH:{},memoryBadge:()=>null,resourceButton:()=>({}),
+    rpc:async(action,params)=>{calls.push({action,params});if(action==='task_bind')closed=false;return {ok:true,settings:{enabled:true},device:{udid:A,name:'Phone',state:'Booted'},viewerClosed:closed,viewer:closed?null:{url:'http://127.0.0.1:1/control?udid='+A}};}},CindySimModel:{runtimeLabel:()=>'iOS 27',createResourceSummary:()=>({node:{},update(){},prune(){},label:()=>({})})}};
   vm.runInNewContext(require('node:fs').readFileSync('baguette-simulator/task.js','utf8'),context);
   await settle();poll();await settle();
   const flatten=node=>[node,...(node.children||[]).filter(Boolean).flatMap(flatten)];

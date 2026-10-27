@@ -58,7 +58,7 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
       settingsError = {code:error.code, message:error.message};
     }
     if (!knownDevices) commandBudget(1, deadline, now);
-    return {...(knownDevices || await dispatch('devices', {}, deadline)), settings: {...settings}, settingsError, lastStop,
+    return {...(knownDevices || await dispatch('devices', {includeMemoryModes:true}, deadline)), settings: {...settings}, settingsError, lastStop,
       deviceJob:manager.snapshot(),idleDeadline: settings.idleMinutes ? lastActivity + settings.idleMinutes * 60000 : null};
   }
   async function stopAll(reason, deadline = now() + 110000) {
@@ -151,17 +151,18 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
   const withTask = (url, session) => url.replace('#', `&task=${encodeURIComponent(session)}#`);
   async function taskState(session, locale) {
     if (!tasks || !validSession(session)) throw failure('INVALID_ARGUMENT', 'Unknown task.');
-    const devices = await annotate((await dispatch('devices')).devices, session);
+    const devices = await annotate((await dispatch('devices', {includeMemoryModes:true})).devices, session);
     const binding = await tasks.get(session);
     const device = binding ? devices.find(d => deviceId(d.udid) === deviceId(binding.udid)) || null : null;
     let settings;
     try { settings = await load(); } catch { settings = {enabled:false, idleMinutes:null}; }
     let viewer = null, waiting = false;
-    if (device && device.state === 'Booted' && settings.enabled && !viewerClosed) {
+    const restarting = device?.operation?.name === 'settings_restart';
+    if (device && (device.state === 'Booted' || restarting) && settings.enabled && !viewerClosed) {
       // Reuse a running viewer without taking the runtime lock, so a page refresh
       // never makes an Agent tool call fail with BUSY.
       let url = await existingViewerUrl(device.udid, locale);
-      if (!url) {
+      if (!url && !restarting) {
         try { url = (await request('open_viewer', {udid:device.udid, _locale:locale}))?.url || null; }
         catch (error) { if (error.code === 'BUSY') waiting = true; else throw error; }
       }
@@ -211,6 +212,7 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
     // A settings refresh must not reject a user's stop/permission change.
     // Reading simulator state is safe while a command is in flight.
     if (method === 'settings_status') return status();
+    if (method === 'resource_usage') return dispatch(method, params, deadline);
     if (method === 'viewer_switch') {
       return manager.start(params);
     }
@@ -244,7 +246,7 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
     if (method === 'device_hold') return hold();
     // Listing devices and the toolchain reads only; it never waits behind another device's operation, and works while paused.
     if (method === 'devices') {
-      const result = await dispatch(method, params);
+      const result = await dispatch(method, {...params,includeMemoryModes:true});
       return {...result, devices: await annotate(result.devices, sessionOf(params))};
     }
     if (method === 'environment') return dispatch(method, params);
@@ -289,8 +291,19 @@ function createRuntime({dispatch, settingsFile, now = Date.now, inUse = async ()
         touch();
         return {...await status(), ok:true, execution:'executed'};
       }
-      const actual = {settings_boot:'boot', settings_viewer:'open_viewer'}[method] || method;
+      const actual = {settings_boot:'boot', settings_restart:'boot', settings_viewer:'open_viewer'}[method] || method;
       if (!settings.enabled) throw failure('RUNTIME_DISABLED', 'Baguette is paused. Enable simulator operation in Plugins → Baguette settings.');
+      if (method === 'settings_restart') {
+        // Keep the existing per-device lock across both steps. A page going away
+        // must not strand the device between shutdown and the requested boot.
+        if (!['saving','standard','minimal'].includes(params.memoryMode)) throw failure('INVALID_ARGUMENT','Select an explicit memory mode before restarting.');
+        const devices = (await dispatch('devices', {}, deadline)).devices;
+        const device = devices.find(d => deviceId(d.udid) === params.udid);
+        if (!device) throw failure('DEVICE_NOT_OWNED','Select an exact device from devices.');
+        if (!/\.SimRuntime\.iOS-/.test(device.runtime)) throw failure('UNSUPPORTED_MEMORY_MODE','Memory modes are only supported for iOS simulators.');
+        const stopped = await stopOne(params.udid, deadline);
+        if (!stopped.ok) return stopped;
+      }
       // A command can mutate a device and then fail (e.g. bootstatus timeout).
       // Re-arm cleanup before dispatch, even when no success result follows.
       touch();

@@ -14,7 +14,7 @@ const ROOT = process.platform==='darwin'?path.join(os.homedir(), 'Library/Applic
 const DEVICE_SET = path.join(ROOT, 'devices');
 const children = new Set();
 const methods = new Set(['environment','devices','create_device','rename_device','app_bundle','boot','shutdown','describe_ui','tap','viewer_screen','viewer_tap','viewer_trackpad','viewer_spatial','swipe','gesture','type_text','press','screenshot','install_app','launch_app','heal','open_viewer','close_viewer','delete_device','erase_device','reveal_screenshot',
-  'import_media','wait_for','capture','set_state','logs','app_install','app_install_status','app_info','app_terminate','app_uninstall','open_url']);
+  'import_media','wait_for','capture','set_state','logs','app_install','app_install_status','app_info','app_terminate','app_uninstall','open_url','resource_usage']);
 // Agent operations that only read the device; they never change what is on screen.
 const READ_ONLY = new Set(['describe_ui','screenshot','wait_for','logs','app_info','app_install_status','viewer_screen']);
 class Failure extends Error {
@@ -250,7 +250,18 @@ async function appleDispatch(method,p={},deadline=Date.now()+110000) {
     return {macOS,baguette:version.stdout,xcode:xcode.stdout,deviceSet:DEVICE_SET,diagnostics:{keyboard:await keyboardCheck},runtimes:runtimes.runtimes.filter(x=>x.isAvailable&&/\.SimRuntime\.(?:iOS|tvOS|xrOS)-/.test(x.identifier)).map(x=>({name:x.name,identifier:x.identifier,version:x.version,...(Array.isArray(x.supportedDeviceTypes)?{supportedDeviceTypes:x.supportedDeviceTypes.map(d=>d.identifier)}:{})})),deviceTypes:types.devicetypes.filter(x=>['iPhone','iPad','Apple TV','Apple Vision'].includes(x.productFamily)).map(x=>({name:x.name,identifier:x.identifier,productFamily:x.productFamily,minRuntimeVersion:x.minRuntimeVersionString,maxRuntimeVersion:x.maxRuntimeVersionString})),note:'Xcode 26/27 are supported; iPhone Duo requires Xcode 27.1 and iOS 27.1. diagnostics.keyboard checks interface availability only, not live input delivery or display-host ownership. A failed keyboard check does not invalidate the runtime catalog. Use dedicated devices, observe UI before acting, and verify actions afterwards.'};
   }
   if(method==='close_viewer') {await trackpadImpl?.stop();await spatialImpl?.stop();return {...await stopViewer(),execution:'executed',note:'Viewer server stopped; simulator and App remain running.'};}
-  if(method==='devices') return {deviceSet:DEVICE_SET,devices:await listDevices(deadline)};
+  if(method==='devices') {
+    let devices=await listDevices(deadline);
+    if(p.includeMemoryModes) {
+      const memory=require('./memory-mode.cjs').createMemoryModes({run:runCommand,sim:simCommand,Failure});
+      devices=await Promise.all(devices.map(async device=>{
+        if(device.state!=='Booted'||platform(device)!=='iOS')return device;
+        try{return {...device,memoryMode:await memory.verify(device,1500)};}
+        catch(error){return {...device,memoryMode:{mode:'unknown',verified:false,errorCode:error.code||'MEMORY_MODE_UNVERIFIED'}};}
+      }));
+    }
+    return {deviceSet:DEVICE_SET,devices};
+  }
   if(method==='create_device') {
     const name=deviceName(p.name), runtime=string(p.runtime,'runtime'), deviceType=string(p.deviceType,'deviceType');
     if(!/^com\.apple\.CoreSimulator\.SimRuntime\.(?:iOS|tvOS|xrOS)-[0-9-]+$/.test(runtime)||!/^com\.apple\.CoreSimulator\.SimDeviceType\.[A-Za-z0-9-]+$/.test(deviceType)) throw new Failure('INVALID_ARGUMENT','Use runtime and deviceType identifiers from environment');
@@ -270,7 +281,8 @@ async function appleDispatch(method,p={},deadline=Date.now()+110000) {
     await runCommand('/usr/bin/open',['-R',file],{timeout:10000});
     return {execution:'executed'};
   }
-  const device=await target(p,!['boot','shutdown','rename_device','delete_device','erase_device'].includes(method));
+  const device=await target(p,!['boot','shutdown','rename_device','delete_device','erase_device','resource_usage'].includes(method));
+  if(method==='resource_usage')return require('./resource-usage.cjs').cachedResourceUsage({refresh:p.refresh===true,device,directory:path.join(DEVICE_SET,device.udid),run:runCommand,deadline});
   if(['shutdown','erase_device','delete_device'].includes(method))await trackpadImpl?.stop(device.udid);
   if(['press','type_text','launch_app'].includes(method))await trackpadImpl?.cancel(device.udid);
   if(['shutdown','erase_device','delete_device'].includes(method))await spatialImpl?.stop(device.udid);

@@ -25,12 +25,11 @@
   const memoryChoices = new Map();
   function memoryPicker() {
     if(M.platform(state.status?.device)!=='iOS')return null;
-    const value=memoryChoices.get(udid)||'saving';
-    return h('div',{class:'memory-choice'},[
-      h('label',{},[h('span',{text:lang==='zh-CN'?'启动模式':'Startup mode'}),
-        h('select',{onchange:e=>memoryChoices.set(udid,e.target.value)},M.memoryOptions(lang).map(o=>h('option',{value:o.value,text:o.label,selected:o.value===value})))]),
-      h('small',{text:M.memoryHelp(lang)})]);
+    return M.memoryPicker(memoryChoices.get(udid)||'saving',lang,mode=>memoryChoices.set(udid,mode));
   }
+
+  const resourceView = M.createResourceSummary(lang,(device,refresh)=>device.udid===udid ? api('resources',{refresh}) : Promise.reject(Error('DEVICE_CHANGED')));
+
   const keyboardEnabled = () => keyboardChoices.get(udid) ?? (store.get(`cindy.keyboard.${udid}`) !== false);
   function keyboardGate(event) {
     // Workbench fields belong to the browser. This only gates guest keyboard
@@ -227,8 +226,22 @@
     $('device-chip').hidden = hub; $('title').hidden = !hub;
     $('chip-dot').dataset.tone = $('title-dot').dataset.tone = p.tone;
     $('chip-name').textContent = $('title-name').textContent = device?.name || '…';
-    $('title-sub').textContent = [M.runtimeLabel(device?.runtime), t[p.key]].filter(Boolean).join(' · ');
+    const resources = $('resources'), modeButton = $('memory-mode');
+    resources.replaceChildren(resourceView.node,modeButton);
+    $('title-sub').replaceChildren(h('span',{text:[M.runtimeLabel(device?.runtime), t[p.key]].filter(Boolean).join(' · ')}), ...(hub ? [resources] : []));
+    resources.hidden = !device || state.lost || state.switching;
     $('status').textContent = t[p.key];
+    const memoryText = device?.state === 'Booted' ? M.memoryStatus(state.lost ? {...device,memoryMode:null} : device, lang,memoryChoices.get(udid)) : '';
+    modeButton.hidden = !memoryText;
+    const modeText = memoryText.replace(/^(内存模式：|Memory mode: )/,'');
+    modeButton.replaceChildren(
+      h('span',{text:lang === 'zh-CN' ? '（' : ' ('}),
+      h('span',{class:'memory-mode-label',text:modeText}),
+      h('span',{text:lang === 'zh-CN' ? '）' : ')'})
+    );
+    label(modeButton,memoryText + (lang === 'zh-CN' ? ' · 查看与更改' : ' · View / change'));
+    modeButton.disabled = state.lost || state.stopping || state.switching;
+    resourceView.update(state.lost || state.switching ? null : device);
     const on = live();
     const handheld = M.handheld(device);
     $('tools').hidden = !on;
@@ -245,9 +258,13 @@
     $('device-chip').title = t.devices;
     renderPosture();
   }
+  let offOverlayKey = null;
   function renderOverlay() {
     const s = state.lost ? null : state.status;
     const o = M.overlay(s, state);
+    const key = o?.kind === 'off' ? JSON.stringify([udid,s?.device?.name]) : null;
+    if (key && key === offOverlayKey && !overlay.hidden) return;
+    offOverlayKey = key;
     overlay.replaceChildren();
     overlay.hidden = !o;
     if (o) stage.setAttribute('data-dim', ''); else stage.removeAttribute('data-dim');
@@ -260,7 +277,7 @@
     if (o.kind === 'offline') overlay.append(card(ICON.unplug, t.offlineTitle, t.offlineBody, [h('button', { class: 'btn primary', text: t.recover, onclick: recover })]));
     else if (o.kind === 'serviceOff') overlay.append(card(ICON.unplug, t.serviceOffTitle, t.serviceOffBody, [h('button', { class: 'btn', text: t.retry, onclick: check })]));
     else if (o.kind === 'expired') overlay.append(card(ICON.unplug, t.expiredTitle, t.expiredBody));
-    else if (o.kind === 'off') overlay.append(card(ICON.off, t.offTitle(name), t.offBody, [memoryPicker(),h('button', { class: 'btn cta', text: t.boot, onclick: boot })]));
+    else if (o.kind === 'off') overlay.append(card(ICON.off, t.offTitle(name), null, [memoryPicker(),h('button', { class: 'btn cta', text: t.boot, onclick: boot })]));
     else if (o.kind === 'paused') overlay.append(card(ICON.pause, t.pausedTitle, t.pausedBody));
     else if (o.kind === 'switching') {
       const target = state.status?.devices?.find((d) => d.udid === state.switchTarget)?.name || '';
@@ -301,11 +318,11 @@
       // A completed selection may point at a stopped device. Use its own
       // state immediately, never load its stream using the source's state.
       if (s.device?.udid !== udid) s.device = s.devices?.find((d) => d.udid === udid);
-      if (!state.switching && s.device?.state === 'Booted' && s.viewerPlatform && (s.device.platform==='android'?'android':'ios')!==s.viewerPlatform) {
+      if (!state.switching && !state.stopping && s.device?.state === 'Booted' && s.viewerPlatform && (s.device.platform==='android'?'android':'ios')!==s.viewerPlatform) {
         const opened=await api('open');
         if(opened.url){const next=new URL(opened.url);for(const key of ['task','embed'])if(params.get(key))next.searchParams.set(key,params.get(key));location.replace(next.href);return;}
       }
-      if (!state.switching && s.device?.state === 'Booted' && s.ready) {
+      if (!state.switching && !state.stopping && s.device?.state === 'Booted' && s.ready) {
         let unavailable = false; try { unavailable = !!screen.contentDocument?.querySelector('[data-viewer-unavailable]'); } catch {}
         if (state.generation === null || screen.src === 'about:blank' || unavailable) load();
         else decorate();
@@ -350,9 +367,8 @@
     $('confirm-dialog').showModal();
   }
   $('confirm-cancel').addEventListener('click', () => $('confirm-dialog').close());
-  $('confirm-ok').addEventListener('click', async () => {
-    $('confirm-dialog').close();
-    if (state.stopping || state.switching) return;
+  async function shutdown() {
+    if (state.stopping || state.switching || state.status?.device?.state !== 'Booted') return;
     state.stopping = true; blank(); render();
     try {
       const result = await api('shutdown');
@@ -360,6 +376,26 @@
       toast(t.stopped, 'ok');
     } catch { toast(t.actionFailed, 'error'); }
     finally { state.stopping = false; await check(); }
+  }
+  $('confirm-ok').addEventListener('click', () => { $('confirm-dialog').close(); shutdown(); });
+  $('memory-mode').addEventListener('click', () => {
+    if (state.lost || state.stopping || state.switching) return;
+    const target = udid;
+    M.showMemoryDetails(state.status.device, lang, {value:memoryChoices.get(target),onChange:mode=>{
+      memoryChoices.set(target,mode);if (udid === target) render();
+    },onRestart:state.status.device.state==='Booted' ? async mode=>{
+      if (udid !== target || state.stopping || state.switching || state.lost) throw Error('DEVICE_UNAVAILABLE');
+      const device = state.status.device;
+      state.stopping = true; blank(); render();
+      try {
+        const result = await M.restartMemoryMode(device, mode, (action,args)=>{
+          if (udid !== target) throw Error('DEVICE_CHANGED');
+          return api(action,args);
+        });
+        M.showMemoryNotice(result,lang,mode,device.name);
+        state.generation = null;
+      } finally { state.stopping = false; await check(); }
+    } : undefined});
   });
   async function release() {
     try { screen.contentWindow?.postMessage({ type: 'cindy-release-input' }, location.origin); } catch {}
@@ -640,7 +676,7 @@
     ]);
   });
   async function switchTo(targetUdid) {
-    if (state.switching) return;
+    if (state.switching || state.stopping) return;
     state.switching = true; state.phase = 'preparing'; state.switchTarget = targetUdid; blank(); render();
     // Inside a task page the switch also moves that task to the new device.
     try {
@@ -658,16 +694,23 @@
   }
 
   // ---- add / rename dialog ----
-  let catalog = null, mode = 'add';
+  let catalog = null, mode = 'add', creationMemory = 'saving';
+  function fillCreationMemory() {
+    const runtime = catalog?.runtimes?.find(r=>r.identifier===$('f-runtime').value);
+    $('f-memory').hidden = mode!=='add' || !runtime || M.platform(runtime)!=='iOS';
+    $('f-memory').replaceChildren(...($('f-memory').hidden ? [] : [M.memoryPicker(creationMemory,lang,value=>{creationMemory=value;})]));
+  }
   function fillRuntimes() {
     const runtime = $('f-runtime'), options = M.runtimesFor(catalog, $('f-model').value), previous = runtime.value;
     runtime.replaceChildren(...options.map((r) => h('option', { value: r.identifier, text: r.name })));
     runtime.value = options.some((r) => r.identifier === previous) ? previous : (options.at(-1)?.identifier || '');
     $('dialog-error').textContent = options.length ? '' : t.noRuntime;
     $('dialog-save').disabled = !options.length;
+    fillCreationMemory();
   }
   async function openDialog(kind) {
     mode = kind;
+    creationMemory = 'saving'; $('f-memory').hidden = true; $('f-memory').replaceChildren();
     const current = state.status?.devices?.find((d) => d.udid === udid);
     $('dialog-title').textContent = kind === 'add' ? t.dialogAdd : t.dialogRename;
     $('dialog-hint').textContent = kind === 'add' ? t.addHint : t.renameHint;
@@ -687,23 +730,44 @@
       const choice = M.defaultChoice(catalog);
       if (choice) { model.value = choice.deviceType; fillRuntimes(); $('f-runtime').value = choice.runtime; $('f-name').value = choice.name; }
       else fillRuntimes();
+      fillCreationMemory();
       $('dialog-error').textContent = $('dialog-save').disabled ? t.noRuntime : '';
       $('f-name').focus();
     } catch (error) { $('dialog-error').textContent = `${t.actionFailed} (${error.code || 'CATALOG_FAILED'})`; }
   }
   $('f-model').addEventListener('change', () => { fillRuntimes(); if (!$('f-name').dataset.edited) $('f-name').value = catalog?.deviceTypes.find((d) => d.identifier === $('f-model').value)?.name || ''; });
   $('f-name').addEventListener('input', () => { $('f-name').dataset.edited = 'true'; });
+  $('f-runtime').addEventListener('change',fillCreationMemory);
   $('dialog-cancel').addEventListener('click', () => $('device-dialog').close());
+  $('device-dialog').addEventListener('cancel',event=>{if($('dialog-cancel').disabled)event.preventDefault();});
   $('device-form').addEventListener('submit', async (event) => {
     event.preventDefault();
-    const name = $('f-name').value.trim(); if (!name) return;
+    const name = $('f-name').value.trim(); if (!name || $('dialog-save').disabled) return;
+    const requested = $('f-memory').hidden ? null : creationMemory;
     $('dialog-save').disabled = true; $('dialog-error').textContent = '';
+    const inputs = [$('dialog-cancel'),$('f-name'),$('f-model'),$('f-runtime'),...$('f-memory').querySelectorAll('button')];
+    inputs.forEach(node=>{node.disabled=true;});
     try {
-      if (mode === 'add') await api('create', { name, deviceType: $('f-model').value, runtime: $('f-runtime').value });
-      else await api('rename', { name, targetUdid: udid });
-      $('device-dialog').close(); toast(mode === 'add' ? t.created : t.saved, 'ok'); await check();
+      if (mode === 'add') {
+        const result = await api('create', { name, deviceType: $('f-model').value, runtime: $('f-runtime').value });
+        const created = result.created;
+        if (!created?.udid || created.ok === false) throw Object.assign(Error('CREATE_UNCONFIRMED'),{code:created?.errorCode || 'CREATE_UNCONFIRMED'});
+        if (requested) memoryChoices.set(created.udid,requested);
+        // The task page takes over for an off device on its next status poll.
+        // Hand it the creation choice before switching the task binding.
+        if (requested && params.get('task') && window.parent && window.parent!==window) {
+          window.parent.postMessage({type:'cindy-simulator-created',sessionId:params.get('task'),udid:created.udid,memoryMode:requested},'*');
+        }
+        // Creation is complete. Close before switching so a selection failure
+        // cannot leave a Create button that duplicates the successful device.
+        $('device-dialog').close(); toast(t.created,'ok');
+        await switchTo(created.udid);
+      } else {
+        await api('rename', { name, targetUdid: udid });
+        $('device-dialog').close(); toast(t.saved,'ok'); await check();
+      }
     } catch (error) { $('dialog-error').textContent = `${t.actionFailed} (${error.code || 'FAILED'})`; }
-    finally { $('dialog-save').disabled = false; }
+    finally { $('dialog-save').disabled = false; inputs.forEach(node=>{node.disabled=false;}); }
   });
 
   // ---- boot ----
