@@ -52,8 +52,8 @@ test('连接结果未知时先核对账号状态，覆盖响应丢失、HTTP 错
 });
 
 test('连接成功及明确取消仍显示原有结果', async () => {
-  assert.equal(await connectSettings(async () => ({ ok: true, json: async () => ({ ok: true, account: { id: 'account-test', label: 'work@example.test' } }) })), '已连接 work@example.test');
-  assert.equal(await connectSettings(async () => ({ ok: true, json: async () => ({ ok: false, error: 'CANCELLED' }) })), '授权已取消');
+  assert.equal(await connectSettings(async () => ({ ok: true, json: async () => ({ ok: true, account: { id: 'account-test', label: 'work@example.test' } }) })), 'Connected work@example.test');
+  assert.equal(await connectSettings(async () => ({ ok: true, json: async () => ({ ok: false, error: 'CANCELLED' }) })), 'Authorization cancelled');
 });
 
 function fixture(key = 'gmail_account') {
@@ -214,7 +214,7 @@ for (const [plugin, prefix] of Object.entries(plugins)) {
       await handler({ type: 'tool-call', tool: prefix + '_run', callId: 'old-host', args: {} });
       assert.equal(replies.length, 1);
       assert.equal(replies[0].ok, false);
-      assert.match(replies[0].message, /尚未执行.*0\.1\.92/);
+      assert.match(replies[0].message, /Not executed.*0\.1\.92/);
       await handler({ type: 'tool-call', tool: prefix + '_accounts', callId: 'accounts', args: {} });
       assert.equal(replies[1].ok, true);
       assert.equal(replies[1].result.accounts.length, 2);
@@ -223,14 +223,14 @@ for (const [plugin, prefix] of Object.entries(plugins)) {
 
   test(`${plugin}: 账号服务失败保留可操作提示，执行前失败不调用 worker`, async () => {
     const cases = [
-      [async () => { throw new Error('transport details'); }, /无法连接.*重新打开/],
-      [async () => undefined, /未返回结果.*稍后重试/],
-      ...[401, 403].map(status => [async () => ({ ok: false, status }), /拒绝访问.*检查连接状态/]),
-      [async () => ({ ok: false, status: 503 }), /暂时不可用.*重新打开/],
-      [async () => ({ ok: true, json: async () => { throw new Error('parse details'); } }), /无法解析.*重新打开/],
+      [async () => { throw new Error('transport details'); }, /Could not reach.*reopen/],
+      [async () => undefined, /returned no result.*Try again later/],
+      ...[401, 403].map(status => [async () => ({ ok: false, status }), /denied access.*Check the connection status/]),
+      [async () => ({ ok: false, status: 503 }), /temporarily unavailable.*reopen/],
+      [async () => ({ ok: true, json: async () => { throw new Error('parse details'); } }), /Could not parse.*Reopen/],
       ...[{}, [{ key: 'gmail_account', clientConfigured: true }],
         [{ key: 'gmail_account', clientConfigured: true, accounts: [null] }]].map(data =>
-        [async () => ({ ok: true, json: async () => data }), /格式异常.*重新打开/]),
+        [async () => ({ ok: true, json: async () => data }), /malformed.*Reopen/]),
     ];
     for (const [fetch, expected] of cases) {
       let handler;
@@ -246,7 +246,7 @@ for (const [plugin, prefix] of Object.entries(plugins)) {
         assert.equal(replies.at(-1).ok, false);
         assert.match(replies.at(-1).message, expected);
       }
-      assert.match(replies.at(-1).message, /^尚未执行/);
+      assert.match(replies.at(-1).message, /^Not executed:/);
       assert.equal(requested, false);
       assert.equal(replies.length, 2);
     }

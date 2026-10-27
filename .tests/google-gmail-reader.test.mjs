@@ -41,7 +41,7 @@ test('result delivery failure preserves card and worker execution receipts', asy
       assert.equal(deliveries, 2);
       assert.equal(replies[0].ok, false);
       assert.ok(replies[0].message.startsWith('[' + execution + ']'), operation + ':' + replies[0].message);
-      if (execution !== 'not_executed') assert.match(replies[0].message, /核对.*不要重复/);
+      if (execution !== 'not_executed') assert.match(replies[0].message, /Check the actual state.*do not .*again/);
     }
   }
 });
@@ -128,7 +128,7 @@ test('message, fallback conversation and external body authorization failures ex
       return { ok: true, status: 200, body: JSON.stringify(f.msg) };
     };
     await assert.rejects(f.read('https://mail.google.com/mail/#all/12345678'),
-      status === 401 ? /授权.*失效.*插件详情页.*重新连接/ : /读取权限.*插件详情页.*重新连接/);
+      status === 401 ? /authorization.*expired.*plugin details.*reconnect/ : /read permission.*plugin details.*reconnect/);
     assert.ok(f.calls.every(request => !request.method), 'authorization failure never marks read');
     assert.equal(f.calls.length, stage === 'message' ? 1 : 2);
   }
@@ -240,7 +240,7 @@ test('explicit account must match the link account before any read or mark-read 
   f.msg.labelIds = ['UNREAD'];
   for (const markRead of [false, true]) {
     for (const account of ['b', 'missing']) {
-      await assert.rejects(f.read('https://mail.google.com/mail/?authuser=a%40example.test#all/12345678', { account, markRead }), /账号不一致/);
+      await assert.rejects(f.read('https://mail.google.com/mail/?authuser=a%40example.test#all/12345678', { account, markRead }), /does not match the specified Gmail account/);
     }
     await assert.rejects(f.read('https://mail.google.com/mail/?authuser=missing%40example.test#all/12345678', { account: 'a', markRead }));
   }
@@ -316,7 +316,7 @@ test('mark-read results distinguish rejection from unknown and confirmed writes 
     assert.equal(mail.bodyText, '中文'); assert.equal(writes, 1);
     assert.equal(mail.markReadResult.execution, expected);
     assert.equal(mail.markReadFailed, expected === 'not_executed' ? true : undefined);
-    if (expected === 'unknown') assert.match(mail.markReadResult.message, /核对.*不要盲目重试/);
+    if (expected === 'unknown') assert.match(mail.markReadResult.message, /Check the mailbox.*do not retry blindly/);
   }
 });
 
@@ -412,7 +412,7 @@ test('reader JSON and body decoding failures return fixed guidance before markin
       args: { url: 'https://mail.google.com/mail/#all/12345678', markRead: true } });
     assert.equal(replies.length, 1, stage);
     assert.equal(replies[0].ok, false, stage);
-    assert.match(replies[0].message, /无法解析.*请.*重新打开/, stage);
+    assert.match(replies[0].message, /Could not parse.*Please.*reopen/, stage);
     assert.equal(JSON.stringify(replies).includes(secret), false, stage);
     assert.equal(f.calls.some(r => r.method === 'POST'), false, stage);
   }

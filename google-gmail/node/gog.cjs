@@ -27,9 +27,9 @@ function draftWriteFailure(error, state) {
   const outcome = !state.started ? 'not_executed'
     : ['not_executed', 'executed', 'unknown'].includes(error?.execution) ? error.execution : 'unknown';
   const message = {
-    not_executed: '草稿未保存，邮件尚未发送。请检查附件、正文和 Gmail 插件详情页中的账号授权后重试。',
-    executed: '草稿已保存但未发送：无法完整核对 Gmail 回执，请先重新读取或到 Gmail 检查，不要重复创建、保存或发送。',
-    unknown: '无法确认草稿保存结果，邮件尚未发送。请先核对 Gmail 草稿，不要重复创建或保存。',
+    not_executed: 'Draft not saved; the message has not been sent. Check the attachments, the body and the account authorization in the Gmail plugin details, then try again.',
+    executed: 'Draft saved but not sent: could not fully verify the Gmail receipt. Read it again or check Gmail first; do not create, save or send it again.',
+    unknown: 'Could not confirm whether the draft was saved; the message has not been sent. Check the Gmail drafts first; do not create or save it again.',
   }[outcome];
   const detail = draftBodyErrorMessage(error);
   return failure(detail ? (outcome === 'not_executed' ? detail : message + ' ' + detail) : message, outcome);
@@ -204,7 +204,7 @@ function draftReadBack(data, draftId) {
           ? { inlineData: body.data } : {}) });
       return;
     } else if (bodies[part.mimeType]) {
-      if ((body.attachmentId || body.size > 0) && (!body.data && body.size !== 0)) throw new Error('无法完整读取草稿正文');
+      if ((body.attachmentId || body.size > 0) && (!body.data && body.size !== 0)) throw new Error('Could not read the full draft body');
       if (typeof body.data === 'string') bodies[part.mimeType].push(decodeMimeBody(part));
     }
     for (const child of part.parts || []) walk(child);
@@ -251,20 +251,20 @@ async function composeDraft(message, execution) {
     || typeof p.fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(p.fingerprint)
     || !fields || typeof fields !== 'object' || Array.isArray(fields) || Object.keys(fields).length !== names.length
     || names.some(name => typeof fields[name] !== 'string' || fields[name].length > (name.endsWith('Html') ? 64000 : 16000) || fields[name].includes('\0'))
-    || typeof p.send !== 'boolean') return failure('邮件尚未发送：草稿字段不完整，请重新打开草稿。');
+    || typeof p.send !== 'boolean') return failure('Message not sent: the draft fields are incomplete. Reopen the draft.');
   const run = (command, options = {}, state = {}) => handle({ method: 'run', cindy: message.cindy,
     params: { command, arguments: [p.draftId], options, readOnly: false, accountEmail: p.accountEmail } }, state);
   const fetched = await run(['drafts', 'get']);
-  if (!fetched.ok || !fetched.data.readBack) return failure('邮件尚未发送：无法读取当前草稿，请先到 Gmail 核对。');
+  if (!fetched.ok || !fetched.data.readBack) return failure('Message not sent: could not read the current draft. Check it in Gmail first.');
   const before = fetched.data.readBack;
   if (before.fingerprint !== p.fingerprint) return { ok: false, execution: 'not_executed', stale: before,
-    message: '草稿已在其他地方修改，请检查更新后的内容再发送。' };
+    message: 'The draft was changed elsewhere. Review the updated content before sending.' };
   try {
     if (p.send && !fields.to.trim() && !fields.cc.trim() && !fields.bcc.trim()) throw new Error('recipient');
     for (const name of ['to', 'cc', 'bcc']) if (fields[name].trim()) addressHeader(fields[name]);
     encodeHeader(fields.subject);
-  } catch (_) { return { ...failure('邮件尚未发送：请检查收件人地址和主题，不能包含换行。'), readBack: before }; }
-  if (!rich && !before.editor.editable) return failure('邮件尚未发送：此草稿包含 HTML，请由 AI 更新 HTML 草稿后重新预览。');
+  } catch (_) { return { ...failure('Message not sent: check the recipient addresses and subject; they cannot contain line breaks.'), readBack: before }; }
+  if (!rich && !before.editor.editable) return failure('Message not sent: this draft contains HTML. Have the AI update the HTML draft, then preview it again.');
   const original = { to: before.headers.to, cc: before.headers.cc, bcc: before.headers.bcc, subject: before.headers.subject,
     body: before.editor.body, quote: before.editor.quote,
     ...(rich ? { bodyHtml: before.editor.bodyHtml || mailBodyHtml(before.editor.body), quoteHtml: before.editor.quoteHtml,
@@ -282,13 +282,13 @@ async function composeDraft(message, execution) {
         return [a.key, (a.contentId ?? original?.contentId ?? '').replace(/^<|>$/g, ''), a.filename ?? original?.filename ?? ''];
       }).sort());
       sameAttachments = facts(wanted) === facts(before.attachments);
-    } catch (_) { return failure('附件清单无效，请重新读取草稿。'); }
+    } catch (_) { return failure('Invalid attachment list. Read the draft again.'); }
   }
   if (names.some(name => name === 'attachmentItems' ? !sameAttachments : original[name] !== fields[name]) || p.attachments?.length) {
     // The pinned CLI carries attachment bytes forward but does not retain CID
     // metadata on update. Never damage an inline image while editing a reply.
     if (!rich && before.attachments.some(item => item.contentId || /^inline\b/i.test(item.disposition)))
-      return { ...failure('草稿包含内嵌图片，当前编辑器无法完整保留图片引用。请在 Gmail 修改后重新读取；原草稿未更改。'), readBack: before };
+      return { ...failure('The draft contains inline images, and this editor cannot fully preserve their references. Edit it in Gmail, then read it again; the original draft was not changed.'), readBack: before };
     const bodyHtml = rich && (before.editor.format === 'html' || fields.bodyHtml !== original.bodyHtml || fields.body === original.body) ? fields.bodyHtml
       : fields.body === original.body ? before.editor.bodyHtml : mailBodyHtml(fields.body);
     // The quote is a separately editable plain field, even in an HTML draft.
@@ -305,7 +305,7 @@ async function composeDraft(message, execution) {
         if (!richReceipt.ok) return richReceipt;
       } catch (error) { return draftWriteFailure(error, execution); }
     }
-    const savedButUnverified = () => failure('草稿已保存但未发送：无法完整核对读回内容或附件，请先重新读取或到 Gmail 检查，不要重复保存或发送。', 'executed');
+    const savedButUnverified = () => failure('Draft saved but not sent: could not fully verify the read-back content or attachments. Read it again or check Gmail first; do not save or send it again.', 'executed');
     let updated;
     try { updated = rich ? await run(['drafts', 'get']) : await run(['drafts', 'update'], { to: fields.to, cc: fields.cc, bcc: fields.bcc, subject: fields.subject,
       ...(before.headers.from ? { from: from ? from[1] : before.headers.from } : {}),
@@ -313,12 +313,12 @@ async function composeDraft(message, execution) {
       body: fields.body + fields.quote, 'body-html': bodyHtml + quoteHtml }, execution); }
     catch (_) {
       if (rich) return savedButUnverified(); // The preceding PUT has a successful receipt.
-      return failure('无法确认草稿保存结果，请先重新读取核对，邮件尚未发送。', execution.started ? 'unknown' : 'not_executed');
+      return failure('Could not confirm whether the draft was saved. Read it again to verify first; the message has not been sent.', execution.started ? 'unknown' : 'not_executed');
     }
     if (!updated.ok) return rich ? savedButUnverified() : updated;
     saved = updated.data?.readBack;
     if (!saved || saved.status !== 'read_back') return { ok: false, execution: 'executed',
-      message: '草稿已保存但未发送：无法读回确认，请先到 Gmail 检查。' };
+      message: 'Draft saved but not sent: could not read it back to confirm. Check Gmail first.' };
     // Verify the saved content before sending. Keep reply
     // headers and attachments via gog update's existing preservation behavior.
     try {
@@ -334,7 +334,7 @@ async function composeDraft(message, execution) {
         || addresses(saved.headers['reply-to']) !== addresses(before.headers['reply-to'])
         || saved.threadId !== before.threadId || saved.headers['in-reply-to'] !== before.headers['in-reply-to']
         || saved.headers.references !== before.headers.references || attachmentFacts(saved.attachments) !== attachmentFacts(richReceipt ? richReceipt.files : before.attachments))
-        return { ok: false, execution: 'executed', message: '草稿已保存但未发送：读回内容、收件人或附件不一致，请先到 Gmail 检查。' };
+        return { ok: false, execution: 'executed', message: 'Draft saved but not sent: the read-back content, recipients or attachments do not match. Check Gmail first.' };
       if (richReceipt && !await verifyDraftAttachmentBytes(message.cindy?.secrets?.gog_access_token, saved, richReceipt.files)) return savedButUnverified();
     } catch (_) { return savedButUnverified(); }
   }
@@ -491,13 +491,13 @@ async function handle(message, execution) {
   const cwd = typeof params.workdir === 'string' && path.isAbsolute(params.workdir) ? params.workdir : undefined;
   if (command.join(' ') === 'drafts update' && params.readOnly === false && values[0]) {
     const current = await execute([SERVICE, 'drafts', 'get', values[0], '--readonly'], token, undefined, MAX_OUTPUT, undefined, 10000);
-    if (!current.ok) return failure('无法核对草稿附件，草稿未修改。请重新读取后重试。');
+    if (!current.ok) return failure('Could not verify the draft attachments; the draft was not changed. Read it again, then retry.');
     const checked = await readDraft(current.data, values[0], token);
     if (checked.attachments.some(a => a.contentId || /^inline\b/i.test(a.disposition))) {
       // AI uses the same verified MIME writer as the card. The old CLI updater
       // loses Content-ID; never send this draft through it.
       const allowed = new Set(['to', 'cc', 'bcc', 'subject', 'body', 'body-file', 'body-html', 'body-html-file', 'attach', 'clear-attachments']);
-      if (values.length !== 1 || Object.keys(options).some(key => !allowed.has(key))) return failure('此 HTML 草稿仅支持更新收件人、主题、正文和附件，草稿未修改。');
+      if (values.length !== 1 || Object.keys(options).some(key => !allowed.has(key))) return failure('This HTML draft only supports updating recipients, subject, body and attachments; the draft was not changed.');
       const textOption = (key, fallback) => {
         if (options[key] !== undefined && options[key + '-file'] !== undefined) throw new Error('Duplicate body input');
         const value = options[key + '-file'] !== undefined ? fs.readFileSync(localPath(options[key + '-file'], cwd), 'utf8') : options[key] ?? fallback;
@@ -506,7 +506,7 @@ async function handle(message, execution) {
       };
       const bodyChanged = options.body !== undefined || options['body-file'] !== undefined;
       const htmlChanged = options['body-html'] !== undefined || options['body-html-file'] !== undefined;
-      if (bodyChanged !== htmlChanged) return failure('更新此图文草稿时，请同时提供 body 和 body-html（或对应文件），以保留图片和纯文本版本。');
+      if (bodyChanged !== htmlChanged) return failure('When updating this rich draft, provide both body and body-html (or their file variants) to keep the images and the plain-text version.');
       const fields = Object.fromEntries(['to', 'cc', 'bcc', 'subject'].map(name => [name, textOption(name, checked.headers[name])]));
       const html = textOption('body-html', checked.editor.bodyHtml) + checked.editor.quoteHtml;
       const referenced = referencedContentIds(html);
@@ -521,7 +521,7 @@ async function handle(message, execution) {
         quote: checked.editor.quote, quoteHtml: checked.editor.quoteHtml,
         attachmentItems: JSON.stringify(retained.map(a => ({ key: a.key, filename: a.filename, bytes: a.bytes, contentId: a.contentId || '' }))) });
       const inputs = options.attach === undefined ? [] : Array.isArray(options.attach) ? options.attach : [options.attach];
-      if (inputs.length > 20) return failure('附件过多，草稿未修改。');
+      if (inputs.length > 20) return failure('Too many attachments; the draft was not changed.');
       const attachments = inputs.map(input => {
         const filePath = localPath(input, cwd);
         const fd = fs.openSync(filePath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
@@ -553,7 +553,7 @@ async function handle(message, execution) {
     inlineMessage = buildInlineMessage({ from: params.accountEmail, ...options }, cwd, true);
     // The pinned CLI has no drafts create --raw-file. Use the same fixed Gmail
     // API transport as rich draft updates, then read the exact saved draft back.
-    if (Buffer.byteLength(inlineMessage) > 35 * 1024 * 1024) return failure('邮件内容超过大小上限');
+    if (Buffer.byteLength(inlineMessage) > 35 * 1024 * 1024) return failure('Message content exceeds the size limit');
     const requestBody = JSON.stringify({ message: {
       raw: Buffer.from(inlineMessage).toString('base64url'),
       ...(options['thread-id'] ? { threadId: encodeHeader(options['thread-id']) } : {}),

@@ -25,7 +25,7 @@ function referencedContentIds(html) {
     const match = /^cid:(.+)$/i.exec(value.trim());
     if (!match) return;
     try { ids.add(decodeURIComponent(match[1])); }
-    catch (_) { throw new Error('正文图片引用无效，请检查 CID 地址后再保存。'); }
+    catch (_) { throw new Error('Invalid image reference in the body. Check the CID address before saving.'); }
   };
   const entities = value => value.replace(/&(?:#(x[0-9a-f]+|\d+);?|([a-z]+);)/gi, (all, number, name) => {
     if (!number) return ({ amp: '&', quot: '"', apos: "'", lt: '<', gt: '>', colon: ':', commat: '@' })[name] ?? all;
@@ -75,8 +75,8 @@ function referencedContentIds(html) {
 // arbitrary decoder/provider exception (which may contain private input).
 function draftBodyErrorMessage(error) {
   switch (error?.code) {
-    case 'DRAFT_BODY_CHARSET': return '不支持草稿正文的字符编码，请在邮箱中编辑此草稿。';
-    case 'DRAFT_BODY_DECODE': return '无法无损解码草稿正文，请在邮箱中编辑此草稿。';
+    case 'DRAFT_BODY_CHARSET': return 'The draft body uses an unsupported character encoding. Edit this draft in your mailbox.';
+    case 'DRAFT_BODY_DECODE': return 'Could not decode the draft body losslessly. Edit this draft in your mailbox.';
     default: return '';
   }
 }
@@ -111,7 +111,7 @@ async function gmailJson(token, resource, init = {}, maxBytes = MAX_BYTES * 2) {
   }
   try {
     const chunks = []; let size = 0;
-    for await (const chunk of response.body) { size += chunk.length; if (size > maxBytes) throw new Error('邮件内容超过大小上限'); chunks.push(chunk); }
+    for await (const chunk of response.body) { size += chunk.length; if (size > maxBytes) throw new Error('Message content exceeds the size limit'); chunks.push(chunk); }
     return JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } catch (error) {
     // The successful status survives parse/size/stream failure of its receipt.
@@ -136,10 +136,10 @@ async function loadMessageBodies(message, token) {
     if (isAttachmentPart(part)) return;
     const body = part.body || {};
     if (['text/plain', 'text/html'].includes(part.mimeType) && body.attachmentId && !body.data) {
-      if (!Number.isSafeInteger(body.size) || body.size < 0 || total + body.size > MAX_BYTES) throw new Error('无法完整读取邮件正文');
+      if (!Number.isSafeInteger(body.size) || body.size < 0 || total + body.size > MAX_BYTES) throw new Error('Could not read the full message body');
       const loaded = await gmailJson(token, 'messages/' + encodeURIComponent(message.id) + '/attachments/' + encodeURIComponent(body.attachmentId));
       if (typeof loaded.data !== 'string' || !/^[A-Za-z0-9_-]*={0,2}$/.test(loaded.data)
-        || loaded.size !== body.size || Buffer.from(loaded.data, 'base64url').length !== body.size) throw new Error('邮件正文大小不一致');
+        || loaded.size !== body.size || Buffer.from(loaded.data, 'base64url').length !== body.size) throw new Error('Message body size mismatch');
       total += body.size;
       body.data = loaded.data;
     }
@@ -180,54 +180,54 @@ function buildMime({ fields, headers, files }, helpers) {
 async function updateRichDraft(p, token, before, helpers, execution) {
   const fields = p.fields;
   const wanted = JSON.parse(fields.attachmentItems);
-  if (!Array.isArray(wanted) || wanted.length > 100 || wanted.some(a => !a || typeof a.key !== 'string') || new Set(wanted.map(a => a.key)).size !== wanted.length) throw new Error('附件清单无效，请重新读取草稿');
+  if (!Array.isArray(wanted) || wanted.length > 100 || wanted.some(a => !a || typeof a.key !== 'string') || new Set(wanted.map(a => a.key)).size !== wanted.length) throw new Error('Invalid attachment list. Read the draft again');
   const current = await gmailJson(token, 'drafts/' + encodeURIComponent(p.draftId) + '?format=full');
   await loadMessageBodies(current.message, token);
   const verified = helpers.draftReadBack({ draft: current }, p.draftId);
-  if (verified.fingerprint !== before.fingerprint) return { ok: false, execution: 'not_executed', stale: verified, message: '草稿已在其他地方修改，请重新核对后再发送。' };
+  if (verified.fingerprint !== before.fingerprint) return { ok: false, execution: 'not_executed', stale: verified, message: 'The draft was changed elsewhere. Verify it again before sending.' };
   const parts = collectAttachments(current.message.payload);
   const files = []; let total = 0;
   for (const item of wanted) {
     const part = parts.find(part => keyFor(part) === item.key);
-    if (!part) throw new Error('附件已发生变化，请重新读取草稿');
+    if (!part) throw new Error('The attachments were modified. Read the draft again');
     let encoded = part.body?.data;
     if (encoded === undefined && part.body?.attachmentId) {
       const result = await gmailJson(token, 'messages/' + encodeURIComponent(current.message.id) + '/attachments/' + encodeURIComponent(part.body.attachmentId));
       encoded = result.data;
     }
-    if (typeof encoded !== 'string') throw new Error('无法完整读取附件，草稿未修改');
+    if (typeof encoded !== 'string') throw new Error('Could not read the full attachment; the draft was not changed');
     const data = Buffer.from(encoded, 'base64url'); total += data.length;
-    if (total > MAX_BYTES || data.length !== part.body.size) throw new Error('附件大小不一致或超过 25 MiB，草稿未修改');
+    if (total > MAX_BYTES || data.length !== part.body.size) throw new Error('Attachment size mismatch or over 25 MiB; the draft was not changed');
     const originalCid = header(part, 'content-id').replace(/^<|>$/g, '');
     const contentId = item.contentId === undefined ? originalCid : item.contentId;
-    if (typeof contentId !== 'string') throw new Error('图片引用无效');
+    if (typeof contentId !== 'string') throw new Error('Invalid image reference');
     const cid = contentId.replace(/^<|>$/g, '');
-    if (cid !== originalCid && (originalCid || !/^image-[1-9]\d*@cindy\.local$/.test(cid) || !imageType(data))) throw new Error('只能将图片附件插入正文');
+    if (cid !== originalCid && (originalCid || !/^image-[1-9]\d*@cindy\.local$/.test(cid) || !imageType(data))) throw new Error('Only image attachments can be inserted into the body');
     const filename = item.filename ?? part.filename ?? '';
-    if (typeof filename !== 'string' || filename.length > 1024 || /[\r\n\0]/.test(filename)) throw new Error('附件名称无效');
+    if (typeof filename !== 'string' || filename.length > 1024 || /[\r\n\0]/.test(filename)) throw new Error('Invalid attachment name');
     files.push({ filename, mimeType: cid !== originalCid ? imageType(data) : part.mimeType, contentId: cid, data });
   }
-  if (!Array.isArray(p.attachments || []) || (p.attachments || []).length > 20) throw new Error('附件清单无效');
+  if (!Array.isArray(p.attachments || []) || (p.attachments || []).length > 20) throw new Error('Invalid attachment list');
   for (const item of p.attachments || []) {
-    if (!item || typeof item.path !== 'string' || typeof item.filename !== 'string' || !/^[a-f0-9]{64}$/.test(item.sha256) || !Number.isSafeInteger(item.bytes) || item.bytes < 0 || item.bytes > 16 * 1024 * 1024) throw new Error('附件无效，请重新选择');
+    if (!item || typeof item.path !== 'string' || typeof item.filename !== 'string' || !/^[a-f0-9]{64}$/.test(item.sha256) || !Number.isSafeInteger(item.bytes) || item.bytes < 0 || item.bytes > 16 * 1024 * 1024) throw new Error('Invalid attachment. Select it again');
     const file = await fs.promises.open(item.path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
     let data;
     try {
       const stat = await file.stat();
-      if (!stat.isFile() || stat.size !== item.bytes) throw new Error('附件已变化，请重新选择');
+      if (!stat.isFile() || stat.size !== item.bytes) throw new Error('Attachment has changed. Select it again');
       data = await file.readFile();
     } finally { await file.close(); }
-    if (hash(data) !== item.sha256) throw new Error('附件已变化，请重新选择');
+    if (hash(data) !== item.sha256) throw new Error('Attachment has changed. Select it again');
     total += data.length;
-    if (total > MAX_BYTES) throw new Error('附件总大小不能超过 25 MiB');
+    if (total > MAX_BYTES) throw new Error('Total attachment size cannot exceed 25 MiB');
     const mimeType = imageType(data) || 'application/octet-stream';
-    if (item.contentId && (!/^image\//.test(mimeType) || !/^[a-f0-9-]+@cindy\.local$/.test(item.contentId))) throw new Error('请选择 PNG、JPEG、GIF 或 WebP 图片');
+    if (item.contentId && (!/^image\//.test(mimeType) || !/^[a-f0-9-]+@cindy\.local$/.test(item.contentId))) throw new Error('Select a PNG, JPEG, GIF or WebP image');
     files.push({ filename: item.filename, mimeType, contentId: item.contentId || '', data });
   }
   // Removing an inline attachment must not leave a broken image reference.
   const cids = new Set(files.filter(f => f.contentId).map(f => f.contentId.replace(/^<|>$/g, '')));
-  if (cids.size !== files.filter(f => f.contentId).length) throw new Error('图片引用重复，请重新读取草稿');
-  for (const cid of referencedContentIds(fields.bodyHtml + fields.quoteHtml)) if (!cids.has(cid)) throw new Error('正文仍引用已移除的图片，请先在正文中删除图片');
+  if (cids.size !== files.filter(f => f.contentId).length) throw new Error('Duplicate image reference. Read the draft again');
+  for (const cid of referencedContentIds(fields.bodyHtml + fields.quoteHtml)) if (!cids.has(cid)) throw new Error('The body still references a removed image. Delete the image from the body first');
   const raw = buildMime({ fields, headers: before.headers, files }, helpers);
   // The transport preserves a received write status; without one, do not replay.
   execution.started = true;
@@ -241,15 +241,15 @@ async function verifyDraftAttachmentBytes(token, saved, expected) {
   for (const file of saved.attachments) {
     let sha256 = file.sha256;
     if (!sha256) {
-      if (!file.attachmentId) throw new Error('附件内容无法核对');
+      if (!file.attachmentId) throw new Error('Could not verify the attachment content');
       const part = await gmailJson(token, 'messages/' + encodeURIComponent(saved.messageId) + '/attachments/' + encodeURIComponent(file.attachmentId));
-      if (typeof part.data !== 'string') throw new Error('附件内容无法核对');
+      if (typeof part.data !== 'string') throw new Error('Could not verify the attachment content');
       const data = Buffer.from(part.data, 'base64url');
-      if (data.length !== file.bytes) throw new Error('附件大小不一致');
+      if (data.length !== file.bytes) throw new Error('Attachment size mismatch');
       sha256 = hash(data);
     }
     total += file.bytes;
-    if (total > MAX_BYTES) throw new Error('附件内容超过大小上限');
+    if (total > MAX_BYTES) throw new Error('Attachment content exceeds the size limit');
     actual.push({ ...file, sha256 });
   }
   const facts = files => JSON.stringify(files.map(f => [f.filename, f.mimeType, f.bytes, (f.contentId || '').replace(/^<|>$/g, ''), f.sha256]).sort());
