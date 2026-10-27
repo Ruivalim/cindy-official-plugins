@@ -131,6 +131,16 @@
       "audience": {
         "emails": []
       }
+    },
+    "ruivalim-github": {
+      "audience": {
+        "emails": []
+      }
+    },
+    "ruivalim-google-calendar": {
+      "audience": {
+        "emails": []
+      }
     }
   }
 }

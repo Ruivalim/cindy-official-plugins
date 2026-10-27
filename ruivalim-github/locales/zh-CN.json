@@ -1,0 +1,13 @@
+{
+  "name": "GitHub (Rui)",
+  "description": "在 Cindy 中管理 GitHub 仓库、Issues、PR 和 Actions。支持 github.com。",
+  "whenToUse": "仅用于 github.com 仓库和链接，GitLab 实例请使用 GitLab。可查询或修改 issue 与 PR，提交和回复 code review，合并 PR，查看仓库、分支、commit 与文件，触发或查看 GitHub Actions，管理 release，搜索代码、仓库与用户，或下载 Actions 产物与日志。优先使用本机 GitHub 登录；在插件详情页连接账号，或配置备用 Token。",
+  "tools": {
+    "list_tools": {
+      "description": "列出本插件 117 个 GitHub 操作，覆盖 issues、pulls、repo、commits、actions、releases、search、users、orgs、events、notifications、gists、git_data、reactions、meta。不传 category 时返回类目名称、数量和说明；传 category 时返回该类目下所有操作的名称、说明与参数。"
+    },
+    "call_tool": {
+      "description": "执行 list_tools 返回的具体 GitHub 操作，args 按其参数 schema 传入。仓库级操作必须显式传 owner 与 repo；在 Git 仓库中工作时可从 git remote get-url origin 推导。响应默认剥除 API 链接字段但保留 html_url；传 raw=true 获取原始 JSON。结果超过 50KB 时自动写入会话工作目录并只返回文件路径，out_file 可指定路径。下载 Actions 产物或日志 ZIP 时，必须在 ghost_call 顶层 save_dir 提供目标目录。"
+    }
+  }
+}

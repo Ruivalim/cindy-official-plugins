@@ -1,0 +1,13 @@
+{
+  "name": "GitHub (Rui)",
+  "description": "Cindy で GitHub のリポジトリ、Issue、PR、Actions を管理します。github.com に対応。",
+  "whenToUse": "github.com のリポジトリとリンクにだけ使用します。GitLab インスタンスには GitLab を使用してください。issue や Pull Request の確認・変更、コードレビューの投稿・返信、Pull Request のマージ、リポジトリ・ブランチ・commit・ファイルの確認、GitHub Actions の実行・確認、release 管理、コード・リポジトリ・ユーザー検索、Actions の成果物やログのダウンロードができます。この端末の GitHub ログインを優先します。プラグイン詳細でアカウントを接続するか、予備トークンを設定してください。",
+  "tools": {
+    "list_tools": {
+      "description": "issues、pulls、repo、commits、actions、releases、search、users、orgs、events、notifications、gists、git_data、reactions、meta を含む 117 個の GitHub 操作を一覧表示します。category なしではカテゴリ名・件数・説明を返し、category を指定するとそのカテゴリの全操作と説明・パラメータを返します。"
+    },
+    "call_tool": {
+      "description": "list_tools が返した GitHub 操作を、パラメータ schema に従う args で実行します。リポジトリ操作には owner と repo の明示指定が必要です。Git リポジトリ内では git remote get-url origin から推定できます。既定では html_url を除く API リンク項目を削除し、raw=true で元の JSON を返します。50KB を超える結果はセッション作業ディレクトリへ書き込み、ファイルパスだけを返します。out_file でパスを指定できます。Actions の成果物やログ ZIP のダウンロードでは、ghost_call 最上位の save_dir に保存先を指定します。"
+    }
+  }
+}

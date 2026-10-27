@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 3,
+  "minCindyVersion": "0.1.64",
+  "id": "ruivalim-github",
+  "name": "GitHub (Rui)",
+  "description": "Manage GitHub repositories, issues, pull requests, and Actions in Cindy. Supports github.com. Unofficial personal copy of the official GitHub plugin; authenticates with a personal access token you paste in its settings.",
+  "whenToUse": "Only for github.com repos and links (GitLab instances: use GitLab). Use me for GitHub issues and PRs, code reviews, merges, repos, branches, commits, files, Actions, releases, search, and artifact or log downloads. Needs a personal access token saved in my settings (no GitHub CLI login).",
+  "version": "1.0.0",
+  "locales": {
+    "en": "locales/en.json",
+    "zh-CN": "locales/zh-CN.json",
+    "ja": "locales/ja.json",
+    "ko": "locales/ko.json"
+  },
+  "author": "Rui Valim",
+  "icon": "assets/icon.png",
+  "entry": "main.js",
+  "settingsHtml": "settings.html",
+  "notify": true,
+  "fs": true,
+  "command": "ruivalim-github",
+  "network": {
+    "hosts": [
+      "api.github.com",
+      "objects.githubusercontent.com",
+      "*.blob.core.windows.net"
+    ],
+    "secrets": [
+      {
+        "key": "github_pat",
+        "label": "GitHub personal access token",
+        "hint": "Paste a personal access token (ghp_... or github_pat_...). It is only injected into requests to api.github.com.",
+        "url": "https://github.com/settings/tokens",
+        "inject": {
+          "header": "Authorization",
+          "format": "Bearer {value}",
+          "hosts": [
+            "api.github.com"
+          ]
+        }
+      }
+    ]
+  },
+  "tools": [
+    {
+      "name": "list_tools",
+      "description": "List the GitHub operations this plugin offers (117 in total, covering issues / pulls / repo / commits / actions / releases / search / users / orgs / events / notifications / gists / git_data / reactions / meta). Without category, return a category overview (name + count + description); with category, return the name, description, and parameters of every operation in it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "Category name, from the overview (e.g. issues / pulls / actions)"
+          }
+        }
+      }
+    },
+    {
+      "name": "call_tool",
+      "description": "Run one specific GitHub operation. name comes from list_tools; pass args as a JSON object following that operation's parameter notes. Repo-level operations must pass owner and repo explicitly (when working in a git repository, derive them from `git remote get-url origin`). By default the response drops API link fields (html_url is kept) to limit size; pass raw=true for the original JSON. Results over 50KB are written to the session work directory automatically and only the file path is returned (out_file can set the path). Download operations (Actions artifacts / log zips) require the caller to put the absolute path of the target directory in the top-level save_dir parameter of ghost_call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Operation name, from list_tools"
+          },
+          "args": {
+            "type": "object",
+            "description": "Operation parameters; when unsure, pass {} to get an error response with the parameter notes"
+          },
+          "raw": {
+            "type": "boolean",
+            "description": "true = return the original GitHub JSON (API link fields not stripped); default false"
+          },
+          "out_file": {
+            "type": "string",
+            "description": "Optional: write the full result JSON to this relative path in the session work directory (e.g. tmp/gh-result.json) and return only the file path. Use it for large results that a script will process. Results over 50KB are written to disk and returned as a path even without it"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    }
+  ]
+}

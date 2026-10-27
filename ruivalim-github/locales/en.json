@@ -1,0 +1,13 @@
+{
+  "name": "GitHub (Rui)",
+  "description": "Manage GitHub repositories, issues, pull requests, and Actions in Cindy. Supports github.com. Unofficial personal copy of the official GitHub plugin; authenticates with a personal access token you paste in its settings.",
+  "whenToUse": "Use for github.com repositories and links; use GitLab for GitLab instances. Handles issues, pull requests, reviews, merges, repositories, Actions, releases, search, and logs. Needs a personal access token saved in this plugin's settings; the local GitHub CLI login is not used.",
+  "tools": {
+    "list_tools": {
+      "description": "List this plugin's 117 GitHub operations across issues, pulls, repo, commits, actions, releases, search, users, orgs, events, notifications, gists, git_data, reactions, and meta. With no category, return category names, counts, and descriptions; with a category, return every operation in that category with its description and parameters."
+    },
+    "call_tool": {
+      "description": "Run a GitHub operation returned by list_tools, passing args according to its parameter schema. Repository operations require explicit owner and repo values, which may be derived from git remote get-url origin when working in a repository. API-link fields are removed by default except html_url; set raw=true for the original JSON. Results over 50KB are written to the session work directory and only the file path is returned; out_file can set the path. Downloads such as Actions artifacts or log ZIPs require a destination directory in the top-level save_dir field of ghost_call."
+    }
+  }
+}
