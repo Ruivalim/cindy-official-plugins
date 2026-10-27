@@ -701,9 +701,19 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
   }
 });
 async function openOnTab(tabId,action='open') {
+  let failed=false;
   try {await chrome.tabs.sendMessage(tabId,{type:'cindy-ui',action});}
-  catch {await chrome.action.setBadgeText({text:'!'});}
+  catch {failed=true;}
+  // Page failures belong to this tab, not the shared Cindy connection.
+  // null removes the override so a real disconnection warning remains visible.
+  await chrome.action.setBadgeText({tabId,text:failed?'!':null}).catch(()=>{});
 }
+chrome.tabs.onUpdated?.addListener((tabId,change)=>{
+  if(change.status==='loading'||change.url) {
+    // Navigation/refresh replaces the document that could not receive the click.
+    chrome.action.setBadgeText({tabId,text:null}).catch(()=>{});
+  }
+});
 if(chrome.contextMenus) {
   chrome.runtime.onInstalled.addListener(()=>{
     chrome.contextMenus.removeAll(()=>{
