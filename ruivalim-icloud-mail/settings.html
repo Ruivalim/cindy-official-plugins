@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="/settings.css">
+</head>
+<body>
+  <header>
+    <div>
+      <h1>iCloud Mail account</h1>
+      <p class="subtle">Stored securely by Cindy</p>
+    </div>
+    <span id="stateBadge" class="badge">Not connected</span>
+  </header>
+
+  <section id="connectedCard" class="connected-card" hidden>
+    <div class="account-mark" aria-hidden="true">i</div>
+    <div class="account-copy">
+      <strong id="connectedEmail"></strong>
+      <span>The app-specific password is stored encrypted by Cindy on this device</span>
+    </div>
+    <button id="disconnect" class="secondary compact" type="button">Disconnect</button>
+  </section>
+
+  <form id="connectForm">
+    <label for="email">iCloud Mail address</label>
+    <input id="email" name="email" type="email" inputmode="email"
+      autocomplete="username" placeholder="example@icloud.com" maxlength="254">
+
+    <label for="appSpecificPassword">Apple Account app-specific password</label>
+    <div class="secret-row">
+      <input id="appSpecificPassword" name="appSpecificPassword" type="password"
+        autocomplete="current-password" placeholder="xxxx-xxxx-xxxx-xxxx" maxlength="128">
+      <button id="toggleSecret" class="secondary compact" type="button"
+        aria-label="Show app-specific password">Show</button>
+    </div>
+
+    <p class="help">
+      Make sure two-factor authentication is turned on for your Apple Account, then go to the
+      <a href="https://account.apple.com/" target="_blank" rel="noreferrer">Apple Account website</a>
+      and generate a password under "Sign-In and Security > App-Specific Passwords". Do not enter your Apple Account password here.
+    </p>
+
+    <button id="connect" class="primary" type="submit">Connect and test</button>
+  </form>
+
+  <p id="status" role="status" aria-live="polite"></p>
+
+  <aside>
+    The app-specific password never reaches Agent arguments or the plugin's main.js. Cindy
+    hands it to the plugin Worker only while running a mail request. Mail operations use
+    short-lived connections and close IMAP/SMTP as soon as they finish.
+  </aside>
+
+  <script src="/settings.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "iCloud Mail (Rui)",
+  "description": "Search, read, and organize messages through iCloud Mail IMAP/SMTP, and create drafts or send mail. Cindy stores the app-specific password securely and provides it to the plugin Worker only while handling a mail request.",
+  "whenToUse": "Use when the user needs to find, read, or organize iCloud Mail messages, create a draft, or send mail. Before first use, enter the iCloud Mail address and Apple Account app-specific password in the plugin details and complete the connection test.",
+  "tools": {
+    "icloud_mail_status": {
+      "description": "Check whether iCloud Mail is configured. Returns only the email address and connection status, never the app-specific password."
+    },
+    "icloud_mail": {
+      "description": "Perform iCloud Mail operations: list folders, search, read, send, save drafts, mark messages read or unread, and move messages. Each operation opens a temporary IMAP/SMTP connection and closes it afterward. Sending, moving, and changing read status require explicit user intent."
+    }
+  }
+}

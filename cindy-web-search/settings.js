@@ -1,16 +1,13 @@
 /**
- * Web Search settings page script (CSP forbids inline scripts, so it is loaded externally).
- * Plain preferences are stored via /kv, only as overrides that differ from the code defaults.
- * The credential data plane keeps using the host's write-only /secrets channel (absolute
- * path, protocol-reserved):
- *   GET /secrets           → [{ key, saved, tail? }] (status + last-4 fingerprint only, never the value)
- *   PUT /secrets/<key>     → { value } one-way store (kept by the host with OS-level encryption)
- *   DELETE /secrets/<key>  → clear
- * All credentials (Brave / Tavily / DeepSeek) share one shape: row structure and copy come
- * from the data-* attributes in settings.html, and this script wires every .secret container
- * the same way. Values are accepted, not kept: on a successful save the input is cleared and
- * "Saved" lights up. The plaintext cannot be read back; to change a key, paste a new value
- * over it.
+ * Web Search 设置页脚本(CSP 禁内联,外挂加载)。
+ * 普通偏好通过 /kv 保存偏离代码默认值的 override。
+ * 凭证数据面继续使用主机 /secrets 只写通道(绝对路径,协议保留路径)——
+ *   GET /secrets           → [{ key, saved, tail? }](只有状态 + 尾 4 位指纹,永远没有值)
+ *   PUT /secrets/<key>     → { value } 单向入库(主机 OS 级加密保管)
+ *   DELETE /secrets/<key>  → 清除
+ * 各凭证(Brave / Tavily / DeepSeek)同构:行结构与文案由 settings.html 的 data-* 驱动,
+ * 本脚本按 .secret 容器统一接线。收单不存值:保存成功后清空输入框、点亮
+ * 「已保存」;明文读不回来,想换 key 直接粘贴新值覆盖。
  */
 (function () {
   'use strict';
@@ -68,7 +65,7 @@
     } catch (e) {
       preferencesReady = false;
       setPreferenceControlsDisabled(true);
-      showStatus('Failed to load search preferences. Please reopen the settings page.');
+      showStatus('搜索偏好加载失败，请重新打开设置页');
     }
   }
 
@@ -93,10 +90,10 @@
         });
         if (!response.ok) throw new Error('kv write failed');
         lastSavedPreferences = nextPreferences;
-        showStatus('Search preferences saved');
+        showStatus('搜索偏好已保存');
       })
       .catch(function preferenceSaveFailed() {
-        showStatus('Failed to save search preferences. Please try again.');
+        showStatus('搜索偏好保存失败，请重试');
         if (lastSavedPreferences) applyPreferences(lastSavedPreferences);
       })
       .finally(function preferenceSaveFinished() {
@@ -105,31 +102,29 @@
       });
   }
 
-  /** Wiring context for one credential row (DOM refs + data-* copy). */
+  /** 每行凭证的接线上下文(DOM 引用 + data-* 文案)。 */
   function wireRow(root) {
     var key = root.getAttribute('data-key');
     var tailPrefix = root.getAttribute('data-tail-prefix') || '…';
-    var emptyPh = root.getAttribute('data-empty-ph') || 'Paste key';
+    var emptyPh = root.getAttribute('data-empty-ph') || '粘贴 key';
     var input = root.querySelector('.key-input');
     var eye = root.querySelector('.eye');
     var badge = root.querySelector('.badge');
 
     /**
-     * saved = whether it is stored; tail = the last-4 fingerprint kept by the host (helps
-     * recall which key was entered). The fingerprint goes straight into the input placeholder;
-     * when the value is too short to yield one, fall back to the plain "Saved" copy.
+     * saved = 是否已入库;tail = 主机截存的尾 4 位指纹(帮回忆填的是哪个 key)。
+     * 指纹直接进输入框占位文案;值太短不产指纹时退回纯「已保存」文案。
      */
     function setSaved(saved, tail) {
       badge.className = saved ? 'badge on' : 'badge';
       input.placeholder = saved
-        ? (tail ? tailPrefix + tail + '; paste a new value to replace' : 'Saved; paste a new value to replace')
+        ? (tail ? tailPrefix + tail + ';粘贴新值可覆盖' : '已保存;粘贴新值可覆盖')
         : emptyPh;
     }
 
     /**
-     * The eye only helps check the new value being typed: a stored value can never be read
-     * back, so on an empty input clicking it would do nothing, and it is hidden instead.
-     * Hiding also resets the masked state, so the next paste is masked by default.
+     * 眼睛只服务「正在输入的新值」的核对——已存的值永远读不回,空框时
+     * 点它必然没反应,干脆藏掉;隐藏同时复位密文态,下次粘贴默认遮蔽。
      */
     function syncEye() {
       var empty = input.value.length === 0;
@@ -149,24 +144,23 @@
     root.querySelector('.save').addEventListener('click', function () {
       var value = input.value.trim();
       if (!value) {
-        showStatus('Paste a key before saving');
+        showStatus('先粘贴 key 再保存');
         return;
       }
       fetch('/secrets/' + key, { method: 'PUT', body: JSON.stringify({ value: value }) })
         .then(function (r) {
           if (r.status === 204) {
-            // Burn after accepting: the value is stored one-way and the page keeps no
-            // plaintext; the tail fingerprint is fetched back from /secrets.
+            // 收单即焚:值已单向入库,页面不留明文;尾指纹从 /secrets 回查。
             input.value = '';
             syncEye();
             setSaved(true, null);
             void load();
-            showStatus('Credential saved');
+            showStatus('凭证已保存');
           } else {
-            showStatus('Save failed (' + r.status + '). Please try again.');
+            showStatus('保存失败(' + r.status + '),请重试');
           }
         })
-        .catch(function () { showStatus('Save failed. Please try again.'); });
+        .catch(function () { showStatus('保存失败,请重试'); });
     });
     root.querySelector('.clear').addEventListener('click', function () {
       fetch('/secrets/' + key, { method: 'DELETE' })
@@ -175,12 +169,12 @@
             input.value = '';
             syncEye();
             setSaved(false, null);
-            showStatus('Credential cleared');
+            showStatus('凭证已清除');
           } else {
-            showStatus('Clear failed (' + r.status + '). Please try again.');
+            showStatus('清除失败(' + r.status + '),请重试');
           }
         })
-        .catch(function () { showStatus('Clear failed. Please try again.'); });
+        .catch(function () { showStatus('清除失败,请重试'); });
     });
     syncEye();
     return { key: key, setSaved: setSaved };

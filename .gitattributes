@@ -27,3 +27,4 @@ taptap-maker/vendor/taptap-maker/dist/maker.js -text
 # seven-character Git conflict example.
 taptap-maker/vendor/taptap-maker/dist/maker.js -whitespace
 taptap-maker/vendor/taptap-maker/skills/taptap-maker-local/SKILL.md conflict-marker-size=100
+ruivalim-icloud-mail/node/worker.cjs -text

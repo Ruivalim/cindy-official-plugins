@@ -130,13 +130,13 @@ test('a stale server draft is not overwritten', async t => {
 });
 test('a dangling CID is rejected before any write', async t => {
   const f = fixture(t); f.fields.attachmentItems = '[]';
-  await assert.rejects(f.run(), /removed image/);
+  await assert.rejects(f.run(), /已移除/);
   assert.equal(f.calls.length, 1);
 });
 test('changed or symlinked local files are never uploaded', async t => {
   const f = fixture(t); const file = path.join(f.dir, 'file'); fs.writeFileSync(file, 'changed');
   f.p.attachments = [{ path: file, filename: 'file', bytes: 7, sha256: '0'.repeat(64) }];
-  await assert.rejects(f.run(), /has changed/);
+  await assert.rejects(f.run(), /已变化/);
   if (process.platform !== 'win32') {
     fs.symlinkSync(file, file + '-link'); f.p.attachments[0].path = file + '-link';
     await assert.rejects(f.run());
@@ -231,7 +231,7 @@ test('draft writes distinguish rejection, successful unusable receipts and trans
     const result = await f.ctx.handle(request, {});
     assert.equal(result.ok, false, operation + JSON.stringify(responseCase));
     assert.equal(result.execution, responseCase.execution, operation + JSON.stringify(responseCase));
-    if (result.execution === 'executed') assert.match(result.message, /saved but not sent/);
+    if (result.execution === 'executed') assert.match(result.message, /已保存.*(?:未发送|尚未发送)/);
     assert.equal(writes, responseCase.prewrite ? 0 : 1);
     assert.equal(f.calls.some(c => /\/send(?:\?|$)/.test(c.url)), false);
   }
@@ -280,7 +280,7 @@ test('forged image CID metadata cannot turn non-image bytes into an embedded ima
   part.body.data = Buffer.from('not-an-image').toString('base64url'); part.body.size = 12;
   Object.assign(f.before, f.ctx.draftReadBack({ draft: f.draft }, f.draft.id));
   f.fields.attachmentItems = JSON.stringify([{ key: keyFor(part), contentId: 'image-1@cindy.local' }]);
-  await assert.rejects(f.run(), /Only image attachments can be inserted/);
+  await assert.rejects(f.run(), /只能将图片/);
   assert.equal(f.calls.some(c => c.init.method === 'PUT'), false);
 });
 test('AI updates HTML through drafts update while preserving CID bytes and never sending', async t => {
@@ -362,7 +362,7 @@ test('a successful rich save survives read-back failure without reporting not_ex
       params: { command: ['drafts', 'update'], arguments: ['draft-test'], readOnly: false, options: { body: 'Edited', 'body-html': '<p>Edited</p><img src="cid:photo@example.test">' } } }, {});
     assert.equal(result.ok, false);
     assert.equal(result.execution, 'executed');
-    assert.match(result.message, /saved but not sent/);
+    assert.match(result.message, /已保存.*未发送/);
     assert.equal(f.calls.filter(c => c.init.method === 'PUT').length, 1);
     assert.equal(f.calls.some(c => /send/.test(c.url)), false);
   }
@@ -396,7 +396,7 @@ test('same-length changed attachment bytes after PUT prevent sending or claiming
   } }, {});
   assert.equal(result.ok, false);
   assert.equal(result.execution, 'executed');
-  assert.match(result.message, /attachments/);
+  assert.match(result.message, /附件/);
   assert.equal(f.calls.some(c => /send/.test(c.url)), false);
 });
 test('attachment read-back downloads server-only bytes and treats missing or changed bytes as saved but unverified', async t => {
@@ -428,7 +428,7 @@ test('attachment read-back downloads server-only bytes and treats missing or cha
     assert.equal(downloads, 1);
     assert.equal(result.ok, mode === 'matching', result.message);
     assert.equal(result.execution, 'executed');
-    if (mode !== 'matching') assert.match(result.message, /saved but not sent/);
+    if (mode !== 'matching') assert.match(result.message, /已保存.*未发送/);
     assert.equal(f.calls.filter(c => c.init.method === 'PUT').length, 1);
     assert.equal(f.calls.some(c => /send/.test(c.url)), false);
   }
@@ -450,7 +450,7 @@ test('external draft body bytes are loaded before read-back and the second write
   const f = workerFixture(t), bytes = Buffer.from([0x63, 0x61, 0x66, 0xe9]);
   f.draft.message.payload.parts[0].headers = [{ name: 'Content-Type', value: 'text/plain; charset=ISO-8859-1' }];
   f.draft.message.payload.parts[0].body = { attachmentId: 'text-body', size: bytes.length };
-  assert.throws(() => f.ctx.draftReadBack({ draft: f.draft }, f.draft.id), /body/);
+  assert.throws(() => f.ctx.draftReadBack({ draft: f.draft }, f.draft.id), /正文/);
   const fetch = globalThis.fetch; let downloads = 0;
   t.mock.method(globalThis, 'fetch', async (url, init) => {
     if (url.endsWith('/attachments/text-body')) {
@@ -483,7 +483,7 @@ test('unreadable external draft bodies prevent updates and preserve successful s
   const auth = { secrets: { gog_access_token: 'fixture-token' } };
   for (const command of ['get', 'update']) {
     await assert.rejects(f.ctx.handle({ method: 'run', cindy: auth,
-      params: { command: ['drafts', command], arguments: [f.draft.id], readOnly: false, options: command === 'get' ? {} : { body: 'Replacement' } } }, {}), /body/);
+      params: { command: ['drafts', command], arguments: [f.draft.id], readOnly: false, options: command === 'get' ? {} : { body: 'Replacement' } } }, {}), /正文/);
   }
   assert.equal(f.calls.some(c => c.init.method === 'PUT'), false);
   const receipt = await f.ctx.readSavedDraft({ ok: true, data: { draftId: f.draft.id } }, ['drafts', 'create'], 'fixture-token');
@@ -587,12 +587,12 @@ test('unsupported or malformed body encodings cannot produce editable snapshots 
     const f = workerFixture(t), part = f.draft.message.payload.parts.find(p => p.mimeType === mimeType);
     part.headers = [{ name: 'Content-Type', value: mimeType + '; charset="' + charset + '"' }];
     part.body = { data: Buffer.from([0xff]).toString('base64url'), size: 1 };
-    assert.throws(() => f.ctx.draftReadBack({ draft: f.draft }, f.draft.id), /unsupported character encoding|decode the draft body losslessly/);
+    assert.throws(() => f.ctx.draftReadBack({ draft: f.draft }, f.draft.id), /字符编码|无损解码/);
     const cindy = { secrets: { gog_access_token: 'fixture-token' } };
     for (const operation of ['get', 'update']) await assert.rejects(f.ctx.handle({ method: 'run', cindy,
-      params: { command: ['drafts', operation], arguments: [f.draft.id], readOnly: false, options: {} } }, {}), /unsupported character encoding|decode the draft body losslessly/);
+      params: { command: ['drafts', operation], arguments: [f.draft.id], readOnly: false, options: {} } }, {}), /字符编码|无损解码/);
     for (const send of [false, true]) await assert.rejects(f.ctx.handle({ method: 'compose', cindy,
-      params: { draftId: f.draft.id, fingerprint: f.before.fingerprint, fields: f.fields, send } }, {}), /unsupported character encoding|decode the draft body losslessly/);
+      params: { draftId: f.draft.id, fingerprint: f.before.fingerprint, fields: f.fields, send } }, {}), /字符编码|无损解码/);
     assert.equal(f.calls.some(c => ['PUT', 'POST'].includes(c.init.method)), false);
   }
 });
@@ -614,8 +614,8 @@ test('worker JSON-RPC preserves safe encoding guidance across draft entry points
       const result = await f.rpc(message);
       assert.equal(result.ok, false);
       assert.equal(result.execution, 'not_executed');
-      assert.match(result.message, /unsupported character encoding|decode the draft body losslessly/);
-      assert.match(result.message, /Edit this draft in your mailbox/);
+      assert.match(result.message, /字符编码|无损解码/);
+      assert.match(result.message, /请在邮箱中编辑此草稿/);
       assert.doesNotMatch(result.message, /fixture-token|x-unknown-charset|workspace paths/);
     }
     assert.equal(f.calls.some(c => ['PUT', 'POST'].includes(c.init.method)), false);
@@ -632,9 +632,9 @@ test('worker JSON-RPC preserves safe encoding guidance across draft entry points
     const result = await f.rpc({ method: 'compose', cindy: { secrets: { gog_access_token: 'fixture-token' } },
       params: { draftId: f.draft.id, fingerprint: f.before.fingerprint, fields: f.fields, send: true } });
     assert.equal(result.execution, 'not_executed'); // Failed pre-write GET.
-    assert.match(result.message, /unsupported character encoding|decode the draft body losslessly/);
-    assert.match(result.message, /Edit this draft in your mailbox/);
-    assert.doesNotMatch(result.message, /private path|token|raw body|retry|try again/);
+    assert.match(result.message, /字符编码|无损解码/);
+    assert.match(result.message, /请在邮箱中编辑/);
+    assert.doesNotMatch(result.message, /private path|token|raw body|重试/);
   }
   // Once PUT succeeds, a failed read-back must retain the successful receipt
   // and forbid replay rather than claiming the draft was never changed.
@@ -647,7 +647,7 @@ test('worker JSON-RPC preserves safe encoding guidance across draft entry points
   const result = await f.rpc({ method: 'compose', cindy: { secrets: { gog_access_token: 'fixture-token' } },
     params: { draftId: f.draft.id, fingerprint: f.before.fingerprint, fields: f.fields, send: true } });
   assert.equal(result.execution, 'executed');
-  assert.match(result.message, /Draft saved but not sent.*Gmail.*do not .*again/);
+  assert.match(result.message, /草稿已保存但未发送.*Gmail.*不要重复/);
   assert.equal(f.calls.filter(c => c.init.method === 'PUT').length, 1);
   assert.equal(f.calls.some(c => c.url.endsWith('/send')), false);
 });
@@ -663,7 +663,7 @@ test('worker JSON-RPC hides unrecognized errors and preserves uncertain command 
       params: { command: ['drafts', 'get'], arguments: [f.draft.id] } });
     assert.equal(result.execution, started ? 'unknown' : 'not_executed');
     assert.doesNotMatch(result.message, /private path|fixture-token|raw body/);
-    if (code.startsWith('DRAFT_BODY_')) assert.match(result.message, /Edit this draft in your mailbox/);
+    if (code.startsWith('DRAFT_BODY_')) assert.match(result.message, /请在邮箱中编辑此草稿/);
     else assert.match(result.message, /check its schema and workspace paths/);
   }
 });
@@ -687,7 +687,7 @@ test('CID validation rejects missing variants, case-mismatched IDs and malformed
   for (const reference of ['CID:missing@example.test', 'CiD:Photo@example.test', 'cid:photo%ZZexample.test']) {
     const f = fixture(t);
     f.fields.bodyHtml = '<img src="' + reference + '">';
-    await assert.rejects(f.run(), /image/);
+    await assert.rejects(f.run(), /图片/);
     assert.equal(f.calls.some(c => c.init.method === 'PUT'), false, reference);
   }
 });

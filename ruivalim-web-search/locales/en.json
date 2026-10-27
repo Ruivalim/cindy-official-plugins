@@ -1,0 +1,10 @@
+{
+  "name": "Web Search (Rui)",
+  "description": "Unofficial copy of Cindy's web search, by Rui Valim. Uses Cindy AI by default (needs a signed-in Cindy account), or your own Brave, Tavily or DeepSeek API key set in the plugin details. Keys are encrypted locally and only injected into requests to declared hosts.",
+  "whenToUse": "Use this plugin to search the public web, research a topic, find web pages, or check current information. Cindy AI is used by default; you can also configure a Brave, Tavily or DeepSeek key in the Web Search (Rui) plugin details.",
+  "tools": {
+    "search_web": {
+      "description": "Search the public web; returns { provider, results: [{ title, url, snippet }] }. Default: Cindy AI; optional Brave, Tavily or DeepSeek. Queries: at most 2000 characters; DeepSeek: 128 Unicode characters, never truncated. DeepSeek prefers summary for snippets, bills successful requests and does not fetch full pages. No automatic retries or provider fallback. Failures preserve Host errorCode; relay message to the user and configure missing keys in plugin details."
+    }
+  }
+}

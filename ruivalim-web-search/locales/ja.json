@@ -1,0 +1,10 @@
+{
+  "name": "Web Search (Rui)",
+  "description": "Cindy のウェブ検索プラグインの非公式コピーで、Rui Valim が管理しています。既定では Cindy AI を使い（Cindy アカウントへのサインインが必要で、その残高を消費します）、自分の Brave、Tavily または DeepSeek API キーでも公開ウェブを検索できます。キーはプラグイン詳細で設定し、ローカルで暗号化され、宣言済みホストへのリクエストにだけ注入されます。",
+  "whenToUse": "公開ウェブの検索、調査、ウェブページの発見、最新情報の確認に使用します。既定では Cindy AI を使い、Web Search (Rui) プラグイン詳細で Brave、Tavily または DeepSeek のキーも設定できます。",
+  "tools": {
+    "search_web": {
+      "description": "公開ウェブを検索し、{ provider, results: [{ title, url, snippet }] } を返します。既定は Cindy AI。Brave / Tavily / DeepSeek も選択できます。クエリは最大 2000 文字、DeepSeek は Unicode 128 文字（切り詰めなし）。DeepSeek の摘要は summary を優先し、成功したリクエストに課金され、ページ全文は取得しません。自動再試行や検索元の切り替えは行いません。失敗時はホストの errorCode を保持し、message をユーザーに伝えてください。キー未設定時はプラグイン詳細で設定します。"
+    }
+  }
+}

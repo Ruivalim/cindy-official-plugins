@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 3,
+  "id": "ruivalim-web-search",
+  "name": "Web Search (Rui)",
+  "description": "Unofficial copy of Cindy's web search, by Rui Valim. Uses Cindy AI by default (needs a signed-in Cindy account) or your own Brave / Tavily / DeepSeek key, set in \"Plugins\" > \"Web Search (Rui)\" details. Keys are encrypted locally and only sent to declared hosts.",
+  "whenToUse": "Call me when you need to search the public web, look something up, find web pages or check the latest news (Cindy AI search is used by default; you can also configure a Brave, Tavily or DeepSeek key in the main sidebar under \"Plugins\" > \"Web Search (Rui)\" details).",
+  "version": "1.0.0",
+  "minCindyVersion": "0.1.64",
+  "locales": {
+    "en": "locales/en.json",
+    "zh-CN": "locales/zh-CN.json",
+    "ja": "locales/ja.json",
+    "ko": "locales/ko.json"
+  },
+  "author": "Rui Valim",
+  "icon": "assets/icon.png",
+  "entry": "main.js",
+  "settingsHtml": "settings.html",
+  "command": "ruivalim-web-search",
+  "cindy": {
+    "search": ["web"]
+  },
+  "network": {
+    "hosts": ["api.search.brave.com", "api.tavily.com", "api.deepseek.com"],
+    "secrets": [
+      {
+        "key": "brave_api_key",
+        "label": "Brave Search API Key",
+        "hint": "The free tier is enough (starts with BSA)",
+        "url": "https://api-dashboard.search.brave.com/app/keys",
+        "inject": {
+          "header": "X-Subscription-Token",
+          "format": "{value}",
+          "hosts": ["api.search.brave.com"]
+        }
+      },
+      {
+        "key": "tavily_api_key",
+        "label": "Tavily API Key",
+        "hint": "Starts with tvly-",
+        "url": "https://app.tavily.com/home",
+        "inject": {
+          "header": "Authorization",
+          "format": "Bearer {value}",
+          "hosts": ["api.tavily.com"]
+        }
+      },
+      {
+        "key": "deepseek_api_key",
+        "label": "DeepSeek API Key",
+        "hint": "DeepSeek Open Platform API Key; searches are billed per successful request",
+        "url": "https://platform.deepseek.com/api_keys",
+        "inject": {
+          "header": "Authorization",
+          "format": "Bearer {value}",
+          "hosts": ["api.deepseek.com"]
+        }
+      }
+    ]
+  },
+  "setup": {
+    "requires": []
+  },
+  "tools": [
+    {
+      "name": "search_web",
+      "description": "Search the public web; returns { provider, results: [{ title, url, snippet }] }. Defaults to Cindy AI; Brave / Tavily / DeepSeek can be specified. Queries are at most 2000 characters; DeepSeek allows at most 128 Unicode characters (no truncation), prefers summary for snippets, bills per successful request and does not fetch full text. On failure, keep the host errorCode and tell the user the message; if a key is missing, follow the guidance to configure it in the plugin details. Do not auto-retry or switch provider.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "maxLength": 2000, "description": "Search keywords (keep the user's intent, do not expand; at most 2000 characters; DeepSeek at most 128 Unicode characters)" },
+          "provider": { "type": "string", "enum": ["cindy", "brave", "tavily", "deepseek"], "description": "Search provider to use; usually omit it (Cindy AI search is the default)" },
+          "limit": { "type": "number", "description": "Number of results, default 5, max 10" }
+        },
+        "required": ["query"]
+      }
+    }
+  ]
+}

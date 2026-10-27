@@ -3,9 +3,9 @@
   "minCindyVersion": "0.1.112",
   "id": "google-gmail",
   "name": "Gmail",
-  "description": "Search and read Gmail, download attachments to the current task, create drafts, and send messages. Account authorization is managed by Cindy.",
-  "whenToUse": "Use for Gmail messages, attachments, drafts and sending. First select an account with gmail_accounts, discover commands with gmail_schema, then execute gmail_run. Download attachments to an explicit local workspace path before analysis.",
-  "version": "1.5.25",
+  "description": "搜索和阅读 Gmail、下载附件到当前任务、创建草稿和发送邮件。账号授权由 Cindy 托管。",
+  "whenToUse": "用于 Gmail 邮件、附件、草稿和发送。先用 gmail_accounts 选择账号，再用 gmail_schema 查询命令、gmail_run 执行。分析附件前，先下载到明确指定的本地任务目录路径。",
+  "version": "1.5.24",
   "cindy": { "media": ["deposit"] },
   "agent": {},
   "locales": {
@@ -29,9 +29,9 @@
     "secrets": [
       {
         "key": "gmail_account",
-        "label": "Gmail account",
+        "label": "Gmail 账号",
         "source": "oauth",
-        "hint": "Grants Gmail access only; open this plugin's details page and click \"Connect account\" to authorize",
+        "hint": "只授权 Gmail 权限；到本插件详情页点「连接账号」完成授权",
         "inject": {
           "header": "Authorization",
           "format": "Bearer {value}",

@@ -2,9 +2,9 @@
   "schemaVersion": 3,
   "id": "cindy-web-search",
   "name": "Web Search",
-  "description": "Cindy's built-in web search plugin: uses Cindy AI search by default, or searches the public web with your own Brave / Tavily / DeepSeek key. Enter keys in the main sidebar under \"Plugins\" > \"Web Search\" details; they are encrypted on this machine and only injected into requests to declared hosts.",
-  "whenToUse": "Call me when you need to search the public web, look something up, find web pages or check the latest news (Cindy AI search is used by default; you can also configure a Brave, Tavily or DeepSeek key in the main sidebar under \"Plugins\" > \"Web Search\" details).",
-  "version": "1.4.1",
+  "description": "Cindy 内置的网页搜索插件:默认使用 Cindy AI 搜索,也可用你自己的 Brave / Tavily / DeepSeek key 搜索公网。key 在主界面侧边栏「插件」→「Web Search」详情页填写,加密存本机、只注入声明域名的请求。",
+  "whenToUse": "需要搜索公网信息、查资料、找网页、看最新动态时找我(默认使用 Cindy AI 搜索,也可在主界面侧边栏「插件」→「Web Search」详情页配置 Brave、Tavily 或 DeepSeek key)。",
+  "version": "1.4.0",
   "minCindyVersion": "0.1.64",
   "locales": {
     "en": "locales/en.json",
@@ -26,7 +26,7 @@
       {
         "key": "brave_api_key",
         "label": "Brave Search API Key",
-        "hint": "The free tier is enough (starts with BSA)",
+        "hint": "免费档即可(BSA 开头)",
         "url": "https://api-dashboard.search.brave.com/app/keys",
         "inject": {
           "header": "X-Subscription-Token",
@@ -37,7 +37,7 @@
       {
         "key": "tavily_api_key",
         "label": "Tavily API Key",
-        "hint": "Starts with tvly-",
+        "hint": "tvly- 开头",
         "url": "https://app.tavily.com/home",
         "inject": {
           "header": "Authorization",
@@ -48,7 +48,7 @@
       {
         "key": "deepseek_api_key",
         "label": "DeepSeek API Key",
-        "hint": "DeepSeek Open Platform API Key; searches are billed per successful request",
+        "hint": "DeepSeek 开放平台 API Key，搜索按成功请求计费",
         "url": "https://platform.deepseek.com/api_keys",
         "inject": {
           "header": "Authorization",
@@ -64,13 +64,13 @@
   "tools": [
     {
       "name": "search_web",
-      "description": "Search the public web; returns { provider, results: [{ title, url, snippet }] }. Defaults to Cindy AI; Brave / Tavily / DeepSeek can be specified. Queries are at most 2000 characters; DeepSeek allows at most 128 Unicode characters (no truncation), prefers summary for snippets, bills per successful request and does not fetch full text. On failure, keep the host errorCode and tell the user the message; if a key is missing, follow the guidance to configure it in the plugin details. Do not auto-retry or switch provider.",
+      "description": "搜索公网，返回 { provider, results: [{ title, url, snippet }] }。默认 Cindy AI，也可指定 Brave / Tavily / DeepSeek。查询最多 2000 字符；DeepSeek 最多 128 个 Unicode 字符（不截断），摘要优先使用 summary，按成功请求计费，不读取全文。失败时保留宿主 errorCode，把 message 告诉用户；缺 Key 时按指引在插件详情页配置。不自动重试或切换搜索源。",
       "parameters": {
         "type": "object",
         "properties": {
-          "query": { "type": "string", "maxLength": 2000, "description": "Search keywords (keep the user's intent, do not expand; at most 2000 characters; DeepSeek at most 128 Unicode characters)" },
-          "provider": { "type": "string", "enum": ["cindy", "brave", "tavily", "deepseek"], "description": "Search provider to use; usually omit it (Cindy AI search is the default)" },
-          "limit": { "type": "number", "description": "Number of results, default 5, max 10" }
+          "query": { "type": "string", "maxLength": 2000, "description": "搜索关键词(保留用户意图,不要扩写,最多 2000 字符；DeepSeek 最多 128 个 Unicode 字符)" },
+          "provider": { "type": "string", "enum": ["cindy", "brave", "tavily", "deepseek"], "description": "指定搜索源;通常省略(默认使用 Cindy AI 搜索)" },
+          "limit": { "type": "number", "description": "结果条数,默认 5,最大 10" }
         },
         "required": ["query"]
       }

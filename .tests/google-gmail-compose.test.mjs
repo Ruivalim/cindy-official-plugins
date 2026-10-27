@@ -160,7 +160,7 @@ for (const mailSdkVersion of [0, 2]) test('unsupported mail SDK blocks every dra
   for (const operation of ['create', 'reply', 'reply-all', 'forward', 'update', 'send', 'delete']) {
     const result = await f.run({ command: ['drafts', operation], arguments: operation === 'create' ? [] : ['draft-test'], options: {} });
     assert.equal(result.ok, false, operation);
-    assert.match(result.message, /\[not_executed\].*Update Cindy/);
+    assert.match(result.message, /\[not_executed\].*更新 Cindy/);
   }
   assert.equal(f.requests.length, 0);
   assert.equal(f.writes.length, 0);
@@ -607,7 +607,7 @@ test('editing an inline-image draft cannot strip its CID metadata', async t => {
   const draft = (await f.run()).result.readBack;
   await f.action({ actionId: latestCardAction(f), formValues: { ...fieldsFrom(draft), body: 'Changed' } });
   assert.equal(f.calls.filter(c => c[0][2] === 'send' || c[0][2] === 'update').length, 0);
-  assert.match(f.replies.filter(r => r.type === 'mail-draft-update').at(-1).draft.status, /the original draft was not changed/);
+  assert.match(f.replies.filter(r => r.type === 'mail-draft-update').at(-1).draft.status, /原草稿未更改/);
 });
 
 test('stale drafts and invalid recipients do not send and remain reviewable', async t => {
@@ -760,7 +760,7 @@ test('tool direct-send commands cannot bypass the draft countdown', async t => {
     const f = fixture(t);
     const result = await f.run({ command, arguments: [], options: { to: 'self@example.test', body: 'Test' } });
     assert.equal(result.ok, false);
-    assert.match(result.message, /not_executed.*10-second/);
+    assert.match(result.message, /not_executed.*10 秒/);
     assert.equal(f.requests.length, 0);
     assert.equal(f.calls.length, 0);
   }

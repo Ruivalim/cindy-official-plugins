@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="/settings.css">
+</head>
+<body>
+  <div class="title">Connected accounts</div>
+  <p class="hint">Grants Gmail access only; it does not also grant Calendar, Drive or Sheets access.</p>
+  <p id="reauth" class="hint expired" hidden></p>
+  <div class="account-list">
+    <div id="accounts"></div>
+    <button id="connect" class="account-connect" type="button">Connect account</button>
+  </div>
+  <p id="status"></p>
+  <script src="/account-metadata.js"></script>
+  <script src="/account-nickname.js"></script>
+  <script src="/settings.js"></script>
+</body>
+</html>

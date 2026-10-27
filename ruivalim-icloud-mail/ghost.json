@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 3,
+  "id": "ruivalim-icloud-mail",
+  "name": "iCloud Mail (Rui)",
+  "description": "Search, read, and organize messages through iCloud Mail IMAP/SMTP, and create drafts or send mail. Cindy stores the app-specific password securely and provides it to the plugin Worker only while handling a mail request.",
+  "whenToUse": "Use when the user needs to find, read, or organize iCloud Mail messages, create a draft, or send mail. Before first use, enter the iCloud Mail address and Apple Account app-specific password in the plugin details and complete the connection test.",
+  "version": "1.0.0",
+  "minCindyVersion": "0.1.64",
+  "locales": {
+    "en": "locales/en.json",
+    "zh-CN": "locales/zh-CN.json",
+    "ja": "locales/ja.json",
+    "ko": "locales/ko.json"
+  },
+  "author": "Rui Valim",
+  "icon": "assets/icon.png",
+  "entry": "main.js",
+  "settingsHtml": "settings.html",
+  "settingsHeight": 550,
+  "node": {
+    "entry": "node/worker.cjs",
+    "protocol": "json-rpc-stdio",
+    "lifecycle": "on-demand",
+    "idleTimeoutSeconds": 3600,
+    "secretBindings": [
+      {
+        "key": "icloud_mail_app_password",
+        "label": "Apple Account app-specific password A",
+        "methods": [
+          "account/connect-a",
+          "mail/action-a"
+        ],
+        "hint": "An app-specific password generated on the Apple Account website, not your Apple Account password",
+        "url": "https://account.apple.com/"
+      },
+      {
+        "key": "icloud_mail_app_password_b",
+        "label": "Apple Account app-specific password B",
+        "methods": [
+          "account/connect-b",
+          "mail/action-b"
+        ],
+        "hint": "An app-specific password generated on the Apple Account website, not your Apple Account password",
+        "url": "https://account.apple.com/"
+      }
+    ]
+  },
+  "command": "ruivalim-icloud-mail",
+  "tools": [
+    {
+      "name": "icloud_mail_status",
+      "description": "Check whether iCloud Mail is configured. Returns only the email address and connection status, never the app-specific password."
+    },
+    {
+      "name": "icloud_mail",
+      "description": "Perform iCloud Mail operations: list folders, search, read, send, save drafts, mark messages read or unread, and move messages. Each operation opens a temporary IMAP/SMTP connection and closes it afterward. Sending, moving, and changing read status require explicit user intent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "list_folders",
+              "search",
+              "read",
+              "send",
+              "draft",
+              "mark_read",
+              "mark_unread",
+              "move"
+            ]
+          },
+          "folder": {
+            "type": "string",
+            "description": "Raw IMAP folder name, defaults to INBOX. For anything other than INBOX, call list_folders first and use the path returned by the server verbatim; do not translate it."
+          },
+          "message_uid": {
+            "type": "integer",
+            "description": "Message UID. A UID is only valid within its folder and must be used together with the folder returned by search."
+          },
+          "target_folder": {
+            "type": "string",
+            "description": "Raw path of the destination folder for move; get it from list_folders first."
+          },
+          "text": {
+            "type": "string",
+            "description": "Full-text keyword for search; optional."
+          },
+          "from": {
+            "type": "string",
+            "description": "Sender keyword for search."
+          },
+          "to": {
+            "description": "For search, a recipient keyword; for send/draft, the recipient addresses as a comma-separated string or an array of strings."
+          },
+          "cc": {
+            "description": "Cc addresses for send/draft, as a comma-separated string or an array of strings."
+          },
+          "bcc": {
+            "description": "Bcc addresses for send/draft, as a comma-separated string or an array of strings."
+          },
+          "subject": {
+            "type": "string",
+            "description": "For search, a subject keyword; for send/draft, the message subject."
+          },
+          "body_text": {
+            "type": "string",
+            "description": "Plain-text body for send/draft."
+          },
+          "unread": {
+            "type": "boolean",
+            "description": "For search, true returns only unread messages and false only read ones; omit for no filter."
+          },
+          "since": {
+            "type": "string",
+            "description": "Search start date, as an ISO date or date-time."
+          },
+          "before": {
+            "type": "string",
+            "description": "Search end date, as an ISO date or date-time."
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Number of search results to return, default 10, max 20."
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    }
+  ]
+}

@@ -183,7 +183,7 @@ function createSettingsHarness(options = {}) {
 }
 
 test('manifest declares Cindy Web Search and keeps BYO providers explicit', () => {
-  assert.equal(manifest.version, '1.4.1');
+  assert.equal(manifest.version, '1.4.0');
   assert.equal(manifest.minCindyVersion, '0.1.64');
   assert.equal(manifest.schemaVersion, 3);
   assert.deepEqual(manifest.cindy, { search: ['web'] });
@@ -259,7 +259,7 @@ test('missing provider fails closed when preferences cannot be read', async () =
   assert.equal(harness.cindyRequests.length, 0);
   assert.equal(harness.networkCalls.length, 0);
   assert.equal(result.ok, false);
-  assert.match(result.message, /Failed to read search preferences/);
+  assert.match(result.message, /搜索偏好读取失败/);
 });
 
 test('Cindy transport failures return an actionable service error', async () => {
@@ -271,7 +271,7 @@ test('Cindy transport failures return an actionable service error', async () => 
   assert.equal(harness.cindyRequests.length, 1);
   assert.equal(harness.networkCalls.length, 0);
   assert.equal(result.ok, false);
-  assert.equal(result.message, 'Cindy AI search is temporarily unavailable. Please try again later.');
+  assert.equal(result.message, 'Cindy AI 搜索服务暂时不可用，请稍后再试');
   assert.equal(result.errorCode, 'INTERNAL');
   assert.doesNotMatch(result.message, /Failed to fetch/);
 });
@@ -410,7 +410,7 @@ test('settings remain disabled when initial preferences fail to load', async () 
 
   assert.equal(harness.cindyAiEnabled.disabled, true);
   assert.equal(harness.byoDefaultProvider.disabled, true);
-  assert.match(harness.status.textContent, /Failed to load search preferences/);
+  assert.match(harness.status.textContent, /搜索偏好加载失败/);
   assert.match(settingsHtml, /id="cindy-ai-enabled"[^>]*disabled/);
   assert.match(settingsHtml, /id="byo-default-provider"[^>]*disabled/);
 });
@@ -435,7 +435,7 @@ test('settings save failure restores the last successfully loaded preferences', 
   assert.equal(harness.byoDefaultProvider.value, 'tavily');
   assert.equal(harness.cindyAiEnabled.disabled, false);
   assert.equal(harness.byoDefaultProvider.disabled, false);
-  assert.match(harness.status.textContent, /Failed to save search preferences/);
+  assert.match(harness.status.textContent, /搜索偏好保存失败/);
 });
 
 function deepSeekResponse(results = []) {
@@ -524,12 +524,12 @@ test('DeepSeek validates 128 Unicode code points without truncation for both rou
 });
 
 for (const [status, code, guidance] of [
-  [400, 'INVALID_INPUT', /query/], [401, 'AUTH_REJECTED', /Update the key/],
-  [402, 'QUOTA_EXHAUSTED', /Top up/], [403, 'PERMISSION_DENIED', /permissions/],
-  [404, 'UPSTREAM_REJECTED', /account permissions/], [408, 'UPSTREAM_UNAVAILABLE', /try again later/],
-  [413, 'INVALID_INPUT', /query/], [429, 'RATE_LIMITED', /try again later/],
-  [500, 'UPSTREAM_UNAVAILABLE', /try again later/], [504, 'UPSTREAM_UNAVAILABLE', /try again later/],
-  [302, 'UPSTREAM_REJECTED', /account permissions/], [422, 'UPSTREAM_REJECTED', /account permissions/],
+  [400, 'INVALID_INPUT', /查询/], [401, 'AUTH_REJECTED', /更新 Key/],
+  [402, 'QUOTA_EXHAUSTED', /充值/], [403, 'PERMISSION_DENIED', /权限/],
+  [404, 'UPSTREAM_REJECTED', /账号权限/], [408, 'UPSTREAM_UNAVAILABLE', /稍后重试/],
+  [413, 'INVALID_INPUT', /查询/], [429, 'RATE_LIMITED', /稍后重试/],
+  [500, 'UPSTREAM_UNAVAILABLE', /稍后重试/], [504, 'UPSTREAM_UNAVAILABLE', /稍后重试/],
+  [302, 'UPSTREAM_REJECTED', /账号权限/], [422, 'UPSTREAM_REJECTED', /账号权限/],
 ]) {
   test(`DeepSeek HTTP ${status} gives actionable ${code} without retry, fallback or body disclosure`, async () => {
     const harness = createHarness({ networkResult: () => ({ ok: true, status, body: 'upstream-private-detail' }) });
@@ -546,9 +546,9 @@ for (const [status, code, guidance] of [
 
 test('DeepSeek preserves structured Host error codes with safe, actionable messages', async () => {
   for (const [errorCode, guidance] of [
-    ['NOT_CONFIGURED', /Configure a DeepSeek API Key/], ['AUTH_REJECTED', /Update the key/],
-    ['PERMISSION_DENIED', /Cindy authorization/], ['QUOTA_EXHAUSTED', /Top up/],
-    ['RATE_LIMITED', /try again later/], ['INVALID_INPUT', /128/], ['HOST_NETWORK_FAILURE', /network connection/],
+    ['NOT_CONFIGURED', /配置 DeepSeek API Key/], ['AUTH_REJECTED', /更新 Key/],
+    ['PERMISSION_DENIED', /授权/], ['QUOTA_EXHAUSTED', /充值/],
+    ['RATE_LIMITED', /稍后重试/], ['INVALID_INPUT', /128/], ['HOST_NETWORK_FAILURE', /网络连接/],
   ]) {
     for (const throws of [false, true]) {
       const harness = createHarness({ networkResult: () => {
@@ -575,7 +575,7 @@ test('DeepSeek handles legacy Host failures and exceptions without exposing diag
     const result = await harness.search({ provider: 'deepseek' });
     assert.equal(result.ok, false);
     assert.equal(result.errorCode, 'INTERNAL');
-    assert.match(result.message, /network connection/);
+    assert.match(result.message, /网络连接/);
     assert.match(result.message, /DeepSeek API Key/);
     assert.doesNotMatch(result.message, /private-host-detail/);
     assert.equal(harness.networkCalls.length, 1);
@@ -629,5 +629,5 @@ test('settings load and persist DeepSeek as the BYO default without losing other
   await flushAsync();
   const write = harness.fetchCalls.find(call => call.init.method === 'PUT');
   assert.deepEqual(JSON.parse(write.init.body), original);
-  assert.match(harness.status.textContent, /Search preferences saved/);
+  assert.match(harness.status.textContent, /已保存/);
 });
