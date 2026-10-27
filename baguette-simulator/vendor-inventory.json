@@ -256,8 +256,8 @@
   },
   {
     "path": "vendor/baguette/Baguette_Baguette.bundle/Web/baguette/gestures/wheel-gesture-source.js",
-    "bytes": 3431,
-    "sha256": "a47fbfa56111a3914e17b0fe4330ad1ce8e79cabc3c89afca3abca84d3b6438f"
+    "bytes": 3736,
+    "sha256": "42abc8bd9527951dd306dbdf53a05e66a8c73074a4f76b2344519270528bbf7a"
   },
   {
     "path": "vendor/baguette/Baguette_Baguette.bundle/Web/baguette/parts/bezel.js",

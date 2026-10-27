@@ -67,12 +67,18 @@
           state.f2.x += shiftX; state.f2.y += shiftY;
         }
 
-        this.screen.touchMove([state.f1, state.f2]);
+        // Use the backend's bounded positions for both dispatch and display;
+        // a pinch near an edge can keep its raw pair outside the screen.
+        const points = [state.f1, state.f2].map(finger => ({
+          x: Math.max(0, Math.min(width, finger.x)),
+          y: Math.max(0, Math.min(height, finger.y)),
+        }));
+        this.screen.touchMove(points);
 
         if (this.overlay) {
           // Draw the actual contacts for both pan and pinch; mirroring the
           // first contact makes a parallel pan look like fingers spreading.
-          this.overlay.setFingers([state.f1, state.f2].map((finger) => ({
+          this.overlay.setFingers(points.map((finger) => ({
             x: finger.x / width * r.width,
             y: finger.y / height * r.height,
           })));

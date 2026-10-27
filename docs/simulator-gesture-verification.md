@@ -1,5 +1,44 @@
 # Simulator gesture parity and native trackpad acceptance
 
+## Edge-indicator follow-up — 0.2.59, 2026-10-28
+
+iPhone wheel pinch previously drew raw offscreen contacts while the native
+backend clipped the dispatched positions. Wheel moves now calculate one bounded
+pair used by both dispatch and overlay projection. Raw scale, native contacts,
+host mapping, backend binaries and input queues are unchanged.
+
+The convergence invariant is: every wheel-move dot centre equals the corresponding
+dispatched screen position. The wheel source remains the sole owner of raw
+pan/pinch state; bounded move points are local derived values. Pan and pinch use
+the same projection, including off-centre anchors and reversal. With no overlay,
+dispatch is identical. Idle end and kind changes still use the existing close
+path, clear the timer/overlay, and send release; native, Option-drag and Safari
+gesture-event paths retain their existing semantics. No new state, queue or retry was added.
+
+The new production-source edge regression fails on 0.2.58 and passes on 0.2.59.
+The three wheel-overlay cases complete in 52.6 ms. Repository contracts plus all
+simulator files pass 1419 test invocations, zero failures or skips (the aggregate
+command also loads simulator files separately, as in the previous 1417 run).
+The full vendor Web patch applies to the pinned v0.2.10 source with zero fuzz or
+offset and reconstructs each patched packaged file; inventory verification passes.
+
+A real Electron 42.11.12 renderer exercises 24 combinations: four edges, three
+display scales, pan/pinch, and an expand/reverse delta pair. Actual iPhone and
+Android dot DOM styles stay bounded and match their dispatched contacts; Android
+HTTP contacts agree with iPhone and the iPhone idle overlay clears. CSS length
+serialization is compared within 0.001 display pixels. The fixture uses fixed
+integer layout origins because synthetic WheelEvent client coordinates are
+integer-valued; its first flow-layout run exposed a fractional-origin mismatch,
+not a production mapping change. Receipt: `pr235-edge-overlay-receipt.json` in
+the task artifact directory. It is synthetic renderer/HTTP evidence, not AppKit
+capture, a running device or a new physical hand-feel acceptance. Forge validates
+and packs 0.2.59 without installing it. Earlier physical evidence applies only to
+the unchanged paths described below.
+
+The previous Electron delayed-HTTP fixture was also rerun on 0.2.59 and passed:
+four native boundary samples, seven kind-switch samples, immediate pan reversal
+and rejection of the superseded iPhone idle timer.
+
 ## Review follow-up — 0.2.58, 2026-10-28
 
 The first review identified Android boundary samples being coalesced while a

@@ -8,7 +8,7 @@ Local keyboard patch: serialize paste/copy with keys; suppress only adjacent ide
 Local Web security patches: toolbar labels rendered as text; CSS selector fallback uses hexadecimal escaping.
 Local Web orientation patch: opening a view restores its per-device bezel pose; only an unknown pose is seeded from the existing describe_ui socket message. App orientation cannot override a known viewer pose, and no implicit rotation is sent. Independent bootstrap reads run concurrently.
 
-Local Web gesture overlay patch: wheel pan/pinch indicators project both actual touch contacts into view coordinates, keeping parallel pans parallel.
+Local Web gesture overlay patch: wheel pan/pinch indicators project both actual touch contacts into view coordinates, keeping parallel pans parallel. Version 0.2.59 bounds wheel-move contacts before dispatch and display, matching native backend clipping at screen edges; no upstream version, binary, permission or network change.
 Local Web native contact patch: flat screens opt into host trackpad input; Chromium TouchEvents preserve independent contact positions and release on cancellation. Safari retains its existing gesture stream. No upstream version change.
 Local Web patch: the Defaults card toggle is removed; the plugin proxy blocks its routes. See vendor-web.patch and VENDOR-REVIEW.md.
 Official release archive SHA-256: af95902bd11eb1e81309a697c863b5b25698aae480da1d67b8e9db178343b8c3

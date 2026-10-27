@@ -62,3 +62,21 @@ test('wheel pinch indicators follow actual scaling and a moving pointer', () => 
   assert.ok(contracted[0].x - contracted[1].x < 80);
   h.end();
 });
+
+// Regression: iPhone's backend clips edge contacts but the overlay used raw
+// pinch coordinates. Exercise the production source at every edge and scale;
+// the existing centre-only cases could not distinguish these positions.
+test('wheel pan and pinch indicators match bounded contacts at every screen edge', () => {
+  for (const [width, height] of [[400, 800], [200, 400], [300, 400]]) {
+    for (const [x, y] of [[.02, .5], [.98, .5], [.5, .02], [.5, .98]]) {
+      for (const ctrlKey of [false, true]) {
+        const h = harness(width, height);
+        for (const deltaY of [-400, 80]) {
+          const dots = h.move({ctrlKey, deltaY, clientX:30+x*width, clientY:70+y*height});
+          assert.ok(dots.every(p => p.x >= 0 && p.x <= width && p.y >= 0 && p.y <= height));
+        }
+        h.end();
+      }
+    }
+  }
+});
