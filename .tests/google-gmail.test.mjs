@@ -49,3 +49,4 @@ import './google-gmail-accounts.test.mjs';
 import './google-gmail-worker.test.mjs';
 import './google-gmail-packaging.test.mjs';
 import './google-gmail-compose.test.mjs';
+import './google-gmail-localization.test.mjs';

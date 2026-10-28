@@ -66,6 +66,212 @@ var googleAccountMetadata = (function () {
 var SECRET_KEY = 'gmail_account';
 var PLUGIN_NAME = 'Gmail';
 function fail(message) { return { ok: false, message: message }; }
+// Runtime copy follows only the Host locale (docs/localization.md): never
+// navigator.language. Unsupported or unavailable locales fall back to English.
+var MESSAGES = {
+  'zh-CN': {
+    inlineImagesType: 'inline-images 仅支持 PNG、JPEG、GIF 或 WebP 图片；其他媒体请作为普通附件。',
+    accountServiceUnreachable: '无法连接 Cindy 本地账号服务，请稍后重试；若持续失败，请重新打开 Gmail 插件详情检查服务状态',
+    accountServiceNoResult: 'Cindy 本地账号服务未返回结果，请稍后重试',
+    accountServiceDenied: '账号状态服务拒绝访问，请到 Gmail 插件详情检查连接状态后重试（HTTP {status}）',
+    accountServiceUnavailable: 'Cindy 本地账号服务暂时不可用，请稍后重试；若持续失败，请重新打开 Gmail 插件详情检查服务状态（HTTP {status}）',
+    accountDataUnparsable: 'Cindy 账号状态数据无法解析，请重新打开 Gmail 插件详情后重试',
+    accountDataMalformed: 'Cindy 账号状态数据格式异常，请重新打开 Gmail 插件详情后重试',
+    clientIdentityMissing: '内置应用身份缺失，请升级 Cindy 后重试',
+    accountListMalformed: 'Cindy 账号列表数据格式异常，请重新打开 Gmail 插件详情后重试',
+    noAccount: '尚未连接账号，请到「{plugin}」详情页单独授权',
+    notExecuted: '尚未执行：{reason}',
+    multipleAccounts: '尚未执行：已连接多个账号，请明确选择账号并传入 account。',
+    accountNotFound: '尚未执行：指定账号不存在，请重新选择账号；不会切换到其他账号。',
+    accountReauth: '尚未执行：账号 {account} 授权已失效或权限不足，请到插件详情页重新连接此账号。',
+    readParseData: '无法解析 Gmail 邮件数据，请检查网络连接后重新打开邮件，或在邮箱中查看。',
+    readParseBody: '无法解析 Gmail 邮件正文，请重新打开邮件，或在邮箱中查看。',
+    readUnauthorized: 'Gmail 账号授权已失效，请到插件详情页重新连接此账号后再打开邮件。',
+    readForbidden: 'Gmail 拒绝读取，请检查此账号的邮件读取权限，并到插件详情页重新连接或授权。',
+    linkAccountMismatch: '邮件链接与指定的 Gmail 账号不一致，请选择链接对应的账号后再打开。',
+    readThreadFailed: '无法读取 Gmail 会话，请检查网络连接后重新打开。',
+    readMessageFailed: '无法读取 Gmail 邮件，请检查网络连接和邮件是否仍在邮箱中后重新打开。',
+    readBodyIncomplete: '无法完整读取邮件正文',
+    readBodyFailed: '无法完整读取邮件正文，请检查网络连接后重新打开。',
+    readBodySizeMismatch: '邮件正文大小不一致',
+    markReadFailed: '未能标记已读，请检查邮箱授权和邮件状态后再操作。',
+    markReadUnknown: '无法确认已读状态，请先在邮箱中核对，不要盲目重试。',
+    sendRequiresDraft: '邮件未发送。请先用 drafts create / drafts reply / drafts reply-all 创建并展示草稿，再用 drafts send 发送；Cindy 公共流程会提供 10 秒撤销窗口。不要绕过草稿流程直接发送。',
+    mailFlowUnsupported: '当前 Cindy 不支持公共邮件流程，请更新 Cindy 后再创建、编辑或发送草稿。',
+    draftCommandShape: '请使用完整的草稿命令和单个草稿 ID。',
+    sendDraftIdOnly: '发送现有草稿只接受草稿 ID；修改请先更新该草稿。',
+    undoWindowUnsupported: '当前 Cindy 尚不支持发送前的 10 秒撤销窗口，请更新 Cindy 后再发送。草稿已保留。',
+    unknownTool: '尚未执行：未知工具，请重新查看当前插件工具列表。',
+    runtimeMissing: '尚未执行：当前 Cindy 缺少此功能所需的插件运行接口，请升级至 0.1.92 或更新版本。账号列表仍可使用。',
+    earlierDraftUnconfirmed: '此前的草稿操作结果尚未完全确认，请先核对邮箱中的实际状态，不要重复发送、保存或删除。',
+    executedUnreturned: '邮箱操作已执行，但结果未能完整返回。请先核对邮箱中的实际状态，不要重复发送、保存或删除。',
+    outcomeUnknown: '无法确认邮箱操作结果，请先核对邮箱中的实际状态，不要重复发送、保存或删除。',
+    prepareFailed: '无法准备 Gmail 操作，请检查账号和附件输入。',
+  },
+  en: {
+    inlineImagesType: 'inline-images only supports PNG, JPEG, GIF or WebP images; attach other media as regular attachments.',
+    accountServiceUnreachable: 'Could not reach the Cindy local account service. Try again later; if it keeps failing, reopen the Gmail plugin details to check the service status',
+    accountServiceNoResult: 'The Cindy local account service returned no result. Try again later',
+    accountServiceDenied: 'The account status service denied access. Check the connection status in the Gmail plugin details, then try again (HTTP {status})',
+    accountServiceUnavailable: 'The Cindy local account service is temporarily unavailable. Try again later; if it keeps failing, reopen the Gmail plugin details to check the service status (HTTP {status})',
+    accountDataUnparsable: 'Could not parse the Cindy account status data. Reopen the Gmail plugin details and try again',
+    accountDataMalformed: 'The Cindy account status data is malformed. Reopen the Gmail plugin details and try again',
+    clientIdentityMissing: 'The built-in app identity is missing. Upgrade Cindy and try again',
+    accountListMalformed: 'The Cindy account list data is malformed. Reopen the Gmail plugin details and try again',
+    noAccount: 'No account connected yet. Authorize one separately in the "{plugin}" plugin details',
+    notExecuted: 'Not executed: {reason}',
+    multipleAccounts: 'Not executed: multiple accounts are connected. Choose one explicitly and pass it as account.',
+    accountNotFound: 'Not executed: the specified account does not exist. Choose an account again; no other account will be used instead.',
+    accountReauth: 'Not executed: authorization for account {account} has expired or lacks permissions. Reconnect this account in the plugin details.',
+    readParseData: 'Could not parse the Gmail message data. Please check your network connection and reopen the message, or view it in your mailbox.',
+    readParseBody: 'Could not parse the Gmail message body. Please reopen the message, or view it in your mailbox.',
+    readUnauthorized: 'Gmail account authorization has expired. In the plugin details, reconnect this account, then open the message again.',
+    readForbidden: 'Gmail refused the read. Check the mail read permission for this account, then in the plugin details reconnect or reauthorize it.',
+    linkAccountMismatch: 'The message link does not match the specified Gmail account. Select the account the link belongs to, then open it again.',
+    readThreadFailed: 'Could not read the Gmail conversation. Check your network connection and reopen it.',
+    readMessageFailed: 'Could not read the Gmail message. Check your network connection and that the message is still in the mailbox, then reopen it.',
+    readBodyIncomplete: 'Could not read the full message body',
+    readBodyFailed: 'Could not read the full message body. Check your network connection and reopen it.',
+    readBodySizeMismatch: 'Message body size mismatch',
+    markReadFailed: 'Could not mark as read. Check the mailbox authorization and message status before trying again.',
+    markReadUnknown: 'Could not confirm the read status. Check the mailbox first; do not retry blindly.',
+    sendRequiresDraft: 'Message not sent. First create and show a draft with drafts create / drafts reply / drafts reply-all, then send it with drafts send; the Cindy common mail flow provides a 10-second undo window. Do not bypass the draft flow to send directly.',
+    mailFlowUnsupported: 'This Cindy version does not support the common mail flow. Update Cindy before creating, editing or sending drafts.',
+    draftCommandShape: 'Use the full draft command with a single draft ID.',
+    sendDraftIdOnly: 'Sending an existing draft accepts only the draft ID; to change it, update the draft first.',
+    undoWindowUnsupported: 'This Cindy version does not yet support the 10-second undo window before sending. Update Cindy before sending. The draft was kept.',
+    unknownTool: 'Not executed: unknown tool. Check the current plugin tool list again.',
+    runtimeMissing: 'Not executed: this Cindy version lacks the plugin runtime interface this feature needs. Upgrade to 0.1.92 or later. The account list still works.',
+    earlierDraftUnconfirmed: 'The outcome of an earlier draft operation is not fully confirmed. Check the actual state in the mailbox first; do not send, save or delete again.',
+    executedUnreturned: 'The mailbox operation was executed, but its result was not fully returned. Check the actual state in the mailbox first; do not send, save or delete again.',
+    outcomeUnknown: 'Could not confirm the outcome of the mailbox operation. Check the actual state in the mailbox first; do not send, save or delete again.',
+    prepareFailed: 'Could not prepare the Gmail operation. Check the account and attachment inputs.',
+  },
+  ja: {
+    inlineImagesType: 'inline-images は PNG、JPEG、GIF、WebP 画像のみ対応しています。その他のメディアは通常の添付ファイルとして追加してください。',
+    accountServiceUnreachable: 'Cindy のローカルアカウントサービスに接続できません。しばらくしてから再試行してください。失敗が続く場合は、Gmail プラグインの詳細を開き直してサービスの状態を確認してください',
+    accountServiceNoResult: 'Cindy のローカルアカウントサービスから結果が返されませんでした。しばらくしてから再試行してください',
+    accountServiceDenied: 'アカウント状態サービスがアクセスを拒否しました。Gmail プラグインの詳細で接続状態を確認してから再試行してください（HTTP {status}）',
+    accountServiceUnavailable: 'Cindy のローカルアカウントサービスは一時的に利用できません。しばらくしてから再試行してください。失敗が続く場合は、Gmail プラグインの詳細を開き直してサービスの状態を確認してください（HTTP {status}）',
+    accountDataUnparsable: 'Cindy のアカウント状態データを解析できません。Gmail プラグインの詳細を開き直してから再試行してください',
+    accountDataMalformed: 'Cindy のアカウント状態データの形式が正しくありません。Gmail プラグインの詳細を開き直してから再試行してください',
+    clientIdentityMissing: '組み込みアプリの識別情報がありません。Cindy をアップグレードしてから再試行してください',
+    accountListMalformed: 'Cindy のアカウント一覧データの形式が正しくありません。Gmail プラグインの詳細を開き直してから再試行してください',
+    noAccount: 'アカウントがまだ接続されていません。「{plugin}」の詳細ページで個別に認証してください',
+    notExecuted: '未実行：{reason}',
+    multipleAccounts: '未実行：複数のアカウントが接続されています。アカウントを明示的に選び、account に指定してください。',
+    accountNotFound: '未実行：指定したアカウントは存在しません。アカウントを選び直してください。別のアカウントに切り替えることはありません。',
+    accountReauth: '未実行：アカウント {account} の認証が期限切れか、権限が不足しています。プラグインの詳細ページでこのアカウントを再接続してください。',
+    readParseData: 'Gmail のメールデータを解析できません。ネットワーク接続を確認してからメールを開き直すか、メールボックスで確認してください。',
+    readParseBody: 'Gmail のメール本文を解析できません。メールを開き直すか、メールボックスで確認してください。',
+    readUnauthorized: 'Gmail アカウントの認証が期限切れです。プラグインの詳細ページでこのアカウントを再接続してから、メールを開き直してください。',
+    readForbidden: 'Gmail が読み取りを拒否しました。このアカウントのメール読み取り権限を確認し、プラグインの詳細ページで再接続または再認証してください。',
+    linkAccountMismatch: 'メールのリンクが指定した Gmail アカウントと一致しません。リンクに対応するアカウントを選んでから開いてください。',
+    readThreadFailed: 'Gmail のスレッドを読み込めません。ネットワーク接続を確認してから開き直してください。',
+    readMessageFailed: 'Gmail のメールを読み込めません。ネットワーク接続と、メールがまだメールボックスにあるかを確認してから開き直してください。',
+    readBodyIncomplete: 'メール本文をすべて読み込めませんでした',
+    readBodyFailed: 'メール本文をすべて読み込めませんでした。ネットワーク接続を確認してから開き直してください。',
+    readBodySizeMismatch: 'メール本文のサイズが一致しません',
+    markReadFailed: '既読にできませんでした。メールボックスの認証とメールの状態を確認してから操作してください。',
+    markReadUnknown: '既読になったか確認できません。まずメールボックスで確認し、むやみに再試行しないでください。',
+    sendRequiresDraft: 'メールは送信されていません。まず drafts create / drafts reply / drafts reply-all で下書きを作成して表示し、drafts send で送信してください。Cindy の共通メールフローでは 10 秒間の取り消し猶予があります。下書きフローを省いて直接送信しないでください。',
+    mailFlowUnsupported: 'この Cindy は共通メールフローに対応していません。Cindy を更新してから下書きを作成、編集、送信してください。',
+    draftCommandShape: '完全な下書きコマンドと、下書き ID を 1 つだけ指定してください。',
+    sendDraftIdOnly: '既存の下書きの送信では下書き ID のみ指定できます。変更する場合は先にその下書きを更新してください。',
+    undoWindowUnsupported: 'この Cindy は送信前の 10 秒間の取り消し猶予にまだ対応していません。Cindy を更新してから送信してください。下書きは保持されています。',
+    unknownTool: '未実行：不明なツールです。現在のプラグインのツール一覧を確認し直してください。',
+    runtimeMissing: '未実行：この Cindy には、この機能に必要なプラグイン実行インターフェースがありません。0.1.92 以降にアップグレードしてください。アカウント一覧は引き続き使用できます。',
+    earlierDraftUnconfirmed: '先に行った下書き操作の結果がまだ確定していません。まずメールボックスの実際の状態を確認し、送信、保存、削除を繰り返さないでください。',
+    executedUnreturned: 'メールボックスの操作は実行されましたが、結果をすべて返せませんでした。まずメールボックスの実際の状態を確認し、送信、保存、削除を繰り返さないでください。',
+    outcomeUnknown: 'メールボックス操作の結果を確認できません。まずメールボックスの実際の状態を確認し、送信、保存、削除を繰り返さないでください。',
+    prepareFailed: 'Gmail の操作を準備できません。アカウントと添付ファイルの入力を確認してください。',
+  },
+  ko: {
+    inlineImagesType: 'inline-images는 PNG, JPEG, GIF, WebP 이미지만 지원합니다. 다른 미디어는 일반 첨부 파일로 추가하세요.',
+    accountServiceUnreachable: 'Cindy 로컬 계정 서비스에 연결할 수 없습니다. 잠시 후 다시 시도하세요. 계속 실패하면 Gmail 플러그인 상세 페이지를 다시 열어 서비스 상태를 확인하세요',
+    accountServiceNoResult: 'Cindy 로컬 계정 서비스가 결과를 반환하지 않았습니다. 잠시 후 다시 시도하세요',
+    accountServiceDenied: '계정 상태 서비스가 접근을 거부했습니다. Gmail 플러그인 상세 페이지에서 연결 상태를 확인한 후 다시 시도하세요 (HTTP {status})',
+    accountServiceUnavailable: 'Cindy 로컬 계정 서비스를 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도하세요. 계속 실패하면 Gmail 플러그인 상세 페이지를 다시 열어 서비스 상태를 확인하세요 (HTTP {status})',
+    accountDataUnparsable: 'Cindy 계정 상태 데이터를 해석할 수 없습니다. Gmail 플러그인 상세 페이지를 다시 연 후 다시 시도하세요',
+    accountDataMalformed: 'Cindy 계정 상태 데이터 형식이 올바르지 않습니다. Gmail 플러그인 상세 페이지를 다시 연 후 다시 시도하세요',
+    clientIdentityMissing: '내장 앱 식별 정보가 없습니다. Cindy를 업그레이드한 후 다시 시도하세요',
+    accountListMalformed: 'Cindy 계정 목록 데이터 형식이 올바르지 않습니다. Gmail 플러그인 상세 페이지를 다시 연 후 다시 시도하세요',
+    noAccount: '아직 연결된 계정이 없습니다. "{plugin}" 상세 페이지에서 별도로 승인하세요',
+    notExecuted: '실행되지 않음: {reason}',
+    multipleAccounts: '실행되지 않음: 여러 계정이 연결되어 있습니다. 계정을 명시적으로 선택해 account로 전달하세요.',
+    accountNotFound: '실행되지 않음: 지정한 계정이 없습니다. 계정을 다시 선택하세요. 다른 계정으로 전환하지 않습니다.',
+    accountReauth: '실행되지 않음: 계정 {account}의 인증이 만료되었거나 권한이 부족합니다. 플러그인 상세 페이지에서 이 계정을 다시 연결하세요.',
+    readParseData: 'Gmail 메일 데이터를 해석할 수 없습니다. 네트워크 연결을 확인한 후 메일을 다시 열거나 메일함에서 확인하세요.',
+    readParseBody: 'Gmail 메일 본문을 해석할 수 없습니다. 메일을 다시 열거나 메일함에서 확인하세요.',
+    readUnauthorized: 'Gmail 계정 인증이 만료되었습니다. 플러그인 상세 페이지에서 이 계정을 다시 연결한 후 메일을 다시 여세요.',
+    readForbidden: 'Gmail이 읽기를 거부했습니다. 이 계정의 메일 읽기 권한을 확인하고 플러그인 상세 페이지에서 다시 연결하거나 다시 승인하세요.',
+    linkAccountMismatch: '메일 링크가 지정한 Gmail 계정과 일치하지 않습니다. 링크에 해당하는 계정을 선택한 후 다시 여세요.',
+    readThreadFailed: 'Gmail 대화를 읽을 수 없습니다. 네트워크 연결을 확인한 후 다시 여세요.',
+    readMessageFailed: 'Gmail 메일을 읽을 수 없습니다. 네트워크 연결과 메일이 아직 메일함에 있는지 확인한 후 다시 여세요.',
+    readBodyIncomplete: '메일 본문 전체를 읽을 수 없습니다',
+    readBodyFailed: '메일 본문 전체를 읽을 수 없습니다. 네트워크 연결을 확인한 후 다시 여세요.',
+    readBodySizeMismatch: '메일 본문 크기가 일치하지 않습니다',
+    markReadFailed: '읽음으로 표시하지 못했습니다. 메일함 인증과 메일 상태를 확인한 후 다시 시도하세요.',
+    markReadUnknown: '읽음 상태를 확인할 수 없습니다. 먼저 메일함에서 확인하고, 무작정 다시 시도하지 마세요.',
+    sendRequiresDraft: '메일이 전송되지 않았습니다. 먼저 drafts create / drafts reply / drafts reply-all로 초안을 만들어 표시한 후 drafts send로 전송하세요. Cindy 공통 메일 흐름은 10초 실행 취소 시간을 제공합니다. 초안 흐름을 건너뛰고 바로 전송하지 마세요.',
+    mailFlowUnsupported: '현재 Cindy는 공통 메일 흐름을 지원하지 않습니다. Cindy를 업데이트한 후 초안을 만들거나 편집하거나 전송하세요.',
+    draftCommandShape: '완전한 초안 명령과 초안 ID 하나를 사용하세요.',
+    sendDraftIdOnly: '기존 초안 전송에는 초안 ID만 사용할 수 있습니다. 수정하려면 먼저 해당 초안을 업데이트하세요.',
+    undoWindowUnsupported: '현재 Cindy는 전송 전 10초 실행 취소 시간을 아직 지원하지 않습니다. Cindy를 업데이트한 후 전송하세요. 초안은 그대로 유지됩니다.',
+    unknownTool: '실행되지 않음: 알 수 없는 도구입니다. 현재 플러그인 도구 목록을 다시 확인하세요.',
+    runtimeMissing: '실행되지 않음: 현재 Cindy에는 이 기능에 필요한 플러그인 실행 인터페이스가 없습니다. 0.1.92 이상으로 업그레이드하세요. 계정 목록은 계속 사용할 수 있습니다.',
+    earlierDraftUnconfirmed: '이전 초안 작업 결과가 아직 완전히 확인되지 않았습니다. 먼저 메일함의 실제 상태를 확인하고, 전송, 저장 또는 삭제를 반복하지 마세요.',
+    executedUnreturned: '메일함 작업은 실행되었지만 결과가 완전히 반환되지 않았습니다. 먼저 메일함의 실제 상태를 확인하고, 전송, 저장 또는 삭제를 반복하지 마세요.',
+    outcomeUnknown: '메일함 작업 결과를 확인할 수 없습니다. 먼저 메일함의 실제 상태를 확인하고, 전송, 저장 또는 삭제를 반복하지 마세요.',
+    prepareFailed: 'Gmail 작업을 준비할 수 없습니다. 계정과 첨부 파일 입력을 확인하세요.',
+  },
+};
+var hasOwn = Object.prototype.hasOwnProperty;
+// null until the Host answers; English is used meanwhile and the next call asks again.
+var hostLocale = null;
+var localeRequest = null;
+function supportedLocale(value) {
+  return typeof value === 'string' && hasOwn.call(MESSAGES, value) ? value : 'en';
+}
+function currentLocale() { return hostLocale || 'en'; }
+function t(key, values) {
+  var table = MESSAGES[currentLocale()];
+  var template = hasOwn.call(table, key) ? table[key] : MESSAGES.en[key];
+  if (!values) return template;
+  return template.replace(/\{(\w+)\}/g, function (all, name) { return hasOwn.call(values, name) ? String(values[name]) : all; });
+}
+async function requestHostLocale() {
+  if (typeof cindy === 'undefined' || typeof cindy.request !== 'function') return null;
+  var timer = null;
+  try {
+    // An unanswered Host must not hold up mail work: after 3 s use English and
+    // ask again on the next call.
+    var reply = await Promise.race([
+      cindy.request({ kind: 'app-context' }),
+      new Promise(function (resolve) { timer = setTimeout(function () { resolve(null); }, 3000); }),
+    ]);
+    var locale = reply && reply.ok && reply.context && reply.context.locale;
+    return typeof locale === 'string' ? supportedLocale(locale) : null;
+  } catch (_) {
+    return null;
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+  }
+}
+// Concurrent tool calls and mail card callbacks share one request. A success is
+// cached; host-context-changed keeps it current afterwards.
+function ensureLocale() {
+  if (hostLocale) return Promise.resolve(hostLocale);
+  if (!localeRequest) {
+    localeRequest = requestHostLocale().then(function (locale) {
+      localeRequest = null;
+      // A host-context-changed that arrived meanwhile is newer; keep it.
+      if (!hostLocale && locale) hostLocale = locale;
+      return currentLocale();
+    });
+  }
+  return localeRequest;
+}
 // Host grants contain hashes, not filesystem paths. Read only those grants
 // through the plugin media protocol, then use the existing workdir file bridge.
 async function prepareMailAttachments(args, callId) {
@@ -138,37 +344,39 @@ async function prepareMailAttachments(args, callId) {
   var embedded = (inline || []).map(function (hash) { return files.find(function (file) { return file.hash === hash; }); });
   if (embedded.some(function (file) { return !file; })) throw new Error('Every inline image must also be a granted chat attachment.');
   if (embedded.some(function (file) { return !/\.(png|jpe?g|gif|webp)$/i.test(file.path); }))
-    throw new Error('inline-images 仅支持 PNG、JPEG、GIF 或 WebP 图片；其他媒体请作为普通附件。');
+    throw new Error(t('inlineImagesType'));
   var regular = files.filter(function (file) { return !inlineSet.has(file.hash); });
   options.attach = inputs.filter(function (item) { return !refs.includes(item); }).concat(regular.map(function (file) { return file.path; }));
   delete options['inline-images'];
   return { options: options, files: files, inline: embedded };
 }
 async function listAccounts() {
+  // Mail card callbacks reach account selection without a tool call first.
+  await ensureLocale();
   var response;
   try {
     response = await fetch('/oauth');
   } catch (_transportError) {
-    return fail('无法连接 Cindy 本地账号服务，请稍后重试；若持续失败，请重新打开 Gmail 插件详情检查服务状态');
+    return fail(t('accountServiceUnreachable'));
   }
-  if (!response) return fail('Cindy 本地账号服务未返回结果，请稍后重试');
+  if (!response) return fail(t('accountServiceNoResult'));
   if (!response.ok) {
-    if (response.status === 401 || response.status === 403) return fail('账号状态服务拒绝访问，请到 Gmail 插件详情检查连接状态后重试（HTTP ' + response.status + '）');
-    return fail('Cindy 本地账号服务暂时不可用，请稍后重试；若持续失败，请重新打开 Gmail 插件详情检查服务状态（HTTP ' + response.status + '）');
+    if (response.status === 401 || response.status === 403) return fail(t('accountServiceDenied', { status: response.status }));
+    return fail(t('accountServiceUnavailable', { status: response.status }));
   }
   var entries;
   try {
     entries = await response.json();
   } catch (_parseError) {
-    return fail('Cindy 账号状态数据无法解析，请重新打开 Gmail 插件详情后重试');
+    return fail(t('accountDataUnparsable'));
   }
-  if (!Array.isArray(entries)) return fail('Cindy 账号状态数据格式异常，请重新打开 Gmail 插件详情后重试');
+  if (!Array.isArray(entries)) return fail(t('accountDataMalformed'));
   var entry = entries.find(function (item) { return item && item.key === SECRET_KEY; });
-  if (!entry || !entry.clientConfigured) return fail('内置应用身份缺失，请升级 Cindy 后重试');
+  if (!entry || !entry.clientConfigured) return fail(t('clientIdentityMissing'));
   if (!Array.isArray(entry.accounts) || entry.accounts.some(function (account) { return !account || typeof account.id !== 'string' || !account.id; })) {
-    return fail('Cindy 账号列表数据格式异常，请重新打开 Gmail 插件详情后重试');
+    return fail(t('accountListMalformed'));
   }
-  if (!entry.accounts.length) return fail('尚未连接账号，请到「' + PLUGIN_NAME + '」详情页单独授权');
+  if (!entry.accounts.length) return fail(t('noAccount', { plugin: PLUGIN_NAME }));
   return { ok: true, result: {
     accounts: (await googleAccountMetadata.list(SECRET_KEY, entry.accounts)).map(function (account) {
       return { id: account.id, email: account.label, nickname: account.nickname || '',
@@ -178,17 +386,17 @@ async function listAccounts() {
 }
 async function selectGoogleAccount(accountId) {
   var listed = await listAccounts();
-  if (!listed.ok) return fail('尚未执行：' + listed.message);
+  if (!listed.ok) return fail(t('notExecuted', { reason: listed.message }));
   var accounts = listed.result.accounts;
   if (accountId === undefined && accounts.length !== 1) {
-    return fail('尚未执行：已连接多个账号，请明确选择账号并传入 account。');
+    return fail(t('multipleAccounts'));
   }
   var account = accountId === undefined ? accounts[0] : accounts.find(function (item) { return item.id === accountId; });
-  if (!account) return fail('尚未执行：指定账号不存在，请重新选择账号；不会切换到其他账号。');
+  if (!account) return fail(t('accountNotFound'));
   // Newly added scopes are a non-blocking hint: existing read/compose grants
   // remain usable. Let the requested endpoint report its actual missing scope.
   if (account.status !== 'connected') {
-    return fail('尚未执行：账号 ' + (account.email || account.id) + ' 授权已失效或权限不足，请到插件详情页重新连接此账号。');
+    return fail(t('accountReauth', { account: account.email || account.id }));
   }
   return { ok: true, accountId: account.id, accountEmail: account.email };
 }
@@ -234,21 +442,24 @@ var gmailCompose = typeof cindyMail !== 'undefined' && cindyMail.version === 1 ?
   providerName: 'Gmail', draftStorage: 'server', storageLock: 'google-account-metadata', richText: true,
   selectAccount: selectGoogleAccount,
   async deleteDraft({ record }) {
+    await ensureLocale();
     var response = await cindy.node.request({ method: 'run', authAccount: record.account,
-      params: { command: ['drafts', 'delete'], arguments: [record.draftId], options: {}, readOnly: false }, timeoutMs: 120000 });
+      params: { command: ['drafts', 'delete'], arguments: [record.draftId], options: {}, readOnly: false, locale: currentLocale() }, timeoutMs: 120000 });
     var result = response && response.ok && response.result;
     return result?.ok ? { ...result, data: { deleted: true, draftId: record.draftId } } : result;
   },
   async readDraft({ record }) {
+    await ensureLocale();
     var response = await cindy.node.request({ method: 'run', authAccount: record.account,
-      params: { command: ['drafts', 'get'], arguments: [record.draftId], options: {}, readOnly: true }, timeoutMs: 120000 });
+      params: { command: ['drafts', 'get'], arguments: [record.draftId], options: {}, readOnly: true, locale: currentLocale() }, timeoutMs: 120000 });
     var result = response && response.ok && response.result;
     if (result?.ok && result.data?.readBack) result.data.readBack = await mailImagePreviews(result.data.readBack, record.account);
     return result;
   },
   async writeDraft({ record, account, fields, send, attachments, readBack }) {
+    await ensureLocale();
     var response = await cindy.node.request({ method: 'compose', authAccount: record.account,
-      params: { draftId: record.draftId, fingerprint: record.fingerprint, accountEmail: account.accountEmail, fields, send, attachments }, timeoutMs: 120000 });
+      params: { draftId: record.draftId, fingerprint: record.fingerprint, accountEmail: account.accountEmail, fields, send, attachments, locale: currentLocale() }, timeoutMs: 120000 });
     var result = response && response.ok && response.result;
     if (result?.ok && result.data?.readBack) result.data.readBack = await mailImagePreviews(result.data.readBack, record.account, readBack);
     if (result && result.ok && result.data && result.data.sent) {
@@ -266,16 +477,16 @@ function parseMailReadJson(body) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error();
     return value;
   } catch (_) {
-    throw new Error('无法解析 Gmail 邮件数据，请检查网络连接后重新打开邮件，或在邮箱中查看。');
+    throw new Error(t('readParseData'));
   }
 }
 function decodeMailReadBytes(data) {
   try { return atob(data.replace(/-/g, '+').replace(/_/g, '/')); }
-  catch (_) { throw new Error('无法解析 Gmail 邮件正文，请重新打开邮件，或在邮箱中查看。'); }
+  catch (_) { throw new Error(t('readParseBody')); }
 }
 function assertMailReadResponse(response, fallback) {
-  if (response.status === 401) throw new Error('Gmail 账号授权已失效，请到插件详情页重新连接此账号后再打开邮件。');
-  if (response.status === 403) throw new Error('Gmail 拒绝读取，请检查此账号的邮件读取权限，并到插件详情页重新连接或授权。');
+  if (response.status === 401) throw new Error(t('readUnauthorized'));
+  if (response.status === 403) throw new Error(t('readForbidden'));
   if (!response.ok || response.status !== 200 || response.truncated) throw new Error(fallback);
 }
 async function readMailMessageLink(args, beginOperation) {
@@ -293,7 +504,7 @@ async function readMailMessageLink(args, beginOperation) {
     var matches = listed.result.accounts.filter(function (a) { return a.email.toLowerCase() === email.toLowerCase(); });
     if (matches.length !== 1) throw new Error('The Gmail account in this link is not connected.');
     if (accountId !== undefined && accountId !== matches[0].id)
-      throw new Error('邮件链接与指定的 Gmail 账号不一致，请选择链接对应的账号后再打开。');
+      throw new Error(t('linkAccountMismatch'));
     accountId = matches[0].id;
   }
   var selected = await selectGoogleAccount(accountId);
@@ -304,7 +515,7 @@ async function readMailMessageLink(args, beginOperation) {
   // mistaking an authentication/network failure for a missing message.
   if (response.status === 404 && !url.searchParams.has('permmsgid')) {
     var threadResponse = await cindy.fetch({ url: 'https://gmail.googleapis.com/gmail/v1/users/me/threads/' + encodeURIComponent(id) + '?format=metadata', authAccount: selected.accountId, timeoutMs: 20000 });
-    assertMailReadResponse(threadResponse, '无法读取 Gmail 会话，请检查网络连接后重新打开。');
+    assertMailReadResponse(threadResponse, t('readThreadFailed'));
     var thread = parseMailReadJson(threadResponse.body);
     var latest = (Array.isArray(thread.messages) ? thread.messages : []).filter(function (m) {
       return /^[a-f0-9]{8,32}$/i.test(m.id || '') && !(m.labelIds || []).includes('DRAFT');
@@ -312,7 +523,7 @@ async function readMailMessageLink(args, beginOperation) {
     if (!latest || latest.id === id) throw new Error('No readable message remains in this Gmail conversation.');
     response = await cindy.fetch({ url: 'https://gmail.googleapis.com/gmail/v1/users/me/messages/' + encodeURIComponent(latest.id) + '?format=full', authAccount: selected.accountId, timeoutMs: 20000 });
   }
-  assertMailReadResponse(response, '无法读取 Gmail 邮件，请检查网络连接和邮件是否仍在邮箱中后重新打开。');
+  assertMailReadResponse(response, t('readMessageFailed'));
   var message = parseMailReadJson(response.body);
   if (!/^[a-f0-9]{8,32}$/i.test(message.id || '') || !message.payload) throw new Error('Incomplete Gmail message');
   var conversation, conversationUnavailable = false;
@@ -345,7 +556,7 @@ async function readMailMessageLink(args, beginOperation) {
     try { decoder = new TextDecoder(match && (match[1] || match[2] || match[3]) || 'utf-8'); }
     catch (_) { decoder = new TextDecoder('utf-8'); }
     try { return decoder.decode(Uint8Array.from(decodeMailReadBytes(part.body.data), function (c) { return c.charCodeAt(0); })); }
-    catch (_) { throw new Error('无法解析 Gmail 邮件正文，请重新打开邮件，或在邮箱中查看。'); }
+    catch (_) { throw new Error(t('readParseBody')); }
   }
   var bodies = { 'text/plain': [], 'text/html': [] }, attachments = [];
   var bodyBytes = 0;
@@ -362,17 +573,17 @@ async function readMailMessageLink(args, beginOperation) {
     }
     if (bodies[part.mimeType]) {
       if (body.attachmentId && !body.data) {
-        if (!Number.isSafeInteger(body.size) || body.size < 0 || bodyBytes + body.size > 25 * 1024 * 1024) throw new Error('无法完整读取邮件正文');
+        if (!Number.isSafeInteger(body.size) || body.size < 0 || bodyBytes + body.size > 25 * 1024 * 1024) throw new Error(t('readBodyIncomplete'));
         var loaded = await cindy.fetch({ url: 'https://gmail.googleapis.com/gmail/v1/users/me/messages/' + encodeURIComponent(message.id) + '/attachments/' + encodeURIComponent(body.attachmentId),
           authAccount: selected.accountId, timeoutMs: 20000 });
-        assertMailReadResponse(loaded, '无法完整读取邮件正文，请检查网络连接后重新打开。');
+        assertMailReadResponse(loaded, t('readBodyFailed'));
         var content = parseMailReadJson(loaded.body);
         if (typeof content.data !== 'string' || !/^[A-Za-z0-9_-]*={0,2}$/.test(content.data) || content.size !== body.size
-          || decodeMailReadBytes(content.data).length !== body.size) throw new Error('邮件正文大小不一致');
+          || decodeMailReadBytes(content.data).length !== body.size) throw new Error(t('readBodySizeMismatch'));
         bodyBytes += body.size;
         body.data = content.data;
       }
-      if (body.size > 0 && !body.data) throw new Error('无法完整读取邮件正文');
+      if (body.size > 0 && !body.data) throw new Error(t('readBodyIncomplete'));
       if (typeof body.data === 'string') bodies[part.mimeType].push(decode(part));
     }
     for (var child of part.parts || []) await walk(child);
@@ -390,9 +601,9 @@ async function readMailMessageLink(args, beginOperation) {
       // A rejection is definite; a transport/server error may follow a write.
       if (marked.ok && marked.status === 200) markReadResult = { execution: 'executed' };
       else if ([400, 401, 403, 404, 405, 413, 415, 422, 429].includes(marked.status))
-        markReadResult = { execution: 'not_executed', message: '未能标记已读，请检查邮箱授权和邮件状态后再操作。' };
-      else markReadResult = { execution: 'unknown', message: '无法确认已读状态，请先在邮箱中核对，不要盲目重试。' };
-    } catch (_) { markReadResult = { execution: 'unknown', message: '无法确认已读状态，请先在邮箱中核对，不要盲目重试。' }; }
+        markReadResult = { execution: 'not_executed', message: t('markReadFailed') };
+      else markReadResult = { execution: 'unknown', message: t('markReadUnknown') };
+    } catch (_) { markReadResult = { execution: 'unknown', message: t('markReadUnknown') }; }
     finishMarkRead?.(markReadResult.execution);
   }
   return { accountId: selected.accountId, messageId: message.id, from: header(message.payload, 'from'),
@@ -407,15 +618,15 @@ async function readMailMessageLink(args, beginOperation) {
 }
 async function mailToolDraft(args, sourceCallId, beginOperation) {
   if (Array.isArray(args.command) && args.command.length === 1 && ['send', 'reply', 'reply-all'].includes(args.command[0]))
-    return { ok: false, execution: 'not_executed', message: '邮件未发送。请先用 drafts create / drafts reply / drafts reply-all 创建并展示草稿，再用 drafts send 发送；Cindy 公共流程会提供 10 秒撤销窗口。不要绕过草稿流程直接发送。' };
+    return { ok: false, execution: 'not_executed', message: t('sendRequiresDraft') };
   if (!Array.isArray(args.command) || args.command[0] !== 'drafts' || !['get', 'create', 'reply', 'reply-all', 'forward', 'send', 'update', 'delete'].includes(args.command[1])) return null;
-  if (!gmailCompose) return args.command[1] === 'get' ? null : { ok: false, execution: 'not_executed', message: '当前 Cindy 不支持公共邮件流程，请更新 Cindy 后再创建、编辑或发送草稿。' };
+  if (!gmailCompose) return args.command[1] === 'get' ? null : { ok: false, execution: 'not_executed', message: t('mailFlowUnsupported') };
   if (!['get', 'send', 'update', 'delete'].includes(args.command[1])) return null;
-  if (args.command.length !== 2 || (args.arguments || []).length !== 1) return { ok: false, execution: 'not_executed', message: '请使用完整的草稿命令和单个草稿 ID。' };
+  if (args.command.length !== 2 || (args.arguments || []).length !== 1) return { ok: false, execution: 'not_executed', message: t('draftCommandShape') };
   if (args.command[1] === 'send' && (Object.keys(args.options || {}).length || (args.attachments || []).length))
-    return { ok: false, execution: 'not_executed', message: '发送现有草稿只接受草稿 ID；修改请先更新该草稿。' };
+    return { ok: false, execution: 'not_executed', message: t('sendDraftIdOnly') };
   if (args.command[1] === 'send' && cindyMail.sendGraceMs !== 10000)
-    return { ok: false, execution: 'not_executed', message: '当前 Cindy 尚不支持发送前的 10 秒撤销窗口，请更新 Cindy 后再发送。草稿已保留。' };
+    return { ok: false, execution: 'not_executed', message: t('undoWindowUnsupported') };
   // An unregistered draft has no card edits to flush. Use the existing Host
   // lookup to bypass beforeTool for these reads/updates/deletes; ordinary worker
   // failures must retain their actionable not_executed result. Send still goes
@@ -433,7 +644,12 @@ async function mailToolDraft(args, sourceCallId, beginOperation) {
 (function () {
   var PREFIX = 'gmail';
   cindy.onHostMessage(async function (message) {
+    if (message && message.type === 'host-context-changed') {
+      hostLocale = supportedLocale(message.context && message.context.locale);
+      return;
+    }
     if (!message || message.type !== 'tool-call') return;
+    await ensureLocale();
     var args = message.args || {};
     var isSchema = message.tool === PREFIX + '_schema';
     var context = args.session_context;
@@ -462,12 +678,12 @@ async function mailToolDraft(args, sourceCallId, beginOperation) {
       }
       if (message.tool !== PREFIX + '_schema' && message.tool !== PREFIX + '_run') {
         await cindy.send({ type: 'tool-result', callId: message.callId, ok: false,
-          message: '尚未执行：未知工具，请重新查看当前插件工具列表。' });
+          message: t('unknownTool') });
         return;
       }
       if (!cindy.node || typeof cindy.node.request !== 'function' || (!isSchema && !context)) {
         await cindy.send({ type: 'tool-result', callId: message.callId, ok: false,
-          message: '尚未执行：当前 Cindy 缺少此功能所需的插件运行接口，请升级至 0.1.92 或更新版本。账号列表仍可使用。' });
+          message: t('runtimeMissing') });
         return;
       }
       if (!isSchema) {
@@ -499,6 +715,7 @@ async function mailToolDraft(args, sourceCallId, beginOperation) {
           accountEmail: !isSchema ? selected.accountEmail : undefined,
           workdir: context && context.workdir_is_local === true ? context.workdir : undefined,
           readOnly: !context || context.workdir_is_read_only !== false,
+          locale: currentLocale(),
         },
         timeoutMs: 120000,
       });
@@ -523,12 +740,12 @@ async function mailToolDraft(args, sourceCallId, beginOperation) {
       }
       await cindy.send({ type: 'tool-result', callId: message.callId, ok: !!result.ok,
         ...(result.ok ? { result: result.data } : { message: '[' + execution + '] ' + (execution === result.execution
-          ? result.message : '此前的草稿操作结果尚未完全确认，请先核对邮箱中的实际状态，不要重复发送、保存或删除。') }) });
+          ? result.message : t('earlierDraftUnconfirmed')) }) });
     } catch (error) {
       await cindy.send({ type: 'tool-result', callId: message.callId, ok: false,
-        message: execution === 'executed' ? '[executed] 邮箱操作已执行，但结果未能完整返回。请先核对邮箱中的实际状态，不要重复发送、保存或删除。'
-          : execution === 'unknown' ? '[unknown] 无法确认邮箱操作结果，请先核对邮箱中的实际状态，不要重复发送、保存或删除。'
-          : '[not_executed] ' + (error.message || '无法准备 Gmail 操作，请检查账号和附件输入。') });
+        message: execution === 'executed' ? '[executed] ' + t('executedUnreturned')
+          : execution === 'unknown' ? '[unknown] ' + t('outcomeUnknown')
+          : '[not_executed] ' + (error.message || t('prepareFailed')) });
     }
   });
 })();
