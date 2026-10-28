@@ -292,6 +292,126 @@ test('a card callback outside a tool call still does its own single locale looku
   assert.deepEqual(timers, [3000]);
 });
 
+// Loads the mail SDK with main.js so card actions reach the real draft adapter.
+// app-context replies and timers are driven by the test.
+function cardHarness() {
+  const appContext = [], requests = [], timers = [], handlers = [];
+  let kv = {}, runReply = null;
+  const readBack = { status: 'read_back', draftId: 'draft-test', fingerprint: 'f'.repeat(64), locator: 'draft-test',
+    headers: { from: 'work@example.test', to: 'to@example.test', cc: '', bcc: '', subject: 'Hello' },
+    editor: { editable: true, format: 'text', body: 'Hi', quote: '' }, attachments: [] };
+  const sandbox = createContext({ crypto: globalThis.crypto, Map, Set, Promise, JSON,
+    setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; }, clearTimeout: id => { if (timers[id - 1]) timers[id - 1].fn = null; },
+    navigator: { locks: { request: (_name, action) => action() } },
+    fetch: async (url, init = {}) => {
+      if (url === '/oauth') return { ok: true, json: async () => [{ key: 'gmail_account', clientConfigured: true,
+        accounts: [{ id: 'acc-work', label: 'work@example.test', status: 'connected' }] }] };
+      if (url === '/kv') { if (init.method === 'PUT') kv = JSON.parse(init.body); return { ok: true, json: async () => copy(kv) }; }
+      if (url === '/app-context') return { ok: true, json: async () => ({ context: { locale: 'en' } }) };
+      throw new Error('unexpected fetch ' + url);
+    },
+    cindy: {
+      onHostMessage: fn => { handlers.push(fn); },
+      send: async () => ({ ok: true }),
+      request: message => {
+        assert.deepEqual(copy(message), { kind: 'app-context' });
+        return new Promise(resolve => appContext.push(resolve));
+      },
+      node: { request: async request => {
+        requests.push(copy(request));
+        if (request.method === 'compose') return { ok: true, result: { ok: true, execution: 'executed', data: { draftId: 'draft-test', readBack: copy(readBack) } } };
+        if (request.params.command[0] === 'search' && runReply) return runReply;
+        return { ok: true, result: { ok: true, execution: 'executed', data: { draftId: 'draft-test', readBack: copy(readBack) } } };
+      } },
+    },
+  });
+  runInContext(readFileSync(new URL('./contracts/cindy-mail-runtime.js', import.meta.url), 'utf8'), sandbox);
+  runInContext(mainSource, sandbox);
+  const dispatch = async message => { for (const handle of handlers) await handle(message); };
+  const session = { workdir: '/work', workdir_is_local: true, workdir_is_read_only: false };
+  // Fires the pending timers with this delay, e.g. the 3 s locale fallback.
+  const fire = async ms => {
+    for (const timer of timers) if (timer.ms === ms && timer.fn) { const fn = timer.fn; timer.fn = null; await fn(); }
+  };
+  return { appContext, requests, fire, session, waits: () => timers.filter(timer => timer.ms === 3000).map(timer => timer.ms),
+    holdSearch: reply => { runReply = reply; },
+    tool: (callId, args) => dispatch({ type: 'tool-call', tool: 'gmail_run', callId, args: { session_context: session, ...args } }),
+    // A draft card shown while the Host never answered, so no locale is known yet.
+    async showCard() {
+      const shown = this.tool('call-card', { command: ['drafts', 'get'], arguments: ['draft-test'] });
+      await flush();
+      await fire(3000);
+      await shown;
+      const key = Object.keys(kv.mailDraftCards)[0];
+      assert.ok(key);
+      return key;
+    },
+    // Editing the card, then the 1.1 s autosave that writes the draft.
+    async editCard(key, { autosave = true } = {}) {
+      await dispatch({ type: 'event', name: 'card-action', callId: 'call-card', actionId: 'mail:change:' + key, formChange: true,
+        formValues: { to: 'to@example.test', cc: '', bcc: '', subject: 'Hello', body: 'Edited' } });
+      if (!autosave) return;
+      const saving = fire(1100);
+      await flush();
+      return saving;
+    },
+    composeLocales: () => requests.filter(request => request.method === 'compose').map(request => request.params.locale),
+  };
+}
+
+test('a card autosave during a tool call\'s pending lookup waits for that same reply', async () => {
+  const f = cardHarness();
+  const key = await f.showCard();
+  assert.equal(f.appContext.length, 1);
+  const search = f.tool('call-search', { command: ['search'], arguments: ['in:inbox'] });
+  await flush();
+  assert.equal(f.appContext.length, 2, 'the tool call is waiting for the Host');
+  const saving = f.editCard(key);
+  await flush();
+  assert.equal(f.appContext.length, 2, 'the card joins the pending lookup instead of asking again');
+  assert.deepEqual(f.composeLocales(), [], 'no draft write before the Host answers');
+  f.appContext[1]({ ok: true, context: { locale: 'ja' } });
+  await Promise.all([saving, search]);
+  assert.deepEqual(f.composeLocales(), ['ja']);
+  assert.equal(f.requests.find(request => request.params.command?.[0] === 'search').params.locale, 'ja');
+});
+
+test('a card autosave after a timed-out lookup asks the Host itself while a tool call is still running', async () => {
+  const f = cardHarness();
+  const key = await f.showCard();
+  let releaseSearch;
+  f.holdSearch(new Promise(resolve => { releaseSearch = resolve; }));
+  const search = f.tool('call-search', { command: ['search'], arguments: ['in:inbox'] });
+  await flush();
+  await f.fire(3000);
+  await flush();
+  const searchRequest = f.requests.find(request => request.params.command?.[0] === 'search');
+  assert.equal(searchRequest.params.locale, 'en', 'the tool call fell back to English after its one wait');
+  const saving = f.editCard(key);
+  await flush();
+  assert.equal(f.appContext.length, 3, 'the card does its own lookup');
+  f.appContext[2]({ ok: true, context: { locale: 'ja' } });
+  await saving;
+  assert.deepEqual(f.composeLocales(), ['ja']);
+  releaseSearch({ ok: true, result: { ok: true, execution: 'executed', data: {} } });
+  await search;
+});
+
+test('draft callbacks made for a tool call reuse its single wait', async () => {
+  const f = cardHarness();
+  const key = await f.showCard();
+  // An unsaved card edit makes drafts update write through the mail SDK.
+  await f.editCard(key, { autosave: false });
+  const update = f.tool('call-update', { command: ['drafts', 'update'], arguments: ['draft-test'], options: {} });
+  await flush();
+  assert.equal(f.appContext.length, 2);
+  await f.fire(3000);
+  await update;
+  assert.equal(f.appContext.length, 2, 'selectAccount and writeDraft do not ask again');
+  assert.deepEqual(f.waits(), [3000, 3000], 'one 3 s wait for the card and one for the tool call');
+  assert.deepEqual(f.composeLocales(), ['en']);
+});
+
 function workerContext() {
   const ctx = createContext({ Buffer, __dirname: '/fixture', process: { env: {}, on() {} },
     require: name => name === '../vendor/gog/binaries.json' ? {} : name === './mailMime.cjs' ? require('../google-gmail/node/mailMime.cjs') : require(name) });

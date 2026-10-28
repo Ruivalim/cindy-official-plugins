@@ -272,16 +272,23 @@ function lookupLocale() {
   }
   return localeRequest;
 }
-// Tool calls in flight. Each one waits for the Host locale once, on entry.
-var activeToolCalls = 0;
-// For helpers and mail card callbacks. During a tool call the entry lookup has
-// already settled, so reuse its outcome (English after a timeout) instead of
-// waiting again; a pending lookup then belongs to another call. A card-only
-// callback does its own lookup. Either way the next operation asks again.
-function ensureLocale() {
+// One operation (a tool call, or a mail card callback that writes, reads or
+// deletes a draft) waits for the Host locale at most once. Later helpers of the
+// same operation reuse that outcome (English after a timeout); other operations
+// keep their own budget, and join a lookup that is still pending instead of
+// sending a second request.
+function localeOperation() { return { waited: false }; }
+function ensureLocale(operation) {
   if (hostLocale) return Promise.resolve(hostLocale);
-  if (activeToolCalls > 0) return Promise.resolve(currentLocale());
+  if (operation.waited) return Promise.resolve(currentLocale());
+  operation.waited = true;
   return lookupLocale();
+}
+// Tool calls in flight, by callId. The mail SDK passes the originating callId
+// as sourceCallId to draft callbacks made on behalf of a tool call.
+var toolOperations = new Map();
+function draftOperation(sourceCallId) {
+  return (sourceCallId && toolOperations.get(sourceCallId)) || localeOperation();
 }
 // Host grants contain hashes, not filesystem paths. Read only those grants
 // through the plugin media protocol, then use the existing workdir file bridge.
@@ -361,9 +368,8 @@ async function prepareMailAttachments(args, callId) {
   delete options['inline-images'];
   return { options: options, files: files, inline: embedded };
 }
-async function listAccounts() {
-  // Mail card callbacks reach account selection without a tool call first.
-  await ensureLocale();
+async function listAccounts(operation) {
+  await ensureLocale(operation || localeOperation());
   var response;
   try {
     response = await fetch('/oauth');
@@ -395,8 +401,8 @@ async function listAccounts() {
     }),
   } };
 }
-async function selectGoogleAccount(accountId) {
-  var listed = await listAccounts();
+async function selectGoogleAccount(accountId, operation) {
+  var listed = await listAccounts(operation);
   if (!listed.ok) return fail(t('notExecuted', { reason: listed.message }));
   var accounts = listed.result.accounts;
   if (accountId === undefined && accounts.length !== 1) {
@@ -451,24 +457,26 @@ async function mailImagePreviews(readBack, accountId, previous) {
 }
 var gmailCompose = typeof cindyMail !== 'undefined' && cindyMail.version === 1 ? cindyMail.register({
   providerName: 'Gmail', draftStorage: 'server', storageLock: 'google-account-metadata', richText: true,
-  selectAccount: selectGoogleAccount,
-  async deleteDraft({ record }) {
-    await ensureLocale();
+  // The SDK calls this without a callId, ahead of the draft callback that does
+  // the operation's lookup, so it never waits: it uses the locale known so far.
+  selectAccount: function (accountId) { return selectGoogleAccount(accountId, { waited: true }); },
+  async deleteDraft({ record, sourceCallId }) {
+    await ensureLocale(draftOperation(sourceCallId));
     var response = await cindy.node.request({ method: 'run', authAccount: record.account,
       params: { command: ['drafts', 'delete'], arguments: [record.draftId], options: {}, readOnly: false, locale: currentLocale() }, timeoutMs: 120000 });
     var result = response && response.ok && response.result;
     return result?.ok ? { ...result, data: { deleted: true, draftId: record.draftId } } : result;
   },
-  async readDraft({ record }) {
-    await ensureLocale();
+  async readDraft({ record, sourceCallId }) {
+    await ensureLocale(draftOperation(sourceCallId));
     var response = await cindy.node.request({ method: 'run', authAccount: record.account,
       params: { command: ['drafts', 'get'], arguments: [record.draftId], options: {}, readOnly: true, locale: currentLocale() }, timeoutMs: 120000 });
     var result = response && response.ok && response.result;
     if (result?.ok && result.data?.readBack) result.data.readBack = await mailImagePreviews(result.data.readBack, record.account);
     return result;
   },
-  async writeDraft({ record, account, fields, send, attachments, readBack }) {
-    await ensureLocale();
+  async writeDraft({ record, account, fields, send, attachments, readBack, sourceCallId }) {
+    await ensureLocale(draftOperation(sourceCallId));
     var response = await cindy.node.request({ method: 'compose', authAccount: record.account,
       params: { draftId: record.draftId, fingerprint: record.fingerprint, accountEmail: account.accountEmail, fields, send, attachments, locale: currentLocale() }, timeoutMs: 120000 });
     var result = response && response.ok && response.result;
@@ -500,14 +508,14 @@ function assertMailReadResponse(response, fallback) {
   if (response.status === 403) throw new Error(t('readForbidden'));
   if (!response.ok || response.status !== 200 || response.truncated) throw new Error(fallback);
 }
-async function readMailMessageLink(args, beginOperation) {
+async function readMailMessageLink(args, beginOperation, operation) {
   if (args.markRead !== undefined && typeof args.markRead !== 'boolean') throw new Error('Invalid markRead flag');
   var url = new URL(args.url);
   if (url.protocol !== 'https:' || url.hostname !== 'mail.google.com' || url.port || url.username || url.password || !url.pathname.startsWith('/mail/'))
     throw new Error('Unsupported Gmail link');
   var id = url.searchParams.get('permmsgid') || url.hash.split('/').pop();
   if (!/^[a-f0-9]{8,32}$/i.test(id || '')) throw new Error('This Gmail link cannot be resolved; open it in Gmail.');
-  var listed = await listAccounts();
+  var listed = await listAccounts(operation);
   if (!listed.ok) throw new Error(listed.message);
   var email = url.searchParams.get('authuser');
   var accountId = args.account;
@@ -518,7 +526,7 @@ async function readMailMessageLink(args, beginOperation) {
       throw new Error(t('linkAccountMismatch'));
     accountId = matches[0].id;
   }
-  var selected = await selectGoogleAccount(accountId);
+  var selected = await selectGoogleAccount(accountId, operation);
   if (!selected.ok) throw new Error(selected.message);
   var response = await cindy.fetch({ url: 'https://gmail.googleapis.com/gmail/v1/users/me/messages/' + encodeURIComponent(id) + '?format=full', authAccount: selected.accountId, timeoutMs: 20000 });
   // Gmail web links can identify a conversation whose original draft message
@@ -660,15 +668,16 @@ async function mailToolDraft(args, sourceCallId, beginOperation) {
       return;
     }
     if (!message || message.type !== 'tool-call') return;
-    activeToolCalls += 1;
+    var operation = localeOperation();
+    toolOperations.set(message.callId, operation);
     try {
-      await lookupLocale();
-      await handleToolCall(message);
+      await ensureLocale(operation);
+      await handleToolCall(message, operation);
     } finally {
-      activeToolCalls -= 1;
+      if (toolOperations.get(message.callId) === operation) toolOperations.delete(message.callId);
     }
   });
-  async function handleToolCall(message) {
+  async function handleToolCall(message, operation) {
     var args = message.args || {};
     var isSchema = message.tool === PREFIX + '_schema';
     var context = args.session_context;
@@ -686,12 +695,12 @@ async function mailToolDraft(args, sourceCallId, beginOperation) {
     }
     try {
       if (message.tool === 'gmail_read_message') {
-        var mail = await readMailMessageLink(args, beginOperation);
+        var mail = await readMailMessageLink(args, beginOperation, operation);
         await cindy.send({ type: 'tool-result', callId: message.callId, ok: true, result: mail });
         return;
       }
       if (message.tool === PREFIX + '_accounts') {
-        var listed = await listAccounts();
+        var listed = await listAccounts(operation);
         await cindy.send(Object.assign({ type: 'tool-result', callId: message.callId }, listed));
         return;
       }
@@ -706,7 +715,7 @@ async function mailToolDraft(args, sourceCallId, beginOperation) {
         return;
       }
       if (!isSchema) {
-        var selected = await selectGoogleAccount(args.account);
+        var selected = await selectGoogleAccount(args.account, operation);
         if (!selected.ok) {
           await cindy.send({ type: 'tool-result', callId: message.callId, ok: false, message: selected.message });
           return;
