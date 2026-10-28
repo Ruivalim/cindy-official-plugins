@@ -708,16 +708,56 @@ test('the settings connection test reports the login and caches it per connectio
 
 /* ── settings page ─────────────────────────────────────────────────── */
 
+// Fake clock for the settings page: timers only fire through advance().
+function createClock() {
+  let now = 0;
+  let nextId = 1;
+  const timers = new Map();
+  const add = (fn, ms, every) => {
+    const id = nextId++;
+    timers.set(id, { fn, at: now + Math.max(0, ms || 0), every: every ? Math.max(1, ms || 0) : 0 });
+    return id;
+  };
+  return {
+    setTimeout: (fn, ms) => add(fn, ms, false),
+    setInterval: (fn, ms) => add(fn, ms, true),
+    clearTimeout: (id) => { timers.delete(id); },
+    clearInterval: (id) => { timers.delete(id); },
+    pending: () => [...timers.values()].map((x) => ({ in: x.at - now, every: x.every })),
+    advance(ms) {
+      const until = now + ms;
+      for (;;) {
+        let dueId = null;
+        for (const [id, x] of timers) if (x.at <= until && (dueId === null || x.at < timers.get(dueId).at)) dueId = id;
+        if (dueId === null) break;
+        const timer = timers.get(dueId);
+        now = timer.at;
+        if (timer.every) timer.at += timer.every; else timers.delete(dueId);
+        timer.fn();
+      }
+      now = until;
+    },
+  };
+}
+
 function createSettingsHarness(locale = 'en', options = {}) {
   const elements = new Map();
   const fetchCalls = [];
+  const created = [];
+  const kvWrites = [];
+  let channel = null;
   function control(attrs = {}) {
     const listeners = new Map();
     const attributes = new Map(Object.entries(attrs));
+    let text = '';
     return {
-      value: '', textContent: '', placeholder: '', disabled: false, type: 'password', className: '',
+      value: '', placeholder: '', disabled: false, type: 'password', className: '',
+      children: [],
+      // Like the DOM: assigning textContent replaces the children.
+      get textContent() { return text; },
+      set textContent(value) { text = value; this.children = []; },
       classList: { toggle() {}, remove() {} },
-      appendChild() {},
+      appendChild(child) { this.children.push(child); },
       focus() {},
       getAttribute(name) { return attributes.has(name) ? attributes.get(name) : null; },
       setAttribute(name, value) { attributes.set(name, value); },
@@ -747,32 +787,70 @@ function createSettingsHarness(locale = 'en', options = {}) {
       assert.ok(match, `unexpected selector ${selector}`);
       return copyNodes.filter((node) => node.hasAttribute(match[1]));
     },
-    createElement: () => control(),
+    createElement: () => {
+      const node = control();
+      created.push(node);
+      return node;
+    },
   };
+  const kv = options.kv ?? {};
   const fetch = async (url, init) => {
     fetchCalls.push({ url, method: init?.method ?? 'GET', body: init?.body, signal: init?.signal });
     if (url === '/app-context') {
       if (options.appContext) return options.appContext(init);
       return { ok: true, json: async () => ({ ok: true, context: { locale } }) };
     }
-    if (url === '/connections') return { json: async () => [{ key: 'gitea_conn', connections: [] }] };
-    if (url === '/kv') return { json: async () => ({}) };
+    const custom = options.respond?.(url, init);
+    if (custom) return custom;
+    if (url === '/connections') return { json: async () => [{ key: 'gitea_conn', connections: options.connections ?? [] }] };
+    if (url === '/kv' && init?.method === 'PUT') {
+      kvWrites.push(JSON.parse(init.body));
+      return { ok: true, status: 200, json: async () => ({ ok: true }) };
+    }
+    if (url === '/kv') return { json: async () => JSON.parse(JSON.stringify(kv)) };
+    if (url === '/wake') return { ok: true, status: 200, json: async () => ({ ok: true }) };
     if (url === '/connections/gitea_conn') return { status: 200, json: async () => ({ ok: false, error: 'CONFIRM_DENIED' }) };
     throw new Error(`unexpected settings fetch ${url}`);
   };
+  class FakeBroadcastChannel {
+    constructor() {
+      channel = this;
+      this.posted = [];
+      this.listeners = new Set();
+    }
+
+    postMessage(message) { this.posted.push(plain(message)); }
+
+    addEventListener(type, fn) { if (type === 'message') this.listeners.add(fn); }
+
+    removeEventListener(type, fn) { if (type === 'message') this.listeners.delete(fn); }
+
+    deliver(data) { for (const fn of [...this.listeners]) fn({ data }); }
+  }
+  const clock = options.clock;
   const context = {
     document,
     AbortController,
     fetch,
-    BroadcastChannel: class { postMessage() {} addEventListener() {} removeEventListener() {} },
-    setTimeout: () => 0,
-    clearTimeout() {},
-    setInterval: () => 0,
-    clearInterval() {},
+    BroadcastChannel: FakeBroadcastChannel,
+    setTimeout: clock ? clock.setTimeout : () => 0,
+    clearTimeout: clock ? clock.clearTimeout : () => {},
+    setInterval: clock ? clock.setInterval : () => 0,
+    clearInterval: clock ? clock.clearInterval : () => {},
     Date,
   };
   vm.runInNewContext(settingsSource, context);
-  return { el: (id) => document.getElementById(id), document, fetchCalls, copyNodes, messages: context.MESSAGES };
+  return {
+    el: (id) => document.getElementById(id),
+    document,
+    fetchCalls,
+    copyNodes,
+    kvWrites,
+    messages: context.MESSAGES,
+    get channel() { return channel; },
+    rows: () => document.getElementById('list').children.filter((n) => n.className === 'account'),
+    button: (label) => created.filter((n) => n.className === 'mini' && n.textContent === label),
+  };
 }
 
 test('settings read the locale only from /app-context and fall back to English', async () => {
@@ -873,7 +951,8 @@ test('every message key used by code or settings.html exists, and no settings ke
 
   const settings = createSettingsHarness().messages.en;
   const htmlKeys = [...settingsHtml.matchAll(/data-i18n(?:-title|-aria-label|-placeholder)?="(\w+)"/g)].map((m) => m[1]);
-  const codeKeys = [...settingsSource.matchAll(/\bt\('(\w+)'[,)]/g), ...settingsSource.matchAll(/t\(\w+ \? '(\w+)' : '(\w+)'[,)]/g)]
+  const codeKeys = [...settingsSource.matchAll(/\bt\('(\w+)'[,)]/g), ...settingsSource.matchAll(/t\(\w+ \? '(\w+)' : '(\w+)'[,)]/g),
+    ...settingsSource.matchAll(/failureText\(\w+, '(\w+)', '(\w+)'\)/g)]
     .flatMap((m) => m.slice(1));
   for (const key of [...htmlKeys, ...codeKeys]) assert.ok(Object.hasOwn(settings, key), `settings ${key}`);
   // Host error codes are looked up as error_<CODE>.
@@ -1140,4 +1219,143 @@ test('settings page falls back to English for unknown, failed or malformed app-c
     assert.equal(s.el('add').textContent, 'Add');
     assert.equal(s.el('host').getAttribute('placeholder'), 'Instance, e.g. git.example.com or https://git.example.com');
   }
+});
+
+/* ── maintainer review: confirmation fit, settings failures, test timeout ─ */
+
+for (const locale of HOST_LOCALES) {
+  test(`${locale} write confirmations keep number, repo and host visible within 300 characters`, async () => {
+    const labels = Array.from({ length: 10 }, (_, i) => `label-${String(i).padStart(2, '0')}-${'x'.repeat(21)}`);
+    assert.ok(labels.every((l) => l.length === 30));
+    for (const action of ['add', 'replace']) {
+      const h = createHarness({ locale, respond: () => json([]) });
+      const m = h.messages[locale];
+      assertSuccess(await h.call('edit_issue_labels', { owner: 'acme', repo: 'widgets', index: 4242, action, labels }));
+      const body = h.confirms[0].body;
+      assert.ok(body.length <= 300, `${action}: ${body.length} characters`);
+      for (const part of ['#4242', 'acme/widgets', HOST]) assert.ok(body.includes(part), `${action} lost ${part}: ${body}`);
+      const shown = labels.filter((l) => body.includes(l)).length;
+      assert.ok(shown >= 1 && shown < labels.length, `${action}: ${shown} labels shown`);
+      const more = m.moreItems.slice(m.moreItems.indexOf('{shown}') + '{shown}'.length).replace('{count}', String(labels.length - shown));
+      assert.ok(body.includes(more), `${action}: missing "${more}" in ${body}`);
+      assert.deepEqual(JSON.parse(h.requests[0].body), { labels }, 'the request still carries every label');
+    }
+
+    const owner = 'o'.repeat(60);
+    const repo = 'r'.repeat(60);
+    const long = 'T'.repeat(255);
+    const cases = [
+      ['create_issue', { owner, repo, title: long }],
+      ['comment_issue', { owner, repo, index: 7, body: 'B'.repeat(2000) }],
+      ['create_pull_request', { owner, repo, head: 'h'.repeat(250), base: 'b'.repeat(250), title: long }],
+      ['create_release', { owner, repo, tag_name: 'v'.repeat(250), target_commitish: 'c'.repeat(250), name: long }],
+    ];
+    for (const [name, args] of cases) {
+      const h = createHarness({ locale, respond: () => json({}, 201) });
+      assertSuccess(await h.call(name, args));
+      const body = h.confirms[0].body;
+      assert.ok(body.length <= 300, `${name}: ${body.length} characters`);
+      assert.ok(body.includes(`${owner}/${repo}`) && body.includes(HOST), `${name} lost the destination: ${body}`);
+      if (args.index) assert.ok(body.includes(`#${args.index}`), name);
+      assert.ok(body.includes('...'), `${name} marks the cut`);
+    }
+  });
+}
+
+test('settings remove and set-default report host failures and keep the row', async () => {
+  const connections = [
+    { id: 'conn-1', host: 'git.one.test', isDefault: true, tail: '1111' },
+    { id: 'conn-2', host: 'git.two.test', isDefault: false, tail: '2222' },
+  ];
+  const failures = [
+    [() => ({ ok: false, status: 500, json: async () => ({}) }), (m) => m.removeFailedCode.replace('{code}', '500'), (m) => m.defaultFailedCode.replace('{code}', '500')],
+    [() => ({ ok: true, status: 200, json: async () => ({ ok: false, error: 'CONFIRM_DENIED' }) }), (m) => m.error_CONFIRM_DENIED, (m) => m.error_CONFIRM_DENIED],
+    [() => ({ ok: true, status: 200, json: async () => ({ ok: false, errorCode: 'NOT_FOUND' }) }), (m) => m.removeFailedCode.replace('{code}', 'NOT_FOUND'), (m) => m.defaultFailedCode.replace('{code}', 'NOT_FOUND')],
+    [() => { throw new Error('offline'); }, (m) => m.removeFailed, (m) => m.defaultFailed],
+  ];
+  for (const locale of ['en', 'ja']) {
+    for (const [respond, removeText, defaultText] of failures) {
+      const s = createSettingsHarness(locale, {
+        connections,
+        kv: { connectedUsers: { 'conn-1': 'alice', 'conn-2': 'bob' } },
+        respond: (url, init) => (url.startsWith('/connections/gitea_conn/') && init?.method ? respond() : null),
+      });
+      await flush();
+      const m = s.messages[locale];
+      assert.equal(s.rows().length, 2);
+
+      s.button(m.remove)[0].emit('click');
+      await flush();
+      assert.equal(s.el('status').textContent, removeText(m), locale);
+      assert.notEqual(s.el('status').textContent, m.removed);
+      assert.deepEqual(s.kvWrites, [], 'the cached login is kept');
+      assert.deepEqual(s.rows().map((r) => r.children[0].textContent), ['git.one.test', 'git.two.test'], 'the row is still listed');
+
+      s.button(m.makeDefault)[0].emit('click');
+      await flush();
+      assert.equal(s.el('status').textContent, defaultText(m), locale);
+      assert.equal(s.rows().length, 2);
+    }
+  }
+
+  const ok = createSettingsHarness('en', {
+    connections,
+    kv: { connectedUsers: { 'conn-1': 'alice', 'conn-2': 'bob' } },
+    respond: (url, init) => (url.startsWith('/connections/gitea_conn/') && init?.method ? { ok: true, status: 204, json: async () => { throw new SyntaxError('empty'); } } : null),
+  });
+  await flush();
+  ok.button('Remove')[1].emit('click');
+  await flush();
+  assert.equal(ok.el('status').textContent, 'Removed.');
+  assert.deepEqual(ok.kvWrites, [{ connectedUsers: { 'conn-1': 'alice' } }]);
+  ok.button('Make default')[0].emit('click');
+  await flush();
+  assert.equal(ok.el('status').textContent, 'Removed.', 'a successful default change adds no error');
+  const posted = ok.fetchCalls.find((c) => c.url === '/connections/gitea_conn/default');
+  assert.deepEqual(JSON.parse(posted.body), { connectionId: 'conn-2' });
+});
+
+test('settings connection test outlasts the 30 s request timeout and always detaches its listener', async () => {
+  const connections = [{ id: 'conn-1', host: HOST, isDefault: true, tail: '4567' }];
+  async function start() {
+    const clock = createClock();
+    const s = createSettingsHarness('en', { connections, clock });
+    await flush();
+    s.button('Test')[0].emit('click');
+    await flush();
+    assert.equal(s.channel.listeners.size, 1);
+    assert.equal(s.el('status').textContent, 'Contacting Gitea...');
+    return { s, clock };
+  }
+
+  // A reply after 20 s (past the old 15 s page limit, within the request's 30 s) is accepted.
+  const late = await start();
+  late.clock.advance(20000);
+  assert.equal(late.s.el('status').textContent, 'Contacting Gitea...');
+  const reqId = late.s.channel.posted[0].reqId;
+  late.s.channel.deliver({ type: 'test-connection-result', reqId: 'other', ok: false, message: 'not mine' });
+  assert.equal(late.s.channel.listeners.size, 1, 'replies for other tests are ignored');
+  late.s.channel.deliver({ type: 'test-connection-result', reqId, ok: true, username: 'alice', host: HOST });
+  assert.equal(late.s.el('status').textContent, `Connected as @alice (${HOST})`);
+  assert.equal(late.s.channel.listeners.size, 0, 'listener removed on success');
+  assert.deepEqual(late.clock.pending().filter((x) => x.every || x.in > 4000), [], 'deadline and resend timers cleared');
+  const sent = late.s.channel.posted.length;
+  late.clock.advance(60000);
+  assert.equal(late.s.channel.posted.length, sent, 'no resends after the reply');
+  assert.equal(late.s.el('status').textContent, '', 'only the status auto-clear ran');
+
+  // No reply: still waiting just past the request timeout, gives up at the page limit.
+  const silent = await start();
+  silent.clock.advance(31000);
+  assert.equal(silent.s.el('status').textContent, 'Contacting Gitea...');
+  assert.equal(silent.s.channel.listeners.size, 1);
+  silent.clock.advance(14000);
+  assert.equal(silent.s.el('status').textContent, 'Test timed out: the plugin did not answer. Try again.');
+  assert.equal(silent.s.channel.listeners.size, 0, 'listener removed on timeout');
+  assert.deepEqual(silent.clock.pending(), [], 'no timers left after the timeout');
+  const after = silent.s.channel.posted.length;
+  silent.s.channel.deliver({ type: 'test-connection-result', reqId: silent.s.channel.posted[0].reqId, ok: true, username: 'alice', host: HOST });
+  silent.clock.advance(5000);
+  assert.equal(silent.s.channel.posted.length, after);
+  assert.equal(silent.s.el('status').textContent, 'Test timed out: the plugin did not answer. Try again.');
 });

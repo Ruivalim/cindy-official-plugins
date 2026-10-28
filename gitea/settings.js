@@ -56,6 +56,8 @@ var MESSAGES = {
     testFailed: 'Connection failed.',
     removed: 'Removed.',
     removeFailed: 'Could not remove the instance. Try again.',
+    removeFailedCode: 'Could not remove the instance ({code}). Try again.',
+    defaultFailedCode: 'Could not change the default ({code}). Try again.',
     defaultFailed: 'Could not change the default. Try again.',
     error_INVALID_HOST: 'Invalid instance address: use a bare host such as git.example.com (https, port 443).',
     error_INVALID_TOKEN: 'The token is empty or malformed; paste it again.',
@@ -101,6 +103,8 @@ var MESSAGES = {
     testFailed: '连接失败。',
     removed: '已移除。',
     removeFailed: '无法移除实例，请重试。',
+    removeFailedCode: '无法移除实例（{code}），请重试。',
+    defaultFailedCode: '无法更改默认实例（{code}），请重试。',
     defaultFailed: '无法更改默认实例，请重试。',
     error_INVALID_HOST: '实例地址无效：请只填写主机名，例如 git.example.com（https，端口 443）。',
     error_INVALID_TOKEN: '令牌为空或格式不正确，请重新粘贴。',
@@ -146,6 +150,8 @@ var MESSAGES = {
     testFailed: '接続に失敗しました。',
     removed: '削除しました。',
     removeFailed: 'インスタンスを削除できませんでした。再試行してください。',
+    removeFailedCode: 'インスタンスを削除できませんでした（{code}）。再試行してください。',
+    defaultFailedCode: '既定の接続を変更できませんでした（{code}）。再試行してください。',
     defaultFailed: '既定の接続を変更できませんでした。再試行してください。',
     error_INVALID_HOST: 'インスタンスのアドレスが無効です：git.example.com のようなホスト名だけを入力してください（https、ポート 443）。',
     error_INVALID_TOKEN: 'トークンが空か、形式が正しくありません。もう一度貼り付けてください。',
@@ -191,6 +197,8 @@ var MESSAGES = {
     testFailed: '연결에 실패했습니다.',
     removed: '제거했습니다.',
     removeFailed: '인스턴스를 제거하지 못했습니다. 다시 시도하세요.',
+    removeFailedCode: '인스턴스를 제거하지 못했습니다({code}). 다시 시도하세요.',
+    defaultFailedCode: '기본 인스턴스를 변경하지 못했습니다({code}). 다시 시도하세요.',
     defaultFailed: '기본 인스턴스를 변경하지 못했습니다. 다시 시도하세요.',
     error_INVALID_HOST: '인스턴스 주소가 잘못되었습니다. git.example.com 같은 호스트 이름만 입력하세요(https, 포트 443).',
     error_INVALID_TOKEN: '토큰이 비어 있거나 형식이 잘못되었습니다. 다시 붙여넣으세요.',
@@ -417,6 +425,36 @@ var MESSAGES = {
     }
   }
 
+  /*
+   * The logic page answers only after its own Gitea request, which may run
+   * for REQUEST_TIMEOUT_MS (30 s) after a wake and a locale lookup (up to 3 s).
+   * Waiting longer than that keeps a slow but successful test from being
+   * reported as a timeout.
+   */
+  var TEST_TIMEOUT_MS = 45000;
+
+  /**
+   * null when the host accepted the change (2xx and no { ok: false } or error
+   * code in the body; an empty body counts as success), otherwise { code }
+   * with the host error code or the HTTP status.
+   */
+  async function hostFailure(response) {
+    if (!response || typeof response.status !== 'number' || response.status < 200 || response.status >= 300) {
+      return { code: response && typeof response.status === 'number' ? String(response.status) : '' };
+    }
+    var d = null;
+    try { d = await response.json(); } catch (e) { return null; }
+    if (d && typeof d === 'object' && (d.ok === false || d.error || d.errorCode)) {
+      return { code: String(d.error || d.errorCode || '') };
+    }
+    return null;
+  }
+
+  function failureText(failure, fallbackKey, codeKey) {
+    if (failure.code && hasOwn.call(MESSAGES.en, 'error_' + failure.code)) return t('error_' + failure.code);
+    return failure.code ? t(codeKey, { code: failure.code }) : t(fallbackKey);
+  }
+
   var testSeq = 0;
   async function test(connectionId, btn) {
     var reqId = 'test-' + Date.now() + '-' + (++testSeq);
@@ -425,25 +463,24 @@ var MESSAGES = {
     try { await fetch('/wake'); } catch (e) { /* resends below cover a slow wake */ }
     var settled = false;
     var timer = null;
-    var deadline = setTimeout(function () {
+    // Success and timeout both end here, so the listener and timers never outlive the test.
+    var finish = function (text, sticky) {
       if (settled) return;
-      settled = true;
-      if (timer) clearInterval(timer);
-      showStatus(t('testTimeout'), true);
-      if (btn) btn.disabled = false;
-      void load();
-    }, 15000);
-    bc.addEventListener('message', function onMsg(ev) {
-      var m = ev && ev.data;
-      if (!m || m.type !== 'test-connection-result' || m.reqId !== reqId || settled) return;
       settled = true;
       bc.removeEventListener('message', onMsg);
       clearTimeout(deadline);
       if (timer) clearInterval(timer);
       if (btn) btn.disabled = false;
-      showStatus(m.ok ? t('testOk', { username: m.username || '', host: m.host || '' }) : (m.message || t('testFailed')), !m.ok);
+      showStatus(text, sticky);
       void load();
-    });
+    };
+    var onMsg = function (ev) {
+      var m = ev && ev.data;
+      if (!m || m.type !== 'test-connection-result' || m.reqId !== reqId) return;
+      finish(m.ok ? t('testOk', { username: m.username || '', host: m.host || '' }) : (m.message || t('testFailed')), !m.ok);
+    };
+    var deadline = setTimeout(function () { finish(t('testTimeout'), true); }, TEST_TIMEOUT_MS);
+    bc.addEventListener('message', onMsg);
     var send = function () { bc.postMessage({ type: 'test-connection', reqId: reqId, connectionId: connectionId }); };
     send();
     timer = setInterval(function () {
@@ -454,7 +491,13 @@ var MESSAGES = {
 
   async function remove(connectionId) {
     try {
-      await fetch('/connections/' + KEY + '/' + encodeURIComponent(connectionId), { method: 'DELETE' });
+      var r = await fetch('/connections/' + KEY + '/' + encodeURIComponent(connectionId), { method: 'DELETE' });
+      var failure = await hostFailure(r);
+      if (failure) {
+        // The host kept the connection: keep its cached login and let load() redraw the row.
+        showStatus(failureText(failure, 'removeFailed', 'removeFailedCode'), true);
+        return;
+      }
       try {
         var kv = await (await fetch('/kv')).json();
         if (kv && typeof kv === 'object' && kv.connectedUsers && typeof kv.connectedUsers === 'object') {
@@ -472,9 +515,11 @@ var MESSAGES = {
 
   async function setDefault(connectionId) {
     try {
-      await fetch('/connections/' + KEY + '/default', { method: 'POST', body: JSON.stringify({ connectionId: connectionId }) });
+      var r = await fetch('/connections/' + KEY + '/default', { method: 'POST', body: JSON.stringify({ connectionId: connectionId }) });
+      var failure = await hostFailure(r);
+      if (failure) showStatus(failureText(failure, 'defaultFailed', 'defaultFailedCode'), true);
     } catch (e) {
-      showStatus(t('defaultFailed'));
+      showStatus(t('defaultFailed'), true);
     } finally {
       void load();
     }

@@ -141,6 +141,7 @@ var MESSAGES = {
     confirmRelease: 'Create {kind} {tag} in {repo} ({host})?',
     confirmReleaseAt: 'Create {kind} {tag} in {repo} ({host}) at {target}?',
     releaseNameLine: '\nName: {name}',
+    moreItems: '{shown} (+{count} more)',
     kindRelease: 'release',
     kindDraftRelease: 'draft release',
     kindPreRelease: 'pre-release',
@@ -247,6 +248,7 @@ var MESSAGES = {
     confirmRelease: '在 {repo}（{host}）中创建{kind} {tag}？',
     confirmReleaseAt: '在 {repo}（{host}）的 {target} 上创建{kind} {tag}？',
     releaseNameLine: '\n名称：{name}',
+    moreItems: '{shown}（另有 {count} 个）',
     kindRelease: '发布',
     kindDraftRelease: '发布草稿',
     kindPreRelease: '预发布',
@@ -353,6 +355,7 @@ var MESSAGES = {
     confirmRelease: '{repo}（{host}）に{kind} {tag} を作成しますか？',
     confirmReleaseAt: '{repo}（{host}）の {target} に{kind} {tag} を作成しますか？',
     releaseNameLine: '\n名前：{name}',
+    moreItems: '{shown}（ほか {count} 件）',
     kindRelease: 'リリース',
     kindDraftRelease: 'ドラフトリリース',
     kindPreRelease: 'プレリリース',
@@ -459,6 +462,7 @@ var MESSAGES = {
     confirmRelease: '{repo}({host})에 {kind} {tag}을(를) 만들까요?',
     confirmReleaseAt: '{repo}({host})의 {target}에 {kind} {tag}을(를) 만들까요?',
     releaseNameLine: '\n이름: {name}',
+    moreItems: '{shown} 외 {count}개',
     kindRelease: '릴리스',
     kindDraftRelease: '초안 릴리스',
     kindPreRelease: '사전 릴리스',
@@ -1185,6 +1189,45 @@ function readOp(name, cat, scope, desc, params, run) {
   OPS[name] = { cat: cat, scope: scope, desc: desc, params: params + ', ' + INSTANCE_DOC, run: run, write: false };
 }
 
+/**
+ * Confirmation text that fits the host's limit (CONFIRM_BODY_MAX) while the
+ * destination (number, owner/repo, host) stays whole. render(v) builds the
+ * text from v; when it is too long, the variable parts in `shrink` are cut in
+ * order: { name, items } lists become "a, b (+N more)", plain names are text
+ * clipped with "...". Only if the destination alone is over the limit does
+ * confirmWrite's final cut apply.
+ */
+function fitConfirm(render, vars, shrink) {
+  var limit = CONFIRM_BODY_MAX - 3;
+  var v = {};
+  for (var k in vars) if (hasOwn.call(vars, k)) v[k] = vars[k];
+  var overflow = function () { return render(v).length - limit; };
+  var clipVar = function (name, keep) {
+    var value = String(v[name] === undefined ? '' : v[name]);
+    var room = value.length - overflow() - 3;
+    if (overflow() > 0 && value.length > keep) v[name] = value.slice(0, Math.max(keep, room)) + '...';
+  };
+  for (var i = 0; i < shrink.length && overflow() > 0; i++) {
+    var part = shrink[i];
+    if (typeof part === 'string') {
+      clipVar(part, 1);
+      continue;
+    }
+    var items = part.items;
+    for (var shown = items.length - 1; shown >= 1 && overflow() > 0; shown--) {
+      v[part.name] = t('moreItems', { shown: items.slice(0, shown).join(', '), count: items.length - shown });
+    }
+    if (overflow() > 0 && items.length) {
+      var first = String(items[0]);
+      var cut = Math.max(1, first.length - overflow() - 3);
+      v[part.name] = items.length === 1
+        ? first.slice(0, cut) + '...'
+        : t('moreItems', { shown: first.slice(0, cut) + '...', count: items.length - 1 });
+    }
+  }
+  return render(v);
+}
+
 /** prepare(a, inst) -> { request, confirm: { body, button, danger }, shape(data) } */
 function writeOp(name, cat, scope, desc, params, prepare) {
   OPS[name] = {
@@ -1372,7 +1415,10 @@ writeOp('create_issue', 'issues', 'write:issue', 'Create an issue.',
     if (milestone) payload.milestone = milestone;
     return {
       request: { method: 'POST', path: rp.path + '/issues', body: payload },
-      confirm: { body: t('confirmCreateIssue', { repo: rp.full, host: inst.host, title: title }), button: t('buttonCreate'), danger: false },
+      confirm: {
+        body: fitConfirm(function (v) { return t('confirmCreateIssue', v); }, { repo: rp.full, host: inst.host, title: title }, ['title']),
+        button: t('buttonCreate'), danger: false,
+      },
       shape: function (d) { return { created: true, issue: trimIssue(d || {}, false) }; },
     };
   });
@@ -1385,7 +1431,10 @@ writeOp('comment_issue', 'issues', 'write:issue', 'Add a comment to an issue or 
     var body = reqString(a, 'body', WRITE_TEXT_MAX);
     return {
       request: { method: 'POST', path: rp.path + '/issues/' + index + '/comments', body: { body: body } },
-      confirm: { body: t('confirmComment', { index: index, repo: rp.full, host: inst.host, body: body }), button: t('buttonComment'), danger: false },
+      confirm: {
+        body: fitConfirm(function (v) { return t('confirmComment', v); }, { index: index, repo: rp.full, host: inst.host, body: body }, ['body']),
+        button: t('buttonComment'), danger: false,
+      },
       shape: function (d) { return { created: true, comment: trimComment(d || {}) }; },
     };
   });
@@ -1437,10 +1486,13 @@ writeOp('edit_issue_labels', 'issues', 'write:issue',
       throw invalid(t('labelsItems'));
     });
     var shown = labels.length ? labels.join(', ') : t('noLabels');
+    var labelsKey = action === 'add' ? 'confirmAddLabels' : 'confirmReplaceLabels';
     return {
       request: { method: action === 'add' ? 'POST' : 'PUT', path: base, body: { labels: labels } },
       confirm: {
-        body: t(action === 'add' ? 'confirmAddLabels' : 'confirmReplaceLabels', { labels: shown, index: where.index, repo: where.repo, host: where.host }),
+        body: fitConfirm(function (v) { return t(labelsKey, v); },
+          { labels: shown, index: where.index, repo: where.repo, host: where.host },
+          [{ name: 'labels', items: labels.map(String) }]),
         button: t(action === 'add' ? 'buttonAdd' : 'buttonReplace'), danger: false,
       },
       shape: shapeLabels,
@@ -1522,7 +1574,11 @@ writeOp('create_pull_request', 'pulls', 'write:repository', 'Open a pull request
     if (milestone) payload.milestone = milestone;
     return {
       request: { method: 'POST', path: rp.path + '/pulls', body: payload },
-      confirm: { body: t('confirmCreatePull', { repo: rp.full, host: inst.host, head: head, base: base, title: title }), button: t('buttonOpenPr'), danger: false },
+      confirm: {
+        body: fitConfirm(function (v) { return t('confirmCreatePull', v); },
+          { repo: rp.full, host: inst.host, head: head, base: base, title: title }, ['title', 'head', 'base']),
+        button: t('buttonOpenPr'), danger: false,
+      },
       shape: function (d) { return { created: true, pull_request: trimPull(d || {}, false) }; },
     };
   });
@@ -1685,8 +1741,9 @@ writeOp('create_release', 'releases', 'write:repository',
     return {
       request: { method: 'POST', path: rp.path + '/releases', body: payload },
       confirm: {
-        body: t(target ? 'confirmReleaseAt' : 'confirmRelease', { kind: kind, tag: tag, repo: rp.full, host: inst.host, target: target })
-          + (name ? t('releaseNameLine', { name: name }) : ''),
+        body: fitConfirm(function (v) {
+          return t(target ? 'confirmReleaseAt' : 'confirmRelease', v) + (v.name ? t('releaseNameLine', v) : '');
+        }, { kind: kind, tag: tag, repo: rp.full, host: inst.host, target: target, name: name }, ['name', 'target', 'tag']),
         button: t('buttonCreate'), danger: false,
       },
       shape: function (d) { return { created: true, release: trimRelease(d || {}) }; },
