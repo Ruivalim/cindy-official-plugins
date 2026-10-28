@@ -287,16 +287,28 @@ var MESSAGES = {
     return data && typeof data === 'object' && !Array.isArray(data) ? data : {};
   }
 
+  /*
+   * Every read-modify-write of /kv (topic save, add, remove) runs through this one
+   * queue and reads the latest KV inside its turn, so two saves started together
+   * (for example for servers A and B) both persist instead of the last PUT winning.
+   */
+  var kvQueue = Promise.resolve();
+
   /** Read-modify-write of the whole KV object, keeping unrelated keys. */
-  async function writeTopic(connectionId, topic) {
-    var kv = await readKv();
-    var topics = kv.defaultTopics && typeof kv.defaultTopics === 'object' && !Array.isArray(kv.defaultTopics)
-      ? kv.defaultTopics : {};
-    if (topic) topics[connectionId] = topic;
-    else delete topics[connectionId];
-    kv.defaultTopics = topics;
-    var response = await fetch('/kv', { method: 'PUT', body: JSON.stringify(kv) });
-    if (!response || response.ok === false) throw new Error('kv write failed');
+  function writeTopic(connectionId, topic) {
+    var run = kvQueue.then(async function writeTopicTurn() {
+      var kv = await readKv();
+      var topics = kv.defaultTopics && typeof kv.defaultTopics === 'object' && !Array.isArray(kv.defaultTopics)
+        ? kv.defaultTopics : {};
+      if (topic) topics[connectionId] = topic;
+      else delete topics[connectionId];
+      kv.defaultTopics = topics;
+      var response = await fetch('/kv', { method: 'PUT', body: JSON.stringify(kv) });
+      if (!response || response.ok === false) throw new Error('kv write failed');
+    });
+    // A failed write is reported to its caller; it must not block later writes.
+    kvQueue = run.catch(function () {});
+    return run;
   }
 
   var currentConns = [];
@@ -393,7 +405,11 @@ var MESSAGES = {
     }
   }
 
+  // Shared by the Add button and the Enter key: one add at a time.
+  var adding = false;
+
   async function add() {
+    if (adding) return;
     var parsed = parseServerUrl($('host').value);
     if (parsed.error) { showStatus(t(parsed.error), true); return; }
     var host = parsed.host;
@@ -403,6 +419,7 @@ var MESSAGES = {
     if (topic && !TOPIC_RE.test(topic)) { showStatus(t('invalidTopic'), true); return; }
 
     var replacing = findByHost(host);
+    adding = true;
     $('add').disabled = true;
     showStatus(replacing ? t('confirmReplace') : t('confirmAdd'), true);
     try {
@@ -440,6 +457,7 @@ var MESSAGES = {
     } catch (e) {
       showStatus(t('addFailed'), true);
     } finally {
+      adding = false;
       $('add').disabled = false;
     }
   }

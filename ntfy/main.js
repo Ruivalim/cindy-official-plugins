@@ -11,8 +11,9 @@
  *   the X-Title/X-Tags headers: HTTP headers must be ASCII, so accented titles would
  *   arrive mangled.
  * - A send is never retried. When the request may have reached the server (timeout,
- *   network failure, HTTP 5xx, unexpected status) the result says the outcome is
- *   unknown so the agent asks the user instead of sending a duplicate.
+ *   network failure, any host-reported fetch failure, HTTP 5xx, unexpected status)
+ *   the result says the outcome is unknown so the agent asks the user instead of
+ *   sending a duplicate.
  */
 
 /* global cindy */
@@ -22,10 +23,6 @@ var MAX_MESSAGE_BYTES = 4096;
 var REQUEST_TIMEOUT_MS = 20000;
 var TOPIC_RE = /^[-_A-Za-z0-9]{1,64}$/;
 var PRIORITY_NAMES = { min: 1, low: 2, default: 3, high: 4, urgent: 5 };
-// Host fetch failures that happen before anything leaves the machine. Anything
-// not listed is treated as "the request may have been sent".
-var PREFLIGHT_ERROR_CODES = { PERMISSION_DENIED: true, INVALID_INPUT: true, INVALID_PARAMS: true };
-var PREFLIGHT_MESSAGE_RE = /not allowed|not configured|allowlist|whitelist|no (?:matching )?connection|credential|permission denied/i;
 
 /*
  * Runtime copy follows the host language only (cindy.request app-context and
@@ -65,8 +62,6 @@ var MESSAGES = {
     rateLimited: 'Not sent: {host} is rate limiting requests (HTTP 429). Wait before sending again and do not retry in a loop.',
     rejected: 'Not sent: {host} rejected the notification (HTTP {status}).',
     noTopic: 'No topic given and {host} has no default topic. Pass topic, or ask the user to set a default topic in the ntfy plugin settings.',
-    notDispatched: 'Not sent: Cindy blocked the request before it left this machine. Check the server in the ntfy plugin settings; after fixing it, sending again is safe.',
-    notDispatchedWithReason: 'Not sent: Cindy blocked the request before it left this machine ({reason}). Check the server in the ntfy plugin settings; after fixing it, sending again is safe.',
     noMessageId: 'ntfy accepted the notification (HTTP {status}) but did not return a message id.',
     unknownTool: 'Unknown tool: {tool}',
     internalAfterDispatch: 'Outcome unknown: an internal error happened after the request was handed to the network. Do not resend automatically; ask the user to check their ntfy app first.',
@@ -102,8 +97,6 @@ var MESSAGES = {
     rateLimited: '未发送：{host} 正在限制请求频率（HTTP 429）。请等待一段时间再发送，不要循环重试。',
     rejected: '未发送：{host} 拒绝了该通知（HTTP {status}）。',
     noTopic: '未指定 topic，且 {host} 没有默认主题。请传入 topic，或让用户在 ntfy 插件设置中设置默认主题。',
-    notDispatched: '未发送：请求在离开本机之前被 Cindy 拦截。请检查 ntfy 插件设置中的服务器；修正后可以安全地重新发送。',
-    notDispatchedWithReason: '未发送：请求在离开本机之前被 Cindy 拦截（{reason}）。请检查 ntfy 插件设置中的服务器；修正后可以安全地重新发送。',
     noMessageId: 'ntfy 已接受该通知（HTTP {status}），但没有返回消息 id。',
     unknownTool: '未知工具：{tool}',
     internalAfterDispatch: '结果未知：请求交给网络之后发生了内部错误。不要自动重新发送；请让用户先在 ntfy 应用中确认。',
@@ -139,8 +132,6 @@ var MESSAGES = {
     rateLimited: '未送信：{host} がリクエストをレート制限しています（HTTP 429）。時間を置いてから送信し、ループで再試行しないでください。',
     rejected: '未送信：{host} が通知を拒否しました（HTTP {status}）。',
     noTopic: 'topic が指定されておらず、{host} には既定のトピックがありません。topic を指定するか、ntfy プラグインの設定で既定のトピックを設定するようユーザーに依頼してください。',
-    notDispatched: '未送信：リクエストはこのマシンから出る前に Cindy によってブロックされました。ntfy プラグインの設定でサーバーを確認してください。修正後であれば、再送しても問題ありません。',
-    notDispatchedWithReason: '未送信：リクエストはこのマシンから出る前に Cindy によってブロックされました（{reason}）。ntfy プラグインの設定でサーバーを確認してください。修正後であれば、再送しても問題ありません。',
     noMessageId: 'ntfy は通知を受け付けました（HTTP {status}）が、メッセージ id を返しませんでした。',
     unknownTool: '不明なツール：{tool}',
     internalAfterDispatch: '結果不明：リクエストをネットワークに渡した後で内部エラーが発生しました。自動で再送せず、先に ntfy アプリを確認するようユーザーに依頼してください。',
@@ -176,8 +167,6 @@ var MESSAGES = {
     rateLimited: '전송되지 않음: {host}이(가) 요청 속도를 제한하고 있습니다(HTTP 429). 잠시 기다린 뒤 보내고, 반복해서 재시도하지 마세요.',
     rejected: '전송되지 않음: {host}이(가) 알림을 거부했습니다(HTTP {status}).',
     noTopic: 'topic이 지정되지 않았고 {host}에 기본 토픽이 없습니다. topic을 전달하거나, 사용자에게 ntfy 플러그인 설정에서 기본 토픽을 설정해 달라고 요청하세요.',
-    notDispatched: '전송되지 않음: 요청이 이 기기를 떠나기 전에 Cindy가 차단했습니다. ntfy 플러그인 설정에서 서버를 확인하세요. 문제를 고친 뒤에는 다시 보내도 안전합니다.',
-    notDispatchedWithReason: '전송되지 않음: 요청이 이 기기를 떠나기 전에 Cindy가 차단했습니다({reason}). ntfy 플러그인 설정에서 서버를 확인하세요. 문제를 고친 뒤에는 다시 보내도 안전합니다.',
     noMessageId: 'ntfy가 알림을 수락했지만(HTTP {status}) 메시지 id를 반환하지 않았습니다.',
     unknownTool: '알 수 없는 도구: {tool}',
     internalAfterDispatch: '결과 알 수 없음: 요청을 네트워크에 넘긴 뒤 내부 오류가 발생했습니다. 자동으로 다시 보내지 말고, 먼저 사용자에게 ntfy 앱을 확인해 달라고 요청하세요.',
@@ -519,11 +508,10 @@ async function sendNotification(args, callId, state) {
   }
 
   if (!response || response.ok !== true) {
+    // cindy.fetch failures carry only free-form text (no errorCode), and that text
+    // cannot prove the POST never left: a blocked redirect, for one, fails after
+    // the server already got the request. So every host failure is outcome-unknown.
     var reason = safeText(response && response.message);
-    var code = response && typeof response.errorCode === 'string' ? response.errorCode : '';
-    if (PREFLIGHT_ERROR_CODES[code] === true || PREFLIGHT_MESSAGE_RE.test(reason)) {
-      return failure('SEND_NOT_DISPATCHED', reason ? t('notDispatchedWithReason', { reason: reason }) : t('notDispatched'));
-    }
     return unknownOutcome(server, topic, t('reasonNoResponse', { host: server.host, detail: reason || t('timeoutOrNetwork') }));
   }
 

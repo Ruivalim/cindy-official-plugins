@@ -565,18 +565,30 @@ test('timeouts, network errors and thrown fetches are unknown outcomes and never
   }
 });
 
-test('host rejections before dispatch say nothing was sent', async () => {
+// cindy.fetch reports failures as { ok: false, message } with free-form text only
+// (Cindy shared/ghost.ts GhostPipeFetchResult). Text that sounds pre-dispatch is
+// not proof the POST never left, e.g. a blocked redirect happens after the
+// server already received the request, so none of these may say "safe to resend".
+test('host fetch failures are outcome unknown even when their text sounds pre-dispatch', async () => {
   const cases = [
+    { ok: false, message: '重定向超出了本意识的域名白名单,已阻断' },
+    { ok: false, message: 'Redirect to a host that is not allowed was blocked' },
+    { ok: false, message: '重定向到了非 https/非默认端口地址,已阻断' },
     { ok: false, errorCode: 'PERMISSION_DENIED', message: 'The user denied the network request' },
     { ok: false, errorCode: 'HOST_ERROR', message: 'host ntfy.example.test is not allowed' },
+    { ok: false, message: 'credential not configured' },
+    { ok: false, errorCode: 'INVALID_PARAMS' },
   ];
   for (const response of cases) {
     const harness = createHarness({ respond: () => response });
     const result = await harness.send({ message: 'hello' });
-    assert.equal(result.errorCode, 'SEND_NOT_DISPATCHED');
-    assert.match(result.message, /^Not sent/);
-    assert.equal(harness.networkCalls.length, 1);
+    assert.equal(result.errorCode, 'SEND_OUTCOME_UNKNOWN', JSON.stringify(response));
+    assert.match(result.message, /^Outcome unknown/);
+    assert.match(result.message, /Do not resend automatically/);
+    assert.doesNotMatch(result.message, /sending again is safe/);
+    assert.equal(harness.networkCalls.length, 1, 'never retried');
   }
+  assert.doesNotMatch(source, /SEND_NOT_DISPATCHED/, 'no host failure is classified as not dispatched');
 });
 
 test('the access token never appears in results, even when echoed back', async () => {
@@ -743,6 +755,7 @@ function createSettingsHarness(options = {}) {
     if (url === '/connections/ntfy_conn' && method === 'POST') {
       const body = JSON.parse(init.body);
       posts.push(body);
+      if (options.addGate) await options.addGate;
       const result = options.addResult ?? { ok: true };
       if (result.ok && !connections.some((c) => c.host === body.host)) {
         connections.push({ id: `conn-${connections.length + 1}`, host: body.host, label: body.host, isDefault: false, tail: body.token.slice(-4) });
@@ -754,8 +767,15 @@ function createSettingsHarness(options = {}) {
       connections = connections.filter((c) => c.id !== id);
       return json({ ok: true });
     }
-    if (url === '/kv' && method === 'GET') return json(kv);
+    // Like the real data plane, every read returns a fresh copy and the store only
+    // changes on PUT; the extra turn lets concurrent read-modify-writes interleave.
+    if (url === '/kv' && method === 'GET') {
+      const snapshot = structuredClone(kv);
+      await new Promise((resolve) => setImmediate(resolve));
+      return json(snapshot);
+    }
     if (url === '/kv' && method === 'PUT') {
+      await new Promise((resolve) => setImmediate(resolve));
       if (options.kvWriteFails) return json({ ok: false }, false);
       kv = JSON.parse(init.body);
       return json({ ok: true });
@@ -998,16 +1018,8 @@ test('English runtime copy is the previous text, byte for byte', async () => {
   );
   const rejected = createHarness({ respond: () => ({ ok: true, status: 400, body: '' }) });
   assert.equal((await rejected.send({ message: 'hello' })).message, 'Not sent: ntfy.example.test rejected the notification (HTTP 400).');
-  const blocked = createHarness({ respond: () => ({ ok: false, errorCode: 'PERMISSION_DENIED' }) });
-  assert.equal(
-    (await blocked.send({ message: 'hello' })).message,
-    'Not sent: Cindy blocked the request before it left this machine. Check the server in the ntfy plugin settings; after fixing it, sending again is safe.',
-  );
-  const blockedWhy = createHarness({ respond: () => ({ ok: false, errorCode: 'HOST_ERROR', message: 'host x is not allowed' }) });
-  assert.equal(
-    (await blockedWhy.send({ message: 'hello' })).message,
-    'Not sent: Cindy blocked the request before it left this machine (host x is not allowed). Check the server in the ntfy plugin settings; after fixing it, sending again is safe.',
-  );
+  const hostFailure = createHarness({ respond: () => ({ ok: false, message: 'ECONNRESET' }) });
+  assert.match((await hostFailure.send({ message: 'hello' })).message, /^Outcome unknown: no response from ntfy\.example\.test \(ECONNRESET\)\. /);
   const tooLarge = createHarness();
   assert.equal(
     (await tooLarge.send({ message: 'a'.repeat(4097) })).message,
@@ -1067,10 +1079,14 @@ for (const locale of ['zh-CN', 'ja', 'ko']) {
       detail: 'forbidden',
     }));
 
-    const blocked = createHarness({ locale, respond: () => ({ ok: false, errorCode: 'PERMISSION_DENIED' }) });
-    const notSent = await blocked.send({ message: 'hello' });
-    assert.equal(notSent.errorCode, 'SEND_NOT_DISPATCHED');
-    assert.equal(notSent.message, m.notDispatched);
+    const blocked = createHarness({ locale, respond: () => ({ ok: false, message: 'redirect blocked' }) });
+    const hostFailure = await blocked.send({ message: 'hello' });
+    assert.equal(hostFailure.errorCode, 'SEND_OUTCOME_UNKNOWN');
+    assert.equal(hostFailure.message, fill('unknownOutcome', {
+      reason: fill('reasonNoResponse', { host: 'ntfy.example.test', detail: 'redirect blocked' }),
+      host: 'ntfy.example.test',
+      topic: 'alerts',
+    }));
 
     const tooLarge = await harness.send({ message: 'a'.repeat(4097) });
     assert.equal(tooLarge.errorCode, 'MESSAGE_TOO_LARGE');
@@ -1255,4 +1271,78 @@ test('settings page falls back to English for unknown, failed, malformed or slow
     assert.equal(page.el('host').getAttribute('placeholder'), 'Server URL, e.g. https://ntfy.example.com', label);
     assert.match(page.el('list').children[0].textContent, /No ntfy server added yet/, label);
   }
+});
+
+/* ── Settings writes: one KV queue and one add at a time ─────────────── */
+
+test('concurrent topic saves for two servers both persist', async () => {
+  const page = createSettingsHarness({
+    connections: [SERVER_A, SERVER_B],
+    kv: { defaultTopics: { 'conn-a': 'old-a', 'conn-b': 'old-b' }, unrelated: 1 },
+  });
+  await flushAsync();
+  const [rowA, rowB] = page.rows();
+  rowA.children[1].value = 'new-a';
+  rowB.children[1].value = 'new-b';
+  rowA.children[2].emit('click');
+  rowB.children[2].emit('click');
+  await flushAsync(30);
+  assert.deepEqual(plain(page.kv), { defaultTopics: { 'conn-a': 'new-a', 'conn-b': 'new-b' }, unrelated: 1 });
+});
+
+test('a remove and a topic save started together both reach KV', async () => {
+  const page = createSettingsHarness({
+    connections: [SERVER_A, SERVER_B],
+    kv: { defaultTopics: { 'conn-a': 'old-a', 'conn-b': 'old-b' } },
+  });
+  await flushAsync();
+  const [rowA, rowB] = page.rows();
+  rowB.children[1].value = 'new-b';
+  rowA.children[3].emit('click');
+  rowB.children[2].emit('click');
+  await flushAsync(30);
+  assert.deepEqual(plain(page.kv), { defaultTopics: { 'conn-b': 'new-b' } });
+});
+
+test('a failed KV write does not block later writes', async () => {
+  // The harness reads options.kvWriteFails on every PUT, so flipping it fails one write.
+  const options = { connections: [SERVER_A], kv: { defaultTopics: {} }, kvWriteFails: true };
+  const page = createSettingsHarness(options);
+  await flushAsync();
+  const [row] = page.rows();
+  row.children[1].value = 'first';
+  row.children[2].emit('click');
+  await flushAsync(30);
+  assert.equal(page.el('status').textContent, 'Could not save the default topic. Please try again.');
+  assert.deepEqual(plain(page.kv), { defaultTopics: {} });
+  options.kvWriteFails = false;
+  row.children[1].value = 'second';
+  row.children[2].emit('click');
+  await flushAsync(30);
+  assert.deepEqual(plain(page.kv), { defaultTopics: { 'conn-a': 'second' } });
+});
+
+test('repeated Enter or clicks while an add is pending start only one request', async () => {
+  let release;
+  const page = createSettingsHarness({ addGate: new Promise((resolve) => { release = resolve; }) });
+  await flushAsync();
+  page.el('host').value = 'ntfy.example.test';
+  page.el('token').value = TOKEN;
+  page.el('topic').value = 'alerts';
+  for (let i = 0; i < 3; i += 1) page.el('topic').emit('keydown', { key: 'Enter' });
+  page.el('add').emit('click');
+  await flushAsync();
+  assert.equal(page.posts.length, 1);
+  release();
+  await flushAsync(30);
+  assert.equal(page.posts.length, 1);
+  assert.match(page.el('status').textContent, /Added ntfy\.example\.test/);
+  assert.deepEqual(plain(page.kv), { defaultTopics: { 'conn-1': 'alerts' } });
+
+  // The guard is released afterwards: a second, separate add goes through.
+  page.el('host').value = 'push.example.test';
+  page.el('token').value = TOKEN;
+  page.el('topic').emit('keydown', { key: 'Enter' });
+  await flushAsync(30);
+  assert.equal(page.posts.length, 2);
 });
