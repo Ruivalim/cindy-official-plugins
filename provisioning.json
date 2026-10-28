@@ -98,6 +98,9 @@
         "emails": []
       },
       "tier": "builtin"
+    },
+    "ntfy": {
+      "audience": { "emails": [] }
     }
   }
 }
