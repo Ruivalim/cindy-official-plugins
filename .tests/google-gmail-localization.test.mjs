@@ -163,6 +163,7 @@ function mainHarness(options = {}) {
     return sent.at(-1);
   };
   return { sent, nodeRequests, appContextRequests, hostMessage: message => handler(message), call,
+    listAccounts: () => ctx.listAccounts(),
     unknownTool: async () => (await call('gmail_missing')).message };
 }
 
@@ -254,6 +255,41 @@ test('a failed app-context lookup is retried on the next call instead of pinning
   assert.equal(await f.unknownTool(), mainMessages['zh-CN'].unknownTool);
   assert.equal(await f.unknownTool(), mainMessages['zh-CN'].unknownTool);
   assert.equal(attempts, 2);
+});
+
+test('a hung app-context lookup is waited for once per tool call, then retried on the next call', async () => {
+  const timers = [];
+  const f = mainHarness({
+    appContext: () => new Promise(() => {}),
+    setTimeout: (fn, ms) => { timers.push(ms); setImmediate(fn); return timers.length; },
+  });
+  const english = mainMessages.en;
+  const cases = [
+    ['gmail_accounts', {}, result => assert.equal(result.ok, true)],
+    ['gmail_run', { command: ['search'], arguments: ['in:inbox'], session_context: {} }, result => assert.equal(result.ok, true)],
+    // Reaches account listing and selection, then stops at the missing cindy.fetch.
+    ['gmail_read_message', { url: 'https://mail.google.com/mail/u/0/#inbox/abcdef1234' }, result => assert.equal(result.ok, false)],
+    ['gmail_run', { command: ['list'], account: 'acc-missing', session_context: {} },
+      result => assert.equal(result.message, english.accountNotFound)],
+  ];
+  for (const [index, [tool, args, check]] of cases.entries()) {
+    const result = await f.call(tool, args);
+    check(result);
+    assert.equal(f.appContextRequests.length, index + 1, `${tool}: one app-context request per call`);
+    assert.deepEqual(timers, Array(index + 1).fill(3000), `${tool}: one 3 s wait per call`);
+  }
+  assert.deepEqual(f.nodeRequests.map(request => request.params.locale), ['en']);
+});
+
+test('a card callback outside a tool call still does its own single locale lookup', async () => {
+  const timers = [];
+  const f = mainHarness({
+    appContext: () => new Promise(() => {}),
+    setTimeout: (fn, ms) => { timers.push(ms); setImmediate(fn); return timers.length; },
+  });
+  await f.listAccounts();
+  assert.equal(f.appContextRequests.length, 1);
+  assert.deepEqual(timers, [3000]);
 });
 
 function workerContext() {

@@ -258,9 +258,9 @@ async function requestHostLocale() {
     if (timer !== null) clearTimeout(timer);
   }
 }
-// Concurrent tool calls and mail card callbacks share one request. A success is
-// cached; host-context-changed keeps it current afterwards.
-function ensureLocale() {
+// Concurrent lookups share one request. A success is cached;
+// host-context-changed keeps it current afterwards.
+function lookupLocale() {
   if (hostLocale) return Promise.resolve(hostLocale);
   if (!localeRequest) {
     localeRequest = requestHostLocale().then(function (locale) {
@@ -271,6 +271,17 @@ function ensureLocale() {
     });
   }
   return localeRequest;
+}
+// Tool calls in flight. Each one waits for the Host locale once, on entry.
+var activeToolCalls = 0;
+// For helpers and mail card callbacks. During a tool call the entry lookup has
+// already settled, so reuse its outcome (English after a timeout) instead of
+// waiting again; a pending lookup then belongs to another call. A card-only
+// callback does its own lookup. Either way the next operation asks again.
+function ensureLocale() {
+  if (hostLocale) return Promise.resolve(hostLocale);
+  if (activeToolCalls > 0) return Promise.resolve(currentLocale());
+  return lookupLocale();
 }
 // Host grants contain hashes, not filesystem paths. Read only those grants
 // through the plugin media protocol, then use the existing workdir file bridge.
@@ -649,7 +660,15 @@ async function mailToolDraft(args, sourceCallId, beginOperation) {
       return;
     }
     if (!message || message.type !== 'tool-call') return;
-    await ensureLocale();
+    activeToolCalls += 1;
+    try {
+      await lookupLocale();
+      await handleToolCall(message);
+    } finally {
+      activeToolCalls -= 1;
+    }
+  });
+  async function handleToolCall(message) {
     var args = message.args || {};
     var isSchema = message.tool === PREFIX + '_schema';
     var context = args.session_context;
@@ -747,5 +766,5 @@ async function mailToolDraft(args, sourceCallId, beginOperation) {
           : execution === 'unknown' ? '[unknown] ' + t('outcomeUnknown')
           : '[not_executed] ' + (error.message || t('prepareFailed')) });
     }
-  });
+  }
 })();
