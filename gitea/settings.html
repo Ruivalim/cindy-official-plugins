@@ -83,25 +83,25 @@
 </head>
 <body>
   <div class="label-row">
-    <span class="name" id="title">Gitea instances</span>
-    <span class="badge" id="badge">Self-hosted</span>
+    <span class="name" data-i18n="title"></span>
+    <span class="badge" data-i18n="badge"></span>
   </div>
-  <p class="help" id="help">Create a token in Gitea under Settings &gt; Applications. Reads need read:user, read:repository, read:issue and read:notification; writes also need write:issue and write:repository. Only https on port 443 is supported.</p>
+  <p class="help" data-i18n="help"></p>
   <div id="list"></div>
   <div class="input-row">
     <div class="pill">
-      <input id="host" type="text" placeholder="Instance, e.g. git.example.com or https://git.example.com" aria-label="Instance URL" autocomplete="off" spellcheck="false">
+      <input id="host" type="text" data-i18n-placeholder="hostPlaceholder" data-i18n-aria-label="hostAria" autocomplete="off" spellcheck="false">
     </div>
   </div>
   <div class="input-row">
     <div class="pill">
-      <input id="token" type="password" placeholder="Access token" aria-label="Access token" autocomplete="off" spellcheck="false">
-      <button id="eye" class="icon-btn" type="button" title="Show or hide" aria-label="Show or hide token">
+      <input id="token" type="password" data-i18n-placeholder="tokenPlaceholder" data-i18n-aria-label="tokenAria" autocomplete="off" spellcheck="false">
+      <button id="eye" class="icon-btn" type="button" data-i18n-title="toggleTitle" data-i18n-aria-label="toggleAria">
         <svg class="on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
         <svg class="off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3.5 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
       </button>
     </div>
-    <button id="add" class="btn" type="button">Add</button>
+    <button id="add" class="btn" type="button" data-i18n="add"></button>
   </div>
   <p id="status" role="status"></p>
   <script src="/settings.js"></script>

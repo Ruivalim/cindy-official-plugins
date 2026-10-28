@@ -5,7 +5,7 @@
   "name": "Gitea",
   "description": "Work with self-hosted Gitea instances: repositories, files, commits, issues, pull requests, labels, milestones, Actions runs and logs, releases and notifications. Add each instance URL and access token in settings; the host encrypts the token and sends it only to that instance.",
   "whenToUse": "Use for a self-hosted Gitea server (not github.com or GitLab): read repos, files, commits, issues, PRs, diffs, Actions runs and job logs, releases and notifications; create or comment on issues, change state or labels, open or merge PRs, create releases (each write asks the user).",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "locales": {
     "en": "locales/en.json",
     "zh-CN": "locales/zh-CN.json",

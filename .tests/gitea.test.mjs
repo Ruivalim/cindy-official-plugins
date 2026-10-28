@@ -36,8 +36,11 @@ async function flush(times = 6) {
   for (let i = 0; i < times; i += 1) await new Promise((resolve) => setImmediate(resolve));
 }
 
+// Existing assertions check the English copy, so the fake host reports `en`
+// unless a test picks another locale or a failing app-context explicitly.
 function createHarness(options = {}) {
   const connections = options.connections ?? DEFAULT_CONNECTIONS;
+  const appContextRequests = [];
   const requests = [];
   const confirms = [];
   const results = [];
@@ -46,6 +49,12 @@ function createHarness(options = {}) {
   let channel = null;
 
   const cindy = {
+    async request(message) {
+      assert.deepEqual(plain(message), { kind: 'app-context' });
+      appContextRequests.push(plain(message));
+      if (options.appContext) return options.appContext();
+      return { ok: true, context: { region: 'global', locale: options.locale ?? 'en' } };
+    },
     onHostMessage(fn) {
       handler = fn;
     },
@@ -96,16 +105,25 @@ function createHarness(options = {}) {
     throw new Error(`unexpected local fetch ${url}`);
   };
 
-  vm.runInNewContext(source, {
+  if (options.withoutRequest) delete cindy.request;
+  const context = {
     cindy,
     fetch: localFetch,
     BroadcastChannel: FakeBroadcastChannel,
     atob,
     TextDecoder,
-  }, { filename: 'gitea/main.js' });
+    setTimeout: options.setTimeout ?? setTimeout,
+    clearTimeout,
+  };
+  vm.runInNewContext(source, context, { filename: 'gitea/main.js' });
   assert.equal(typeof handler, 'function');
 
   return {
+    appContextRequests,
+    messages: context.MESSAGES,
+    async hostMessage(message) {
+      await handler(message);
+    },
     requests,
     confirms,
     results,
@@ -184,7 +202,9 @@ test('plugin sources contain no em or en dashes and never read the browser langu
     assert.doesNotMatch(content, /[\u2013\u2014]/, file);
     assert.doesNotMatch(content, /navigator\.language/, file);
   }
-  assert.match(settingsSource, /fetch\('\/app-context'\)/);
+  // The settings page passes an abort signal, so the call may carry options.
+  assert.match(settingsSource, /fetch\('\/app-context'[,)]/);
+  assert.doesNotMatch(source + settingsSource, /\b(?:navigator|Intl)\b/);
   assert.match(settingsHtml, /<script src="\/settings\.js"><\/script>/);
 });
 
@@ -688,19 +708,33 @@ test('the settings connection test reports the login and caches it per connectio
 
 /* ── settings page ─────────────────────────────────────────────────── */
 
-function createSettingsHarness(locale = 'ja') {
+function createSettingsHarness(locale = 'en', options = {}) {
   const elements = new Map();
   const fetchCalls = [];
-  function control() {
+  function control(attrs = {}) {
     const listeners = new Map();
+    const attributes = new Map(Object.entries(attrs));
     return {
       value: '', textContent: '', placeholder: '', disabled: false, type: 'password', className: '',
       classList: { toggle() {}, remove() {} },
       appendChild() {},
       focus() {},
+      getAttribute(name) { return attributes.has(name) ? attributes.get(name) : null; },
+      setAttribute(name, value) { attributes.set(name, value); },
+      hasAttribute(name) { return attributes.has(name); },
       addEventListener(type, fn) { listeners.set(type, fn); },
       emit(type, ev = {}) { return listeners.get(type)?.({ preventDefault() {}, ...ev }); },
     };
+  }
+  // Every element of settings.html that carries a data-i18n* attribute, with
+  // its real attributes; elements with an id are shared with getElementById.
+  const copyNodes = [];
+  for (const [, attrText] of settingsHtml.slice(settingsHtml.indexOf('<body>')).matchAll(/<\w+([^>]*)>/g)) {
+    const attrs = Object.fromEntries([...attrText.matchAll(/([\w-]+)="([^"]*)"/g)].map((m) => [m[1], m[2]]));
+    if (!Object.keys(attrs).some((name) => name.startsWith('data-i18n'))) continue;
+    const node = control(attrs);
+    if (attrs.id) elements.set(attrs.id, node);
+    copyNodes.push(node);
   }
   const document = {
     documentElement: { lang: '' },
@@ -708,18 +742,27 @@ function createSettingsHarness(locale = 'ja') {
       if (!elements.has(id)) elements.set(id, control());
       return elements.get(id);
     },
-    createElement: control,
+    querySelectorAll(selector) {
+      const match = /^\[(data-i18n(?:-title|-aria-label|-placeholder)?)\]$/.exec(selector);
+      assert.ok(match, `unexpected selector ${selector}`);
+      return copyNodes.filter((node) => node.hasAttribute(match[1]));
+    },
+    createElement: () => control(),
   };
   const fetch = async (url, init) => {
-    fetchCalls.push({ url, method: init?.method ?? 'GET', body: init?.body });
-    if (url === '/app-context') return { json: async () => ({ ok: true, context: { locale } }) };
+    fetchCalls.push({ url, method: init?.method ?? 'GET', body: init?.body, signal: init?.signal });
+    if (url === '/app-context') {
+      if (options.appContext) return options.appContext(init);
+      return { ok: true, json: async () => ({ ok: true, context: { locale } }) };
+    }
     if (url === '/connections') return { json: async () => [{ key: 'gitea_conn', connections: [] }] };
     if (url === '/kv') return { json: async () => ({}) };
     if (url === '/connections/gitea_conn') return { status: 200, json: async () => ({ ok: false, error: 'CONFIRM_DENIED' }) };
     throw new Error(`unexpected settings fetch ${url}`);
   };
-  vm.runInNewContext(settingsSource, {
+  const context = {
     document,
+    AbortController,
     fetch,
     BroadcastChannel: class { postMessage() {} addEventListener() {} removeEventListener() {} },
     setTimeout: () => 0,
@@ -727,12 +770,13 @@ function createSettingsHarness(locale = 'ja') {
     setInterval: () => 0,
     clearInterval() {},
     Date,
-  });
-  return { el: (id) => document.getElementById(id), document, fetchCalls };
+  };
+  vm.runInNewContext(settingsSource, context);
+  return { el: (id) => document.getElementById(id), document, fetchCalls, copyNodes, messages: context.MESSAGES };
 }
 
 test('settings read the locale only from /app-context and fall back to English', async () => {
-  const s = createSettingsHarness('ja');
+  const s = createSettingsHarness('fr');
   await flush();
   assert.equal(s.fetchCalls[0].url, '/app-context');
   assert.equal(s.document.documentElement.lang, 'en');
@@ -763,4 +807,337 @@ test('settings reject http, custom ports and sub-paths before contacting the hos
   assert.equal(post.url, '/connections/gitea_conn');
   assert.deepEqual(JSON.parse(post.body), { host: 'git.example.test', token: 'placeholder-token' });
   assert.match(s.el('status').textContent, /Cancelled/);
+});
+
+/* ── runtime and settings localization ─────────────────────────────── */
+
+const HOST_LOCALES = ['en', 'zh-CN', 'ja', 'ko'];
+const placeholdersOf = (value) => [...value.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
+const hanRe = /[㐀-鿿]/;
+const kanaRe = /[぀-ヿ]/;
+const hangulRe = /[ᄀ-ᇿ㄰-㆏가-힯]/;
+const cjkRe = /[　-〿぀-ヿ㐀-鿿가-힯＀-￯]/;
+// Half-width punctuation touching a Han or kana character, e.g. "实例:仓库" or "(はい)".
+const halfWidthNextToCjk = /[぀-ヿ㐀-鿿][,;:()]|[,;:()][぀-ヿ㐀-鿿]/;
+// The same word can be correct in Chinese and Japanese.
+const sharedWithZh = new Set(['settings.js ja.add']);
+
+function assertParity(messages, label) {
+  assert.deepEqual(Object.keys(messages).sort(), [...HOST_LOCALES].sort(), `${label} locales`);
+  const keys = Object.keys(messages.en).sort();
+  for (const locale of HOST_LOCALES) {
+    assert.deepEqual(Object.keys(messages[locale]).sort(), keys, `${label} ${locale} keys`);
+    for (const key of keys) {
+      const value = messages[locale][key];
+      const where = `${label} ${locale}.${key}`;
+      assert.equal(typeof value, 'string', where);
+      assert.ok(value.trim(), `${where} is empty`);
+      assert.deepEqual(placeholdersOf(value), placeholdersOf(messages.en[key]), `${where} placeholders`);
+      assert.doesNotMatch(value, /[\u2013\u2014]/, `${where} has an em or en dash`);
+      if (locale === 'en') assert.doesNotMatch(value, cjkRe, where);
+      if (locale === 'ko') assert.doesNotMatch(value, /[぀-ヿ㐀-鿿]/, where);
+      if (locale === 'zh-CN') {
+        assert.doesNotMatch(value, kanaRe, where);
+        assert.doesNotMatch(value, hangulRe, where);
+      }
+      if (locale === 'ja') assert.doesNotMatch(value, hangulRe, where);
+      if (locale === 'zh-CN' || locale === 'ja') {
+        assert.doesNotMatch(value, halfWidthNextToCjk, `${where} uses half-width punctuation in CJK text`);
+      }
+      if (locale !== 'en') assert.notEqual(value, messages.en[key], `${where} is untranslated`);
+      if (locale !== 'zh-CN' && locale !== 'en' && !sharedWithZh.has(where)) {
+        assert.notEqual(value, messages['zh-CN'][key], `${where} copied from zh-CN`);
+      }
+    }
+  }
+}
+
+test('runtime and settings message tables have identical keys and placeholders in all four locales', () => {
+  assertParity(createHarness().messages, 'main.js');
+  assertParity(createSettingsHarness().messages, 'settings.js');
+});
+
+test('every message key used by code or settings.html exists, and no settings key is unused', () => {
+  const main = createHarness().messages.en;
+  const mainKeys = [...source.matchAll(/\bt\('(\w+)'[,)]/g)].map((m) => m[1]);
+  assert.ok(mainKeys.length >= 60, `found ${mainKeys.length} runtime keys`);
+  for (const key of mainKeys) assert.ok(Object.hasOwn(main, key), `main.js ${key}`);
+  // Keys picked by a ternary inside t(...) calls.
+  for (const key of ['confirmClose', 'confirmReopen', 'buttonClose', 'buttonReopen', 'confirmAddLabels',
+    'confirmReplaceLabels', 'buttonAdd', 'buttonReplace', 'confirmMerge', 'confirmMergeDelete',
+    'confirmRelease', 'confirmReleaseAt', 'kindRelease', 'kindDraftRelease', 'kindPreRelease',
+    'rateLimited', 'rateLimitedWait', 'confirmUnavailable', 'confirmUnavailableReason']) {
+    assert.ok(Object.hasOwn(main, key), key);
+    assert.match(source, new RegExp(`'${key}'`), `${key} is referenced`);
+  }
+
+  const settings = createSettingsHarness().messages.en;
+  const htmlKeys = [...settingsHtml.matchAll(/data-i18n(?:-title|-aria-label|-placeholder)?="(\w+)"/g)].map((m) => m[1]);
+  const codeKeys = [...settingsSource.matchAll(/\bt\('(\w+)'[,)]/g), ...settingsSource.matchAll(/t\(\w+ \? '(\w+)' : '(\w+)'[,)]/g)]
+    .flatMap((m) => m.slice(1));
+  for (const key of [...htmlKeys, ...codeKeys]) assert.ok(Object.hasOwn(settings, key), `settings ${key}`);
+  // Host error codes are looked up as error_<CODE>.
+  const used = new Set([...htmlKeys, ...codeKeys]);
+  for (const key of Object.keys(settings)) {
+    assert.ok(used.has(key) || key.startsWith('error_'), `unused settings key ${key}`);
+  }
+  assert.deepEqual(Object.keys(settings).filter((k) => k.startsWith('error_')).sort(), [
+    'error_CONFIRM_DENIED', 'error_INVALID_HOST', 'error_INVALID_LABEL', 'error_INVALID_TOKEN',
+    'error_LIMIT', 'error_TOKEN_TOO_LONG', 'error_VAULT_WRITE_FAILED',
+  ]);
+});
+
+test('no CJK text outside the zh-CN, ja and ko tables, and settings.html ships no visible copy', () => {
+  const stripComments = (value) => value
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '')
+    .replace(/<!--[\s\S]*?-->/g, '');
+  const cjkTables = /\n {2}(?:'zh-CN'|ja|ko): \{[\s\S]*?\n {2}\},(?=\n)/g;
+  for (const [label, value] of [['main.js', source], ['settings.js', settingsSource], ['settings.html', settingsHtml]]) {
+    const tables = value.match(cjkTables) ?? [];
+    if (label !== 'settings.html') assert.equal(tables.length, 3, `${label} has three CJK tables`);
+    const outside = stripComments(value).replace(cjkTables, '');
+    assert.deepEqual(outside.split('\n').filter((line) => cjkRe.test(line)), [], label);
+  }
+  const body = settingsHtml.slice(settingsHtml.indexOf('<body>')).replace(/<!--[\s\S]*?-->/g, '').replace(/<svg[\s\S]*?<\/svg>/g, '');
+  const visible = body.replace(/<[^>]*>/g, '').trim();
+  assert.equal(visible, '', 'settings.html text comes from the tables');
+  assert.doesNotMatch(body, /\s(?:title|aria-label|placeholder)="/, 'attributes come from the tables');
+});
+
+test('locale resources keep CJK punctuation full-width', () => {
+  for (const locale of ['zh-CN', 'ja']) {
+    const raw = fs.readFileSync(path.join(pluginDir, manifest.locales[locale]), 'utf8');
+    const strings = [];
+    (function walk(value) {
+      if (typeof value === 'string') strings.push(value);
+      else if (value && typeof value === 'object') Object.values(value).forEach(walk);
+    })(JSON.parse(raw));
+    for (const value of strings) assert.doesNotMatch(value, halfWidthNextToCjk, `${locale}: ${value.slice(0, 60)}`);
+  }
+});
+
+test('manifest version is bumped for the localized runtime', () => {
+  assert.equal(manifest.version, '1.1.0');
+});
+
+test('runtime copy falls back to English for unsupported or unavailable host locales', async () => {
+  const variants = {
+    unsupported: { locale: 'fr' },
+    legacyTag: { locale: 'zh-TW' },
+    notOk: { appContext: () => ({ ok: false }) },
+    missingLocale: { appContext: () => ({ ok: true, context: {} }) },
+    nonStringLocale: { appContext: () => ({ ok: true, context: { locale: 7 } }) },
+    throws: { appContext: () => { throw new Error('host unavailable'); } },
+    rejects: { appContext: () => Promise.reject(new Error('host unavailable')) },
+    noRequestApi: { withoutRequest: true },
+    hangs: {
+      appContext: () => new Promise(() => {}),
+      setTimeout: (fn) => { setImmediate(fn); return 1; },
+    },
+  };
+  for (const [label, options] of Object.entries(variants)) {
+    const h = createHarness({ ...options, connections: [] });
+    const message = assertFailure(await h.call('get_current_user'), 'NO_INSTANCE');
+    assert.equal(message, h.messages.en.noInstance, label);
+    assert.doesNotMatch(message, cjkRe, label);
+  }
+});
+
+for (const locale of ['ja', 'ko', 'zh-CN']) {
+  test(`${locale} runtime copy is used for results, errors and confirmations with protocol values intact`, async () => {
+    const m = createHarness().messages[locale];
+
+    const none = createHarness({ locale, connections: [] });
+    assert.equal(assertFailure(await none.call('get_current_user'), 'NO_INSTANCE'), m.noInstance);
+
+    const forbidden = createHarness({ locale, respond: () => ({ ok: true, status: 403, body: '{"message":"nope"}', headers: {} }) });
+    const forbiddenMsg = assertFailure(await forbidden.call('list_issues', { owner: 'o', repo: 'r' }), 'FORBIDDEN');
+    assert.ok(forbiddenMsg.includes('"read:issue"') && forbiddenMsg.includes(HOST) && forbiddenMsg.includes('HTTP 403'), forbiddenMsg);
+    assert.ok(forbiddenMsg.endsWith('nope'), forbiddenMsg);
+    assert.match(forbiddenMsg, locale === 'zh-CN' ? hanRe : locale === 'ja' ? kanaRe : hangulRe);
+
+    const rejected = createHarness({ locale, respond: () => ({ ok: true, status: 409, body: '{"message":"exists"}', headers: {} }) });
+    const rejectedMsg = assertFailure(await rejected.call('create_pull_request', { owner: 'o', repo: 'r', head: 'feat', base: 'main', title: 'T' }), 'CONFLICT');
+    assert.ok(rejectedMsg.startsWith(m.notExecutedPrefix), rejectedMsg);
+    assert.equal(rejected.confirms[0].confirmText, m.buttonOpenPr);
+    assert.equal(rejected.confirms[0].cancelText, m.buttonCancel);
+    assert.ok(rejected.confirms[0].confirmText.length <= 12 && rejected.confirms[0].cancelText.length <= 12);
+    assert.ok(rejected.confirms[0].body.includes('feat') && rejected.confirms[0].body.includes('main') && rejected.confirms[0].body.includes('o/r'));
+
+    const unknown = createHarness({ locale, respond: () => ({ ok: false, message: 'request timed out' }) });
+    const unknownMsg = assertFailure(await unknown.call('create_release', { owner: 'o', repo: 'r', tag_name: 'v1.0.0' }), 'OUTCOME_UNKNOWN');
+    assert.equal(unknownMsg, m.writeIncomplete.replace('{host}', HOST).replace('{reason}', 'request timed out'));
+    assert.equal(unknown.requests.length, 1);
+
+    const declined = createHarness({ locale, confirmAnswer: { ok: true, confirmed: false } });
+    assert.equal(assertFailure(await declined.call('create_issue', { owner: 'o', repo: 'r', title: 'Bug' }), 'CONFIRM_DECLINED'), m.confirmDeclined);
+    assert.equal(declined.requests.length, 0);
+
+    const invalid = createHarness({ locale });
+    const invalidMsg = assertFailure(await invalid.call('merge_pull_request', { owner: 'o', repo: 'r', index: 1 }), 'INVALID_ARGS');
+    assert.ok(invalidMsg.startsWith(m.styleRequired.replace('{styles}', 'merge, rebase, rebase-merge, squash, fast-forward-only')), invalidMsg);
+    assert.ok(invalidMsg.includes('style*:merge|rebase'), 'parameter notation stays untranslated');
+
+    const overview = createHarness({ locale });
+    const list = (await overview.listTools()).result;
+    assert.equal(list.hint, m.overviewHint);
+    assert.equal(list.categories.pulls.writes, 2);
+    assert.equal(assertFailure(await overview.listTools('admin'), 'UNKNOWN_CATEGORY'),
+      m.unknownCategory.replace('{category}', 'admin').replace('{categories}', Object.keys(list.categories).join(', ')));
+    await overview.hostMessage({ type: 'tool-call', tool: 'nope', callId: 'call-9', args: {} });
+    assert.equal(overview.results.at(-1).errorCode, 'UNKNOWN_TOOL');
+    assert.equal(overview.results.at(-1).message, m.unknownTool.replace('{tool}', 'nope'));
+  });
+}
+
+test('English runtime output is unchanged for representative results and confirmations', async () => {
+  const h = createHarness({ respond: () => json(rawIssue(12, { title: 'Bug' }), 201) });
+  assertSuccess(await h.call('create_issue', { owner: 'o', repo: 'r', title: 'Bug' }));
+  assert.equal(h.confirms[0].body, `Create an issue in o/r on ${HOST}?\nTitle: Bug`);
+  assert.equal(h.confirms[0].cancelText, 'Cancel');
+
+  const rel = createHarness({ respond: () => json({ id: 1, tag_name: 'v1' }, 201) });
+  assertSuccess(await rel.call('create_release', { owner: 'o', repo: 'r', tag_name: 'v1', target_commitish: 'main', name: 'One', draft: true }));
+  assert.equal(rel.confirms[0].body, `Create draft release v1 in o/r (${HOST}) at main?\nName: One`);
+  assertSuccess(await rel.call('create_release', { owner: 'o', repo: 'r', tag_name: 'v2', prerelease: true }));
+  assert.equal(rel.confirms[1].body, `Create pre-release v2 in o/r (${HOST})?`);
+
+  const labels = createHarness({ respond: () => json([]) });
+  assertSuccess(await labels.call('edit_issue_labels', { owner: 'o', repo: 'r', index: 3, action: 'replace', labels: [] }));
+  assert.equal(labels.confirms[0].body, `Replace all labels with (none) on #3 in o/r (${HOST})?`);
+  assertSuccess(await labels.call('edit_issue_labels', { owner: 'o', repo: 'r', index: 3, action: 'remove', label_id: 7 }));
+  assert.equal(labels.confirms[1].body, `Remove label id 7 on #3 in o/r (${HOST})?`);
+
+  const merge = createHarness({ respond: () => ({ ok: true, status: 200, body: '', headers: {} }) });
+  assertSuccess(await merge.call('merge_pull_request', { owner: 'o', repo: 'r', index: 9, style: 'merge', delete_branch_after_merge: true }));
+  assert.equal(merge.confirms[0].body, `Merge pull request #9 in o/r (${HOST}) using "merge" and delete the head branch? This cannot be undone.`);
+
+  const limited = createHarness({ respond: () => ({ ok: true, status: 429, body: '', headers: {} }) });
+  assert.equal(assertFailure(await limited.call('list_issues', { owner: 'o', repo: 'r' }), 'RATE_LIMITED'),
+    `Gitea at ${HOST} is rate limiting requests (HTTP 429). Wait before retrying.`);
+
+  const bad = createHarness();
+  assert.equal(assertFailure(await bad.call('get_issue', { owner: 'o', repo: 'r' }), 'INVALID_ARGS'),
+    'index is required and must be a positive integer. Parameters: owner*:string, repo*:string (or repo:"owner/name"), index*:int, instance?:connection id or host');
+  const busy = createHarness({ confirmAnswer: { ok: false, message: 'BUSY' } });
+  assert.equal(assertFailure(await busy.call('comment_issue', { owner: 'o', repo: 'r', index: 1, body: 'hi' }), 'CONFIRM_UNAVAILABLE'),
+    'Not executed: the confirmation dialog could not be shown (BUSY). Try again in a few seconds.');
+});
+
+test('host-context-changed switches runtime copy without another app-context request', async () => {
+  const h = createHarness({ locale: 'zh-CN', connections: [] });
+  const zh = h.messages['zh-CN'];
+  assert.equal((await h.call('get_current_user')).message, zh.noInstance);
+  assert.equal(h.appContextRequests.length, 1);
+  await h.hostMessage({ type: 'host-context-changed', context: { region: 'global', locale: 'ko' } });
+  assert.equal((await h.call('get_current_user')).message, h.messages.ko.noInstance);
+  await h.hostMessage({ type: 'host-context-changed', context: { locale: 'ja' } });
+  assert.equal((await h.call('get_current_user')).message, h.messages.ja.noInstance);
+  await h.hostMessage({ type: 'host-context-changed', context: { locale: 'xx' } });
+  assert.equal((await h.call('get_current_user')).message, h.messages.en.noInstance);
+  await h.hostMessage({ type: 'host-context-changed' });
+  assert.equal((await h.call('get_current_user')).message, h.messages.en.noInstance);
+  assert.equal(h.appContextRequests.length, 1);
+  assert.equal(h.results.length, 5);
+});
+
+test('a locale change that arrives during the app-context request wins over the stale reply', async () => {
+  let resolve;
+  const h = createHarness({ connections: [], appContext: () => new Promise((r) => { resolve = r; }) });
+  const pending = h.call('get_current_user');
+  await flush();
+  await h.hostMessage({ type: 'host-context-changed', context: { locale: 'ja' } });
+  resolve({ ok: true, context: { locale: 'zh-CN' } });
+  assert.equal((await pending).message, h.messages.ja.noInstance);
+  assert.equal((await h.call('get_current_user')).message, h.messages.ja.noInstance);
+  assert.equal(h.appContextRequests.length, 1);
+});
+
+test('concurrent tool calls share one app-context request and none runs before the locale is known', async () => {
+  let resolve;
+  const h = createHarness({ respond: () => ({ ok: true, status: 401, body: '', headers: {} }), appContext: () => new Promise((r) => { resolve = r; }) });
+  const calls = [1, 2, 3].map(() => h.call('get_current_user'));
+  await flush();
+  assert.equal(h.appContextRequests.length, 1);
+  assert.equal(h.requests.length, 0, 'no Gitea request before the locale is known');
+  resolve({ ok: true, context: { locale: 'ko' } });
+  await Promise.all(calls);
+  assert.equal(h.results.length, 3);
+  for (const result of h.results) {
+    assert.equal(result.errorCode, 'AUTH_FAILED');
+    assert.equal(result.message, h.messages.ko.authFailed.replace('{host}', HOST));
+  }
+});
+
+test('a failed app-context lookup is retried on the next call instead of pinning English', async () => {
+  let attempts = 0;
+  const h = createHarness({
+    connections: [],
+    appContext: () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('host busy');
+      return { ok: true, context: { locale: 'ja' } };
+    },
+  });
+  assert.equal((await h.call('get_current_user')).message, h.messages.en.noInstance);
+  assert.equal((await h.call('get_current_user')).message, h.messages.ja.noInstance);
+  assert.equal((await h.call('get_current_user')).message, h.messages.ja.noInstance);
+  assert.equal(attempts, 2);
+});
+
+test('the settings connection test reports failures in the host locale', async () => {
+  const h = createHarness({ locale: 'ko', respond: () => ({ ok: true, status: 401, body: '', headers: {} }) });
+  h.channel.onmessage({ data: { type: 'test-connection', reqId: 'r3', connectionId: 'conn-1' } });
+  await flush();
+  assert.equal(h.channel.posted[0].ok, false);
+  assert.equal(h.channel.posted[0].message, h.messages.ko.authFailed.replace('{host}', HOST));
+});
+
+for (const locale of HOST_LOCALES) {
+  test(`settings page renders ${locale} copy from /app-context`, async () => {
+    const s = createSettingsHarness(locale);
+    await flush();
+    const m = s.messages[locale];
+    assert.equal(s.fetchCalls[0].url, '/app-context', 'locale is resolved before anything else is fetched');
+    assert.ok(s.fetchCalls[0].signal, 'the app-context read can be aborted');
+    assert.equal(s.document.documentElement.lang, locale);
+    const byAttr = (name) => s.copyNodes.filter((n) => n.hasAttribute(name));
+    assert.equal(byAttr('data-i18n').length, 4);
+    for (const node of byAttr('data-i18n')) assert.equal(node.textContent, m[node.getAttribute('data-i18n')]);
+    for (const node of byAttr('data-i18n-title')) assert.equal(node.getAttribute('title'), m[node.getAttribute('data-i18n-title')]);
+    assert.equal(byAttr('data-i18n-aria-label').length, 3);
+    for (const node of byAttr('data-i18n-aria-label')) assert.equal(node.getAttribute('aria-label'), m[node.getAttribute('data-i18n-aria-label')]);
+    assert.equal(s.el('host').getAttribute('placeholder'), m.hostPlaceholder);
+    assert.equal(s.el('token').getAttribute('placeholder'), m.tokenPlaceholder);
+    assert.equal(s.el('add').textContent, m.add);
+    assert.equal(s.el('eye').getAttribute('aria-label'), m.toggleAria);
+
+    s.el('host').value = '';
+    s.el('token').value = 'x';
+    s.el('add').emit('click');
+    await flush();
+    assert.equal(s.el('status').textContent, m.needHost);
+    s.el('host').value = 'git.example.test';
+    s.el('add').emit('click');
+    await flush();
+    assert.equal(s.el('status').textContent, m.error_CONFIRM_DENIED);
+  });
+}
+
+test('settings page falls back to English for unknown, failed or malformed app-context', async () => {
+  const variants = [
+    () => ({ ok: true, json: async () => ({ ok: true, context: { locale: 'de' } }) }),
+    () => ({ ok: false, json: async () => ({ ok: true, context: { locale: 'ja' } }) }),
+    () => { throw new Error('offline'); },
+    () => ({ ok: true, json: async () => null }),
+    () => ({ ok: true, json: async () => { throw new SyntaxError('not json'); } }),
+  ];
+  for (const appContext of variants) {
+    const s = createSettingsHarness('en', { appContext });
+    await flush();
+    assert.equal(s.document.documentElement.lang, 'en');
+    assert.equal(s.el('add').textContent, 'Add');
+    assert.equal(s.el('host').getAttribute('placeholder'), 'Instance, e.g. git.example.com or https://git.example.com');
+  }
 });
