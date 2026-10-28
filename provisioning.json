@@ -101,6 +101,9 @@
     },
     "ntfy": {
       "audience": { "emails": [] }
+    },
+    "gitea": {
+      "audience": { "emails": [] }
     }
   }
 }
