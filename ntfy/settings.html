@@ -5,7 +5,8 @@
 <!-- ntfy settings page (cindy-ghost:// sandbox). Servers and tokens go to the host
      through the /connections data plane: the host confirms, encrypts the token and
      never hands it back. The per-server default topic is a plain preference in /kv.
-     Inline scripts are blocked by CSP, so the logic lives in settings.js. -->
+     Inline scripts are blocked by CSP, so the logic lives in settings.js, which also
+     fills every data-i18n* attribute from its message table in the host language. -->
 <style>
   * { box-sizing: border-box; margin: 0; }
   body {
@@ -80,20 +81,20 @@
 </head>
 <body>
   <div class="label-row">
-    <span class="name" id="title">ntfy servers</span>
-    <span class="badge" id="badge">self-hosted</span>
+    <span class="name" id="title" data-i18n="title"></span>
+    <span class="badge" id="badge" data-i18n="badge"></span>
   </div>
-  <p class="hint" id="hint">https only, default port 443, ntfy served at the domain root.</p>
+  <p class="hint" id="hint" data-i18n="hint"></p>
   <div id="list"></div>
   <div class="input-row">
     <div class="pill">
-      <input id="host" type="text" aria-label="Server URL" placeholder="Server URL, e.g. https://ntfy.example.com" autocomplete="off" spellcheck="false">
+      <input id="host" type="text" data-i18n-aria-label="hostLabel" data-i18n-placeholder="hostPlaceholder" autocomplete="off" spellcheck="false">
     </div>
   </div>
   <div class="input-row">
     <div class="pill">
-      <input id="token" type="password" aria-label="Access token" placeholder="Access token (tk_...)" autocomplete="off" spellcheck="false">
-      <button id="eye" class="icon-btn" type="button" aria-label="Show or hide token" title="Show or hide token">
+      <input id="token" type="password" data-i18n-aria-label="tokenLabel" data-i18n-placeholder="tokenPlaceholder" autocomplete="off" spellcheck="false">
+      <button id="eye" class="icon-btn" type="button" data-i18n-aria-label="eye" data-i18n-title="eye">
         <svg class="on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
         <svg class="off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3.5 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
       </button>
@@ -101,9 +102,9 @@
   </div>
   <div class="input-row">
     <div class="pill">
-      <input id="topic" type="text" aria-label="Default topic" placeholder="Default topic (optional)" autocomplete="off" spellcheck="false">
+      <input id="topic" type="text" data-i18n-aria-label="topicLabel" data-i18n-placeholder="topicPlaceholder" autocomplete="off" spellcheck="false">
     </div>
-    <button id="add" class="btn" type="button">Add</button>
+    <button id="add" class="btn" type="button" data-i18n="add"></button>
   </div>
   <p id="status" role="status"></p>
   <script src="/settings.js"></script>

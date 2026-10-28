@@ -56,6 +56,8 @@ function hasAuthorizationHeader(headers) {
   return Object.keys(headers ?? {}).some((name) => name.toLowerCase() === 'authorization');
 }
 
+// The existing assertions check the English copy, so the simulated host reports
+// `en` unless a test picks another locale or a failing app-context explicitly.
 function createHarness(options = {}) {
   const connections = options.connections ?? [SERVER_A];
   const kv = options.kv ?? { defaultTopics: { 'conn-a': 'alerts' } };
@@ -63,9 +65,16 @@ function createHarness(options = {}) {
   const sentHeaders = [];
   const toolResults = [];
   const dataPlane = [];
+  const appContextRequests = [];
   let handler = null;
 
   const cindy = {
+    async request(message) {
+      assert.deepEqual(plain(message), { kind: 'app-context' });
+      appContextRequests.push(message);
+      if (options.appContext) return options.appContext();
+      return { ok: true, context: { region: 'global', locale: options.locale ?? 'en' } };
+    },
     onHostMessage(fn) {
       handler = fn;
     },
@@ -114,7 +123,15 @@ function createHarness(options = {}) {
     throw new Error(`unexpected data plane request ${url}`);
   };
 
-  vm.runInNewContext(source, { cindy, fetch: fetchMock, URL });
+  if (options.withoutRequest) delete cindy.request;
+  const context = {
+    cindy,
+    fetch: fetchMock,
+    URL,
+    setTimeout: options.setTimeout ?? setTimeout,
+    clearTimeout,
+  };
+  vm.runInNewContext(source, context);
   assert.equal(typeof handler, 'function');
 
   return {
@@ -122,6 +139,11 @@ function createHarness(options = {}) {
     sentHeaders,
     toolResults,
     dataPlane,
+    appContextRequests,
+    messages: context.MESSAGES,
+    async hostMessage(message) {
+      await handler(message);
+    },
     async call(tool, args) {
       const before = toolResults.length;
       await handler({ type: 'tool-call', tool, callId: 'call-1', args });
@@ -148,6 +170,7 @@ test('manifest is a v3 package using host-managed connections only', () => {
   assert.equal(manifest.id, 'ntfy');
   assert.equal(manifest.command, 'ntfy');
   assert.equal(manifest.name, 'ntfy');
+  assert.equal(manifest.version, '1.1.0');
   assert.equal(manifest.minCindyVersion, '0.1.64');
   assert.equal(manifest.author, 'Rui Valim');
   assert.equal(manifest.settingsHtml, 'settings.html');
@@ -612,6 +635,17 @@ test('ntfy_servers with nothing configured says how to add a server', async () =
 
 /* ── Settings page behavior (DOM and data plane mocked) ──────────────── */
 
+// Elements of settings.html that carry data-i18n* attributes, keyed by id.
+function settingsCopyBindings() {
+  const bindings = [];
+  for (const match of settingsHtml.matchAll(/<(\w+)\b([^>]*)>/g)) {
+    const attrs = Object.fromEntries([...match[2].matchAll(/([\w-]+)="([^"]*)"/g)].map((m) => [m[1], m[2]]));
+    const i18n = Object.fromEntries(Object.entries(attrs).filter(([name]) => name.startsWith('data-i18n')));
+    if (Object.keys(i18n).length) bindings.push({ id: attrs.id ?? null, i18n });
+  }
+  return bindings;
+}
+
 function createSettingsHarness(options = {}) {
   let connections = (options.connections ?? []).map((c) => ({ ...c }));
   let kv = options.kv ?? {};
@@ -653,6 +687,9 @@ function createSettingsHarness(options = {}) {
       setAttribute(name, value) {
         this.attributes[name] = String(value);
       },
+      getAttribute(name) {
+        return Object.hasOwn(this.attributes, name) ? this.attributes[name] : null;
+      },
       appendChild(child) {
         this.children.push(child);
         return child;
@@ -671,6 +708,12 @@ function createSettingsHarness(options = {}) {
 
   const ids = ['title', 'badge', 'hint', 'list', 'host', 'token', 'eye', 'topic', 'add', 'status'];
   const elements = new Map(ids.map((id) => [id, element(id === 'add' || id === 'eye' ? 'button' : 'div')]));
+  const copyNodes = settingsCopyBindings().map(({ id, i18n }) => {
+    assert.ok(id && elements.has(id), `data-i18n element without a known id: ${JSON.stringify(i18n)}`);
+    const node = elements.get(id);
+    Object.assign(node.attributes, i18n);
+    return node;
+  });
   const document = {
     documentElement: { lang: '' },
     getElementById(id) {
@@ -679,13 +722,21 @@ function createSettingsHarness(options = {}) {
     createElement(tag) {
       return element(tag);
     },
+    querySelectorAll(selector) {
+      const match = /^\[(data-i18n(?:-title|-aria-label|-placeholder)?)\]$/.exec(selector);
+      assert.ok(match, `unexpected selector ${selector}`);
+      return copyNodes.filter((node) => node.getAttribute(match[1]) !== null);
+    },
   };
 
   const json = (data, ok = true) => ({ ok, status: ok ? 200 : 500, async json() { return data; } });
   const fetchMock = async (url, init = {}) => {
     fetchCalls.push({ url, init });
     const method = init.method ?? 'GET';
-    if (url === '/app-context') return json(options.appContext ?? { ok: true, context: { region: 'global', locale: 'ja' } });
+    if (url === '/app-context') {
+      if (options.appContextResponse) return options.appContextResponse(init);
+      return json(options.appContext ?? { ok: true, context: { region: 'global', locale: options.locale ?? 'en' } });
+    }
     if (url === '/connections' && method === 'GET') {
       return json([{ key: 'ntfy_conn', label: 'ntfy server', maxConnections: 8, connections }]);
     }
@@ -713,16 +764,19 @@ function createSettingsHarness(options = {}) {
   };
 
   // No navigator in this context: reading it would throw.
-  vm.runInNewContext(settingsSource, {
+  const context = {
     document,
     fetch: fetchMock,
-    setTimeout: () => 1,
+    AbortController,
+    setTimeout: options.setTimeout ?? (() => 1),
     clearTimeout: () => {},
     encodeURIComponent,
-  });
+  };
+  vm.runInNewContext(settingsSource, context);
 
   return {
     document,
+    messages: context.MESSAGES,
     el: (id) => elements.get(id),
     fetchCalls,
     posts,
@@ -736,7 +790,8 @@ function createSettingsHarness(options = {}) {
 }
 
 test('settings page reads /app-context and falls back to English', async () => {
-  const page = createSettingsHarness();
+  // ja is a supported locale now, so an unsupported one exercises the fallback.
+  const page = createSettingsHarness({ appContext: { ok: true, context: { region: 'global', locale: 'fr' } } });
   await flushAsync();
   assert.equal(page.fetchCalls[0].url, '/app-context');
   assert.equal(page.document.documentElement.lang, 'en');
@@ -835,4 +890,369 @@ test('settings page edits and clears the default topic, and removal drops it', a
   assert.ok(page.fetchCalls.some((call) => call.url === '/connections/ntfy_conn/conn-a' && call.init.method === 'DELETE'));
   assert.deepEqual(plain(page.kv), { defaultTopics: {}, unrelated: 1 });
   assert.equal(page.rows().length, 0);
+});
+
+/* ── Runtime and settings localization ───────────────────────────────── */
+
+const hostLocales = ['en', 'zh-CN', 'ja', 'ko'];
+const placeholdersOf = (text) => [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
+// Han, kana, Hangul and full-width punctuation: anything that is not English copy.
+const cjkRe = /[　-ヿ㐀-鿿가-힯＀-￯]/;
+const hanRe = /[一-鿿]/;
+// Half-width , ; : ( ) touching Han or kana, which Chinese and Japanese write full-width.
+const halfWidthInCjkRe = /[぀-ヿ一-鿿][,;:()]|[,;:(][぀-ヿ一-鿿]/;
+const SETTINGS_HOST_ERRORS = ['INVALID_HOST', 'INVALID_TOKEN', 'TOKEN_TOO_LONG', 'INVALID_LABEL', 'LIMIT', 'CONFIRM_DENIED', 'VAULT_WRITE_FAILED'];
+
+function assertParity(messages, label) {
+  assert.deepEqual(Object.keys(messages).sort(), [...hostLocales].sort(), `${label} locales`);
+  const keys = Object.keys(messages.en).sort();
+  for (const locale of hostLocales) {
+    assert.deepEqual(Object.keys(messages[locale]).sort(), keys, `${label} ${locale} keys`);
+    for (const key of keys) {
+      const text = messages[locale][key];
+      assert.equal(typeof text, 'string', `${label} ${locale}.${key}`);
+      assert.ok(text.trim(), `${label} ${locale}.${key} is empty`);
+      assert.deepEqual(placeholdersOf(text), placeholdersOf(messages.en[key]), `${label} ${locale}.${key} placeholders`);
+      if (locale === 'en') assert.doesNotMatch(text, cjkRe, `${label} en.${key}`);
+      else assert.notEqual(text, messages.en[key], `${label} ${locale}.${key} is still English`);
+      if (locale === 'ko') assert.doesNotMatch(text, hanRe, `${label} ko.${key} contains Han characters`);
+      if (locale === 'zh-CN' || locale === 'ja') {
+        assert.doesNotMatch(text, halfWidthInCjkRe, `${label} ${locale}.${key} uses half-width punctuation`);
+      }
+    }
+  }
+}
+
+test('runtime and settings message tables have identical keys and placeholders in all four locales', () => {
+  assertParity(createHarness().messages, 'main.js');
+  assertParity(createSettingsHarness().messages, 'settings.js');
+});
+
+test('every message key used by the code or settings.html exists, and no key is unused', () => {
+  const main = createHarness().messages.en;
+  const mainKeys = [
+    ...source.matchAll(/\bt\('(\w+)'/g),
+    ...source.matchAll(/\brejected\('[A-Z_]+', '(\w+)'\)/g),
+  ].map((m) => m[1]);
+  assert.ok(mainKeys.length >= 30);
+  for (const key of mainKeys) assert.ok(Object.hasOwn(main, key), `main.js ${key}`);
+  assert.deepEqual([...new Set(mainKeys)].sort(), Object.keys(main).sort(), 'main.js keys used exactly');
+
+  const settings = createSettingsHarness().messages.en;
+  const settingsKeys = [
+    ...settingsSource.matchAll(/\bt\('(\w+)'/g),
+    ...settingsSource.matchAll(/\berror: '(\w+)'/g),
+    ...settingsSource.matchAll(/\bt\(replacing \? '(\w+)' : '(\w+)'/g).flatMap((m) => [[0, m[1]], [0, m[2]]]),
+    ...settingsHtml.matchAll(/data-i18n(?:-title|-aria-label|-placeholder)?="(\w+)"/g),
+  ].map((m) => m[1]);
+  for (const key of settingsKeys) assert.ok(Object.hasOwn(settings, key), `settings ${key}`);
+  for (const code of SETTINGS_HOST_ERRORS) assert.ok(Object.hasOwn(settings, `error_${code}`), code);
+  const used = new Set([...settingsKeys, ...SETTINGS_HOST_ERRORS.map((code) => `error_${code}`)]);
+  for (const key of Object.keys(settings)) assert.ok(used.has(key), `unused settings key ${key}`);
+});
+
+test('no CJK text outside comments and the zh-CN, ja and ko tables', () => {
+  const stripComments = (text) => text
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '')
+    .replace(/<!--[\s\S]*?-->/g, '');
+  const cjkTables = /\n {2}(?:'zh-CN'|ja|ko): \{[\s\S]*?\n {2}\},(?=\n)/g;
+  for (const [label, text] of [['main.js', source], ['settings.js', settingsSource], ['settings.html', settingsHtml]]) {
+    const outside = stripComments(text).replace(cjkTables, '');
+    assert.deepEqual(outside.split('\n').filter((line) => cjkRe.test(line)), [], label);
+  }
+});
+
+test('settings.html ships no visible copy before the host locale is known', () => {
+  const body = settingsHtml.slice(settingsHtml.indexOf('<body>'), settingsHtml.indexOf('</body>'));
+  const text = body.replace(/<svg[\s\S]*?<\/svg>/g, '').replace(/<[^>]+>/g, '').trim();
+  assert.equal(text, '');
+  assert.doesNotMatch(body, /\s(?:placeholder|aria-label|title)="/, 'copy attributes come from data-i18n-*');
+});
+
+test('locale resources and zh-CN or ja copy use full-width punctuation inside CJK sentences', () => {
+  const walk = (value, at) => (typeof value === 'string'
+    ? [[at, value]]
+    : Object.entries(value).flatMap(([key, child]) => walk(child, `${at}.${key}`)));
+  for (const locale of ['zh-CN', 'ja']) {
+    for (const [at, text] of walk(locales[locale], locale)) {
+      assert.doesNotMatch(text, halfWidthInCjkRe, at);
+    }
+  }
+});
+
+test('English runtime copy is the previous text, byte for byte', async () => {
+  const outcome = createHarness({ respond: () => ({ ok: true, status: 502, body: 'bad gateway' }) });
+  assert.equal(
+    (await outcome.send({ message: 'hello' })).message,
+    'Outcome unknown: ntfy.example.test returned a server error (HTTP 502). The request may have reached ntfy.example.test and the notification may already have been delivered to topic "alerts". Do not resend automatically; ask the user to check the topic in their ntfy app before sending again.',
+  );
+  const noResponse = createHarness({ respond: () => ({ ok: false }) });
+  assert.match((await noResponse.send({ message: 'hello' })).message, /^Outcome unknown: no response from ntfy\.example\.test \(timeout or network error\)\. /);
+  const thrown = createHarness({ respond: () => { throw new Error(''); } });
+  assert.match((await thrown.send({ message: 'hello' })).message, /^Outcome unknown: the request failed \(no details\)\. /);
+  const unauthorized = createHarness({ respond: () => ({ ok: true, status: 401, body: '{"error":"unauthorized"}' }) });
+  assert.equal(
+    (await unauthorized.send({ message: 'hello' })).message,
+    'Not sent: ntfy.example.test rejected the access token (HTTP 401). The token is missing, invalid or expired; ask the user to replace it in the ntfy plugin settings. Server said: unauthorized',
+  );
+  const rejected = createHarness({ respond: () => ({ ok: true, status: 400, body: '' }) });
+  assert.equal((await rejected.send({ message: 'hello' })).message, 'Not sent: ntfy.example.test rejected the notification (HTTP 400).');
+  const blocked = createHarness({ respond: () => ({ ok: false, errorCode: 'PERMISSION_DENIED' }) });
+  assert.equal(
+    (await blocked.send({ message: 'hello' })).message,
+    'Not sent: Cindy blocked the request before it left this machine. Check the server in the ntfy plugin settings; after fixing it, sending again is safe.',
+  );
+  const blockedWhy = createHarness({ respond: () => ({ ok: false, errorCode: 'HOST_ERROR', message: 'host x is not allowed' }) });
+  assert.equal(
+    (await blockedWhy.send({ message: 'hello' })).message,
+    'Not sent: Cindy blocked the request before it left this machine (host x is not allowed). Check the server in the ntfy plugin settings; after fixing it, sending again is safe.',
+  );
+  const tooLarge = createHarness();
+  assert.equal(
+    (await tooLarge.send({ message: 'a'.repeat(4097) })).message,
+    'message is 4097 bytes; ntfy accepts at most 4096 UTF-8 bytes. Shorten it (nothing was sent and nothing was truncated).',
+  );
+  const noId = createHarness({ respond: () => ({ ok: true, status: 200, body: '' }) });
+  assert.equal((await noId.send({ message: 'hello' })).result.note, 'ntfy accepted the notification (HTTP 200) but did not return a message id.');
+  const unknown = createHarness();
+  assert.equal((await unknown.call('ntfy_delete', {})).message, 'Unknown tool: ntfy_delete');
+});
+
+test('runtime copy falls back to English for unsupported or unavailable host locales', async () => {
+  const english = 'No ntfy server is configured. Ask the user to add one (server URL and access token) in the ntfy plugin settings.';
+  const variants = {
+    unsupported: { locale: 'fr' },
+    regionTag: { locale: 'zh-TW' },
+    notOk: { appContext: () => ({ ok: false }) },
+    missingLocale: { appContext: () => ({ ok: true, context: {} }) },
+    throws: { appContext: () => { throw new Error('host unavailable'); } },
+    rejects: { appContext: () => Promise.reject(new Error('host unavailable')) },
+    noRequestApi: { withoutRequest: true },
+    hangs: {
+      appContext: () => new Promise(() => {}),
+      setTimeout: (fn) => { setImmediate(fn); return 1; },
+    },
+  };
+  for (const [label, options] of Object.entries(variants)) {
+    const harness = createHarness({ ...options, connections: [] });
+    const result = await harness.send({ message: 'hello', topic: 'alerts' });
+    assert.equal(result.errorCode, 'NOT_CONFIGURED', label);
+    assert.equal(result.message, english, label);
+  }
+});
+
+for (const locale of ['zh-CN', 'ja', 'ko']) {
+  test(`${locale} runtime copy keeps error codes, hosts, topics and safety guidance`, async () => {
+    const harness = createHarness({ locale });
+    const m = harness.messages[locale];
+    const fill = (key, vars) => m[key].replace(/\{(\w+)\}/g, (_, name) => String(vars[name]));
+
+    const fiveHundred = createHarness({ locale, respond: () => ({ ok: true, status: 503, body: 'down' }) });
+    const unknown = await fiveHundred.send({ message: 'hello' });
+    assert.equal(unknown.errorCode, 'SEND_OUTCOME_UNKNOWN');
+    assert.equal(unknown.message, fill('unknownOutcome', {
+      reason: fill('reasonServerError', { host: 'ntfy.example.test', status: 503 }),
+      host: 'ntfy.example.test',
+      topic: 'alerts',
+    }));
+    assert.ok(unknown.message.includes('HTTP 503') && unknown.message.includes('alerts'));
+    assert.equal(fiveHundred.networkCalls.length, 1, 'never retried in any locale');
+
+    const forbidden = createHarness({ locale, respond: () => ({ ok: true, status: 403, body: '{"error":"forbidden"}' }) });
+    const r403 = await forbidden.send({ message: 'hello' });
+    assert.equal(r403.errorCode, 'NTFY_FORBIDDEN');
+    assert.equal(r403.message, fill('withServerDetail', {
+      message: fill('forbidden', { host: 'ntfy.example.test', topic: 'alerts' }),
+      detail: 'forbidden',
+    }));
+
+    const blocked = createHarness({ locale, respond: () => ({ ok: false, errorCode: 'PERMISSION_DENIED' }) });
+    const notSent = await blocked.send({ message: 'hello' });
+    assert.equal(notSent.errorCode, 'SEND_NOT_DISPATCHED');
+    assert.equal(notSent.message, m.notDispatched);
+
+    const tooLarge = await harness.send({ message: 'a'.repeat(4097) });
+    assert.equal(tooLarge.errorCode, 'MESSAGE_TOO_LARGE');
+    assert.ok(tooLarge.message.includes('4097') && tooLarge.message.includes('4096'));
+
+    const priority = await harness.send({ message: 'hello', priority: 'max' });
+    assert.equal(priority.errorCode, 'INVALID_PRIORITY');
+    assert.ok(priority.message.includes('"max"') || priority.message.includes('「max」') || priority.message.includes('“max”'));
+    assert.match(priority.message, /min.*low.*default.*high.*urgent/);
+
+    const unknownTool = await harness.call('ntfy_delete', {});
+    assert.equal(unknownTool.message, fill('unknownTool', { tool: 'ntfy_delete' }));
+
+    const empty = createHarness({ locale, connections: [] });
+    const listed = await empty.call('ntfy_servers', {});
+    assert.equal(listed.ok, true);
+    assert.equal(listed.result.note, m.notConfigured);
+    assert.doesNotMatch(JSON.stringify(unknown) + JSON.stringify(r403), /Not sent|Outcome unknown/);
+  });
+}
+
+test('host-context-changed switches runtime copy without another app-context request', async () => {
+  const harness = createHarness({ connections: [] });
+  const send = async () => (await harness.send({ message: 'hello', topic: 'alerts' })).message;
+  assert.equal(await send(), harness.messages.en.notConfigured);
+  assert.equal(harness.appContextRequests.length, 1);
+  for (const [context, locale] of [
+    [{ region: 'cn', locale: 'zh-CN' }, 'zh-CN'],
+    [{ locale: 'ko' }, 'ko'],
+    [{ locale: 'ja' }, 'ja'],
+    [{ locale: 'xx' }, 'en'],
+    [undefined, 'en'],
+  ]) {
+    await harness.hostMessage({ type: 'host-context-changed', context });
+    assert.equal(await send(), harness.messages[locale].notConfigured, JSON.stringify(context));
+  }
+  assert.equal(harness.appContextRequests.length, 1);
+  assert.equal(harness.toolResults.length, 6, 'context changes produce no tool results');
+});
+
+test('a locale change that arrives during the app-context request wins over the stale reply', async () => {
+  let resolveContext;
+  const harness = createHarness({
+    connections: [],
+    appContext: () => new Promise((resolve) => { resolveContext = resolve; }),
+  });
+  const sending = harness.send({ message: 'hello', topic: 'alerts' });
+  await flushAsync();
+  await harness.hostMessage({ type: 'host-context-changed', context: { locale: 'ja' } });
+  resolveContext({ ok: true, context: { locale: 'zh-CN' } });
+  assert.equal((await sending).message, harness.messages.ja.notConfigured);
+  assert.equal((await harness.send({ message: 'hello', topic: 'alerts' })).message, harness.messages.ja.notConfigured);
+  assert.equal(harness.appContextRequests.length, 1);
+});
+
+test('concurrent tool calls share one app-context request and nothing is sent before it settles', async () => {
+  let resolveContext;
+  const harness = createHarness({
+    appContext: () => new Promise((resolve) => { resolveContext = resolve; }),
+    respond: () => ({ ok: true, status: 401, body: '' }),
+  });
+  const calls = [1, 2, 3].map((n) => harness.hostMessage({
+    type: 'tool-call', tool: 'ntfy_send', callId: `call-${n}`, args: { message: `hello ${n}` },
+  }));
+  await flushAsync();
+  assert.equal(harness.appContextRequests.length, 1);
+  assert.equal(harness.networkCalls.length, 0, 'no send before the locale is known');
+  resolveContext({ ok: true, context: { locale: 'ko' } });
+  await Promise.all(calls);
+  assert.equal(harness.toolResults.length, 3);
+  assert.equal(harness.networkCalls.length, 3);
+  const expected = harness.messages.ko.unauthorized.replace('{host}', 'ntfy.example.test');
+  for (const result of harness.toolResults) {
+    assert.equal(result.errorCode, 'NTFY_UNAUTHORIZED');
+    assert.equal(result.message, expected);
+  }
+});
+
+test('a failed app-context lookup is retried on the next call instead of pinning English', async () => {
+  let attempts = 0;
+  const harness = createHarness({
+    connections: [],
+    appContext: () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('host busy');
+      return { ok: true, context: { locale: 'zh-CN' } };
+    },
+  });
+  const send = async () => (await harness.send({ message: 'hello', topic: 'alerts' })).message;
+  assert.equal(await send(), harness.messages.en.notConfigured);
+  assert.equal(await send(), harness.messages['zh-CN'].notConfigured);
+  assert.equal(await send(), harness.messages['zh-CN'].notConfigured);
+  assert.equal(attempts, 2, 'cached after the first success');
+});
+
+for (const locale of hostLocales) {
+  test(`settings page renders ${locale} copy from /app-context`, async () => {
+    const page = createSettingsHarness({ locale, connections: [SERVER_A], kv: { defaultTopics: { 'conn-a': 'alerts' } } });
+    await flushAsync();
+    const m = page.messages[locale];
+    assert.equal(page.fetchCalls[0].url, '/app-context', 'the locale is resolved before any other request');
+    assert.equal(page.document.documentElement.lang, locale);
+    assert.equal(page.el('title').textContent, m.title);
+    assert.equal(page.el('badge').textContent, m.badge);
+    assert.equal(page.el('hint').textContent, m.hint);
+    assert.equal(page.el('add').textContent, m.add);
+    assert.equal(page.el('host').getAttribute('placeholder'), m.hostPlaceholder);
+    assert.equal(page.el('host').getAttribute('aria-label'), m.hostLabel);
+    assert.equal(page.el('token').getAttribute('placeholder'), m.tokenPlaceholder);
+    assert.equal(page.el('token').getAttribute('aria-label'), m.tokenLabel);
+    assert.equal(page.el('topic').getAttribute('placeholder'), m.topicPlaceholder);
+    assert.equal(page.el('topic').getAttribute('aria-label'), m.topicLabel);
+    assert.equal(page.el('eye').getAttribute('title'), m.eye);
+    assert.equal(page.el('eye').getAttribute('aria-label'), m.eye);
+
+    const [row] = page.rows();
+    const [, topicInput, saveButton, removeButton] = row.children;
+    assert.equal(topicInput.placeholder, m.topicPlaceholder);
+    assert.equal(topicInput.attributes['aria-label'], m.rowTopicLabel.replace('{host}', 'ntfy.example.test'));
+    assert.equal(saveButton.textContent, m.save);
+    assert.equal(removeButton.textContent, m.remove);
+
+    page.el('host').value = 'http://ntfy.example.test';
+    page.el('token').value = TOKEN;
+    page.el('add').emit('click');
+    await flushAsync();
+    assert.equal(page.el('status').textContent, m.httpNotSupported);
+    assert.equal(page.posts.length, 0);
+  });
+}
+
+test('settings page localizes host error codes and success status', async () => {
+  for (const locale of ['ja', 'ko']) {
+    const denied = createSettingsHarness({ locale, addResult: { ok: false, error: 'LIMIT' } });
+    await flushAsync();
+    denied.el('host').value = 'ntfy.example.test';
+    denied.el('token').value = TOKEN;
+    denied.el('add').emit('click');
+    await flushAsync();
+    assert.equal(denied.el('status').textContent, denied.messages[locale].error_LIMIT);
+
+    const odd = createSettingsHarness({ locale, addResult: { ok: false, error: 'toString' } });
+    await flushAsync();
+    odd.el('host').value = 'ntfy.example.test';
+    odd.el('token').value = TOKEN;
+    odd.el('add').emit('click');
+    await flushAsync();
+    assert.equal(odd.el('status').textContent, odd.messages[locale].addFailed, 'unknown codes use the generic copy');
+
+    const added = createSettingsHarness({ locale });
+    await flushAsync();
+    added.el('host').value = 'ntfy.example.test';
+    added.el('token').value = TOKEN;
+    added.el('add').emit('click');
+    await flushAsync();
+    assert.equal(added.el('status').textContent, added.messages[locale].added.replace('{host}', 'ntfy.example.test'));
+  }
+});
+
+test('settings page falls back to English for unknown, failed, malformed or slow app-context', async () => {
+  const json = (data, ok = true) => () => ({ ok, status: ok ? 200 : 500, async json() { return data; } });
+  const variants = {
+    unknown: { appContextResponse: json({ ok: true, context: { locale: 'de' } }) },
+    httpError: { appContextResponse: json({ ok: true, context: { locale: 'ja' } }, false) },
+    throws: { appContextResponse: () => { throw new Error('offline'); } },
+    nullBody: { appContextResponse: json(null) },
+    badJson: { appContextResponse: () => ({ ok: true, async json() { throw new SyntaxError('bad'); } }) },
+    // The 2 s abort fires at once here; the request only settles through the abort signal.
+    slow: {
+      setTimeout: (fn) => { setImmediate(fn); return 1; },
+      appContextResponse: (init) => new Promise((resolve, reject) => {
+        assert.ok(init.signal, 'app-context request is abortable');
+        init.signal.addEventListener('abort', () => reject(new Error('aborted')));
+      }),
+    },
+  };
+  for (const [label, options] of Object.entries(variants)) {
+    const page = createSettingsHarness(options);
+    await flushAsync();
+    assert.equal(page.document.documentElement.lang, 'en', label);
+    assert.equal(page.el('add').textContent, 'Add', label);
+    assert.equal(page.el('host').getAttribute('placeholder'), 'Server URL, e.g. https://ntfy.example.com', label);
+    assert.match(page.el('list').children[0].textContent, /No ntfy server added yet/, label);
+  }
 });
